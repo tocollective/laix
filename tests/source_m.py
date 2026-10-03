@@ -5,7 +5,7 @@ validation, dispatch decisions and frame updates execute the checked M AST.
 """
 
 from test_kernel import LAIX, parse_asm, asm_constants
-from test_memory import BootstrapM
+from test_memory import BootstrapM, Continued
 from mlang import syntax as s
 from mlang.typesys import size_of
 
@@ -104,6 +104,16 @@ class SourceM(BootstrapM):
             return self.memory[address]
         if isinstance(node, s.Unary) and node.op == "-":
             return -self.expr(node.operand, local) & 0xFFFFFFFF
+        if isinstance(node, s.Binary) and node.op in ("<", "<=", ">", ">="):
+            left = self.expr(node.left, local)
+            right = self.expr(node.right, local)
+            # Word comparisons use signed operands even though register and
+            # memory fixtures store the same values as unsigned bit patterns.
+            if getattr(node.left.type, "signed", False):
+                bits = node.left.type.size * 8
+                left = (left + (1 << (bits - 1))) % (1 << bits) - (1 << (bits - 1))
+                right = (right + (1 << (bits - 1))) % (1 << bits) - (1 << (bits - 1))
+            return self.binary[node.op](left, right)
         if isinstance(node, s.BuiltinCall):
             args = [self.expr(arg, local) for arg in node.args]
             if node.name == "mfcr" and args == [0]:
@@ -156,7 +166,10 @@ class SourceM(BootstrapM):
         elif isinstance(node, s.While):
             try:
                 while self.expr(node.cond, local):
-                    self.statement(node.body, local)
+                    try:
+                        self.statement(node.body, local)
+                    except Continued:
+                        continue
             except Broken:
                 pass
         elif isinstance(node, s.Break):

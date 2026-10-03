@@ -115,7 +115,8 @@ class KernelContractTests(unittest.TestCase):
         module = check_m(LAIX / "src/trap/trap.m")[0]
         handler = module.scope["userSyscall"].decl
         dispatch = next(st for st in handler.body.stmts if isinstance(st, Switch))
-        self.assertEqual({case.value.const for case in dispatch.cases if case.value is not None}, {0, 1, 2})
+        self.assertEqual({case.value.const for case in dispatch.cases if case.value is not None},
+                         {0, 1, 2, 16, 17, 18, 19, 20, 21, 22, 23})
         for case in dispatch.cases:
             last = case.body[-1]
             while isinstance(last, Block):

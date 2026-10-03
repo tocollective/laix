@@ -12,6 +12,11 @@ import { USER_VA_START, USER_VA_END, mmuCreateAddressSpace, mmuDestroyAddressSpa
 import { panic } from "../kernel/panic.m"
 import { debugPrint } from "../drivers/debug_uart.m"
 import { timerReady, timerInit, timerCanSleep } from "../drivers/timer.m"
+import { HandleTable, handlesReleaseTask, endpointBootstrap, handleCopy,
+    handleClose, endpointSealBootstrap } from "../ipc/objects.m"
+import { ipcCancelTask } from "../ipc/ipc.m"
+import { Endpoint } from "../ipc/objects.m"
+import { RIGHT_SEND, IPC_MESSAGE_MAX } from "../arch/wrm081632/defs.m"
 
 let SCHEDULER_QUANTUM_HZ: UWord = 100
 let MAX_TASKS: UWord = 8
@@ -22,7 +27,12 @@ let TASK_RUNNING: UWord = 2
 let TASK_DEAD: UWord = 3
 let TASK_BLOCKED: UWord = 4
 let WAIT_NONE: UWord = 0
-let WAIT_EVENT: UWord = 1 // trusted caller may use other nonzero event IDs
+let WAIT_EVENT: UWord = 1
+let WAIT_IPC_SEND: UWord = 2
+let WAIT_IPC_RECEIVE: UWord = 3 // reserved; generic event callers must avoid IPC IDs
+let WAIT_IPC_CALL: UWord = 4
+let WAIT_IPC_ACCEPT: UWord = 5
+let WAIT_IPC_REPLY: UWord = 6
 let USER_CODE: UWord = USER_VA_START
 let USER_DATA: UWord = USER_CODE + PAGE_SIZE
 let USER_STACK_TOP: UWord = USER_VA_END
@@ -49,6 +59,18 @@ type Task {
     faulted: Bool,
     reaped: Bool,
     pages: UWord[TASK_PAGE_COUNT],
+    handles: HandleTable,
+    ipcEndpoint: *mut Endpoint, // one pinned wait, independent of handles
+    ipcKind: UWord,
+    ipcBuffer: UWord, // receive VA only; always translated through this TCB
+    ipcSize: UWord, // send length or receive capacity
+    ipcMessage: UByte[IPC_MESSAGE_MAX],
+    ipcObjectGeneration: UWord,
+    ipcCallGeneration: UWord, // persistent, never cleared on completion
+    ipcReplyOwner: UWord,
+    ipcReplyBuffer: UWord,
+    ipcReplyCapacity: UWord,
+    ipcPadding: UWord, // keep every TCB's TrapFrame aligned to eight bytes
 }
 
 align(8) let mut tasks: Task[MAX_TASKS]
@@ -75,7 +97,7 @@ let taskTransitionAllowed(previous: UWord, next: UWord): Bool {
     return (previous == TASK_EMPTY && next == TASK_READY) ||
         (previous == TASK_READY && next == TASK_RUNNING) ||
         (previous == TASK_RUNNING && (next == TASK_READY || next == TASK_BLOCKED || next == TASK_DEAD)) ||
-        (previous == TASK_BLOCKED && next == TASK_READY)
+        (previous == TASK_BLOCKED && (next == TASK_READY || next == TASK_DEAD))
 }
 
 let taskGet(id: UWord): *mut Task {
@@ -86,7 +108,7 @@ let taskGet(id: UWord): *mut Task {
 // Only this operation publishes Ready, including creation and wakeup. All
 // scheduler mutations require IE=0 or EXL=1, independent of PIC ENABLE.
 let taskEnqueue(task: *mut Task): Void {
-    if !taskIrqsDisabled() || task == &mut idleTask || task.queued || readyCount == MAX_TASKS ||
+    if !taskIrqsDisabled() || task == &mut idleTask || task.queued || task.ipcEndpoint != null || readyCount == MAX_TASKS ||
         !taskTransitionAllowed(task.state, TASK_READY) {
         panic("invalid ready transition", null)
         return
@@ -191,6 +213,26 @@ let taskPrepare(): Bool {
     return taskCreate() == 1
 }
 
+// Trusted boot policy: task 1 manages the endpoint, task 2 can only send.
+// r4 carries a task-local handle, never a global endpoint ID or pointer.
+let taskBootstrapEndpoints(): Bool {
+    if !taskIrqsDisabled() || schedulerStarted ||
+        tasks[0].state != TASK_READY || tasks[1].state != TASK_READY return false
+    let manager: Word = endpointBootstrap(&mut tasks[0].handles, tasks[0].id)
+    if manager < 0 return false
+    let sender: Word = handleCopy(&mut tasks[0].handles, manager as UWord,
+        &mut tasks[1].handles, tasks[0].id, tasks[1].id, RIGHT_SEND)
+    if sender < 0 {
+        if handleClose(&mut tasks[0].handles, manager as UWord) != 0 {
+            panic("could not roll back bootstrap endpoint", null)
+        }
+        return false
+    }
+    tasks[0].context.regs[4] = manager as UWord
+    tasks[1].context.regs[4] = sender as UWord
+    return true
+}
+
 let taskSetStack(bottom: UWord, top: UWord): Void {
     let bottomSlot: *mut UWord = KERNEL_STACK_BOTTOM as *mut UWord
     let topSlot: *mut UWord = KERNEL_STACK_TOP as *mut UWord
@@ -267,6 +309,7 @@ let taskStart(clock: UWord): Void {
     idleTask.context.ptbr = idleTask.ptbr
     idleTask.context.reserved[0] = 0
     idleTask.context.reserved[1] = 0
+    endpointSealBootstrap()
     schedulerStarted = true
     if !timerInit(clock, SCHEDULER_QUANTUM_HZ) {
         panic("invalid scheduler timer configuration", null)
@@ -330,10 +373,16 @@ let taskTick(frame: *TrapFrame): *TrapFrame {
     return taskSelect()
 }
 
-// Kernel-only event interface, ready for IPC; not a user syscall yet.
+// Kernel-only blocking primitive; IPC publishes its pinned wait before this call.
 let taskBlock(frame: *TrapFrame, reason: UWord): *TrapFrame {
     if !taskIrqsDisabled() || !taskOwnsTrap(frame) || reason == WAIT_NONE {
         panic("invalid task wait", frame)
+        return null
+    }
+    if (((reason >= WAIT_IPC_SEND && reason <= WAIT_IPC_REPLY) &&
+        (currentTask.ipcEndpoint == null || currentTask.ipcKind != reason)) ||
+        (currentTask.ipcEndpoint != null && currentTask.ipcKind != reason)) {
+        panic("invalid IPC block", frame)
         return null
     }
     taskSaveContext(frame)
@@ -348,7 +397,7 @@ let taskWake(id: UWord): Bool {
     // Recheck state under the same exclusion as block/finish/selection.
     let status: UWord = memoryLock()
     let task: *mut Task = taskGet(id)
-    if task == null || task.state != TASK_BLOCKED {
+    if task == null || task.state != TASK_BLOCKED || task.ipcEndpoint != null {
         memoryUnlock(status)
         return false
     }
@@ -365,10 +414,26 @@ let taskFinish(frame: *TrapFrame, code: Word, faulted: Bool): *TrapFrame {
     taskSaveContext(frame)
     currentTask.exitCode = code
     currentTask.faulted = faulted
+    handlesReleaseTask(&mut currentTask.handles, currentTask.id)
     currentTask.waitReason = WAIT_NONE
     currentTask.state = TASK_DEAD
     currentTask = null
     return taskSelect()
+}
+
+// Kernel-only termination of a suspended task. Its stack/root are inactive;
+// the normal reaper runs later on the current task's selected stack.
+let taskAbortBlocked(id: UWord, code: Word, faulted: Bool): Bool {
+    if !taskIrqsDisabled() return false
+    let task: *mut Task = taskGet(id)
+    if task == null || task == currentTask || task.state != TASK_BLOCKED || task.queued return false
+    ipcCancelTask(id)
+    task.exitCode = code
+    task.faulted = faulted
+    task.waitReason = WAIT_NONE
+    task.state = TASK_DEAD
+    handlesReleaseTask(&mut task.handles, id)
+    return true
 }
 
 // Assembly has ALREADY moved sp onto the selected kernel stack. Never run
@@ -403,7 +468,8 @@ let taskReap(): Void {
 }
 
 export { Task, tasks, idleTask, currentTask, MAX_TASKS, TASK_EMPTY, TASK_READY, TASK_RUNNING,
-    TASK_BLOCKED, TASK_DEAD, WAIT_NONE, WAIT_EVENT,
+    TASK_BLOCKED, TASK_DEAD, WAIT_NONE, WAIT_EVENT, WAIT_IPC_SEND, WAIT_IPC_RECEIVE,
+    WAIT_IPC_CALL, WAIT_IPC_ACCEPT, WAIT_IPC_REPLY,
     USER_CODE, USER_DATA, USER_STACK_BOTTOM, USER_STACK_TOP, USER_STACK_GUARD,
-    taskPrepare, taskCreate, taskGet, taskStart, taskIdlePoll, taskTransitionAllowed,
-    taskSaveContext, taskOwnsTrap, taskYield, taskTick, taskBlock, taskWake, taskFinish, taskReap }
+    taskPrepare, taskCreate, taskGet, taskStart, taskBootstrapEndpoints, taskIdlePoll, taskTransitionAllowed,
+    taskSaveContext, taskOwnsTrap, taskYield, taskTick, taskBlock, taskWake, taskFinish, taskAbortBlocked, taskReap }

@@ -13,7 +13,7 @@
 | 2 | [Физическая память и MMU](02_MEMORY_MMU.md) | Выполнен для одного CPU: учёт/владение, MMU API, TLB/ASID и W^X; 13 CPU-сценариев на готовом образе |
 | 3 | [Пользовательская задача и syscall](03_USER_TASK_SYSCALLS.md) | Выполнен для одной задачи: 11 CPU-сценариев Task/syscall/fault и 9 сценариев копирования user-буферов при EXL=1 |
 | 4 | [Планировщик, таймер и IRQ](04_SCHEDULER_IRQ.md) | Passed seven CPU cases and 20,000 timer switches; [acceptance report](../tests/SCHEDULER_ACCEPTANCE.md) |
-| 5 | [IPC и права на объекты](05_IPC_RIGHTS.md) | Предстоит |
+| 5 | [IPC и права на объекты](05_IPC_RIGHTS.md) | Rights/transport source checks pass; request/reply passes ten CPU cases and 128 exchanges; standalone Raw transport CPU acceptance remains pending |
 | 6 | [Сервисы и драйверы вне ядра](06_USER_SERVICES.md) | Предстоит; существующая консоль работает внутри ядра |
 
 ## Общий чек-лист

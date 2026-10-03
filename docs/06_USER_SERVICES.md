@@ -10,6 +10,16 @@
 ядра. Их наличие не означает, что реализованы пользовательские серверы.
 Зависимости: user-задачи, планировщик, IPC и права на ресурсы.
 
+The base service exchange is defined in the
+[minimal request/reply contract](IPC_REQUEST_REPLY.md): a bootstrap-bound
+Service endpoint, atomic client `call`, server `accept`, and one-use `reply`.
+Its source checks and request/reply CPU acceptance pass. The first console service must use that
+contract, with its own response status in the payload, and revoke its endpoint
+on shutdown so both queued and already accepted calls return -EPIPE.
+The M helper is source-checked; its user-mode execution belongs to the first
+service image's acceptance. The protocol CPU probe uses existing user SYSCALL
+instructions in a ready kernel image, with bootstrap and saved-context fixtures.
+
 ## Что сделать
 
 ### Запуск и права сервисов

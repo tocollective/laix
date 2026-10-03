@@ -3,7 +3,7 @@
 import { kernelInit, kernelBootInfo } from "boot.m"
 import { panic, setPanicStage } from "panic.m"
 import { consoleInit, print } from "../console/console.m"
-import { taskPrepare, taskCreate, taskStart } from "../task/task.m"
+import { taskPrepare, taskCreate, taskStart, taskBootstrapEndpoints } from "../task/task.m"
 
 let main(): Word {
     kernelInit()
@@ -15,7 +15,7 @@ let main(): Word {
     print("LA/IX\n")
 
     setPanicStage("task-prepare")
-    if !taskPrepare() || taskCreate() != 2 {
+    if !taskPrepare() || taskCreate() != 2 || !taskBootstrapEndpoints() {
         panic("could not prepare user tasks", null)
         return 1
     }

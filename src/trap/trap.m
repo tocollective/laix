@@ -1,11 +1,14 @@
 import { STACK_CANARY, KERNEL_STACK_BOTTOM, KERNEL_STACK_TOP, CAUSE_BREAKPOINT, CAUSE_SYSCALL, CAUSE_INTERRUPT,
     INSTRUCTION_BYTES, REG_RESULT, REG_SYSCALL, ERRNO_ENOSYS, ERRNO_EINVAL,
-    SYS_DEBUG_PUT_CHAR, SYS_EXIT, SYS_YIELD, STATUS_PUM } from "../arch/wrm081632/defs.m"
+    SYS_DEBUG_PUT_CHAR, SYS_EXIT, SYS_YIELD, SYS_HANDLE_CLOSE, SYS_HANDLE_COPY,
+    SYS_ENDPOINT_DESTROY, SYS_IPC_SEND, SYS_IPC_RECEIVE, SYS_IPC_CALL, SYS_IPC_ACCEPT,
+    SYS_IPC_REPLY, STATUS_PUM } from "../arch/wrm081632/defs.m"
 import { TrapFrame } from "trap_frame.m"
 import { panic } from "../kernel/panic.m"
 import { taskSaveContext, taskOwnsTrap, taskFinish, taskYield, taskTick } from "../task/task.m"
 import { timerInterrupt } from "../drivers/timer.m"
 import { debugPutChar } from "../drivers/debug_uart.m"
+import { ipcClose, ipcCopy, ipcDestroy, ipcSend, ipcReceive, ipcCall, ipcAccept, ipcReply } from "../ipc/ipc.m"
 
 extern let trapEntry(): Void
 extern let trapRegisterSelfTest(): Word
@@ -49,6 +52,28 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
         case SYS_YIELD:
             frame.regs[REG_RESULT] = 0
             return taskYield(frame)
+        case SYS_HANDLE_CLOSE:
+            frame.regs[REG_RESULT] = ipcClose(frame.regs[1]) as UWord
+            taskSaveContext(frame)
+            return frame
+        case SYS_HANDLE_COPY:
+            frame.regs[REG_RESULT] = ipcCopy(frame.regs[1], frame.regs[2], frame.regs[3]) as UWord
+            taskSaveContext(frame)
+            return frame
+        case SYS_IPC_SEND:
+            return ipcSend(frame, frame.regs[1], frame.regs[2], frame.regs[3])
+        case SYS_IPC_RECEIVE:
+            return ipcReceive(frame, frame.regs[1], frame.regs[2], frame.regs[3])
+        case SYS_IPC_CALL:
+            return ipcCall(frame, frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4], frame.regs[5])
+        case SYS_IPC_ACCEPT:
+            return ipcAccept(frame, frame.regs[1], frame.regs[2], frame.regs[3])
+        case SYS_IPC_REPLY:
+            return ipcReply(frame, frame.regs[1], frame.regs[2], frame.regs[3])
+        case SYS_ENDPOINT_DESTROY:
+            frame.regs[REG_RESULT] = ipcDestroy(frame.regs[1]) as UWord
+            taskSaveContext(frame)
+            return frame
         default:
             frame.regs[REG_RESULT] = (-ERRNO_ENOSYS) as UWord
             taskSaveContext(frame)

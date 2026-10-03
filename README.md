@@ -8,7 +8,9 @@
 [11 CPU-сценариями](tests/USER_ACCEPTANCE.md) на обновлённом образе.
 Копирование user-буферов подтверждено
 [9 CPU-сценариями при EXL=1](tests/USER_BUFFERS_ACCEPTANCE.md).
-Планировщика и IPC пока нет.
+Endpoint objects and task-local capability handles are implemented; message
+transfer supports messages up to 32 bytes with FIFO blocking and cancellation.
+See the [IPC contract](docs/05_IPC_RIGHTS.md).
 
 Исходники сгруппированы по подсистемам:
 
@@ -20,6 +22,7 @@ laix/
 │   ├── mm/             # физические страницы, MMU и user-буферы
 │   ├── task/           # задача, TCB и вход в user mode
 │   ├── trap/           # обработчики, TrapFrame и самопроверка контекста
+│   ├── ipc/            # endpoints, task-local handles, and capability lifecycle
 │   ├── drivers/        # UART и RNG
 │   └── console/        # экранная консоль и font/ с загрузчиком и кешем
 ├── user/               # пользовательские M-обёртки syscall
