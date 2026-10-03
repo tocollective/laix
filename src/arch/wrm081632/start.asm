@@ -5,7 +5,6 @@
     .globl kernelStart, earlyTrapEntry, earlyPanic, earlyTrapPanic, earlyTrapReport
     .globl earlyStop, earlyField, earlyString, earlyHex
     .globl bootInfoAddress, kernelStackGuard, kernelStackBottom, kernelStackTop
-    .globl taskKernelStackGuard, taskKernelStackBottom, taskKernelStackTop
 kernelHeader:
     .word BOOT_MAGIC
     .word __image_sectors
@@ -189,10 +188,3 @@ kernelStackBottom:
 kernelStackTop:
 bootInfoAddress:
     .space WORD_BYTES
-    ; One task for stage 3. Reserved with BSS, separate from the boot stack.
-    .align PAGE_SIZE
-taskKernelStackGuard:
-    .space PAGE_SIZE
-taskKernelStackBottom:
-    .space KERNEL_STACK_BYTES
-taskKernelStackTop:

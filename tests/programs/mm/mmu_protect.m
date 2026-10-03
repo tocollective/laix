@@ -7,7 +7,7 @@ import { mapPage, setPagePermissions, mmuSwitchAddressSpace } from "../../../src
 import { PROBE_VA, probeRequire, probeSpace, probePage } from "mmu_probe.m"
 extern let triggerMmuStore(address: UWord): Void
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     kernelInit()
     setPanicStage("mmu-protect-test")
     let directory: *mut UWord = probeSpace(7)

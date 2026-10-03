@@ -82,6 +82,17 @@ trapEntry:
     mtcr fcsr, r0                 ; independent floating-point environment
     mv r1, sp
     call trapDispatch
+    ; r1 is the selected trusted frame, not necessarily the interrupted one.
+    ; Supervisor self-tests keep their live frame and original call stack.
+    bne r1, sp, .selected
+    j .restore
+.selected:
+    ; User/idle TCB frames live outside either stack. r10 is callee-saved
+    ; by M; reap only AFTER leaving the outgoing stack and switching PTBR.
+    mv r10, r1
+    lw sp, KERNEL_SP(r0)
+    call taskReap
+    mv sp, r10
 .restore:
     ; Never enable IRQs or user mode before all registers are restored.
     lw r1, TF_STATUS(sp)

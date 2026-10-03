@@ -23,7 +23,7 @@ class TaskEntered(Exception):
 class TaskM(SourceM):
     def __init__(self, ram=0x100000):
         super().__init__(LAIX / "src/trap/trap.m")
-        self.task_type = self.decls["firstTask"].sym.type
+        self.task_type = self.decls["tasks"].sym.type.elem
         self.addresses.update(userCodeStart=0x14000, userCodeEnd=0x1401C,
                               kernelStackBottom=0x91000, taskKernelResume=0x14100)
         # Arbitrary fixture words, never generated machine instructions.
@@ -31,6 +31,7 @@ class TaskM(SourceM):
         for i, word in enumerate(self.blob):
             self.memory[self.addresses["userCodeStart"] + 4 * i] = word
         self.memory[0xFD000004] = 0
+        self.memory[LAYOUT["TIMER_FREQUENCY"]] = 1000000
         self.entered = None
         self.fail_mapping = None
         self.mapping_calls = 0
@@ -39,14 +40,20 @@ class TaskM(SourceM):
         self.kernel_root = self.ptbr & ~4095
         self.events.clear()
 
-    def field_address(self, field):
-        return self.addresses["firstTask"] + self.task_type.field(field).offset
+    def field_address(self, field, id=1):
+        return self.addresses["tasks"] + (id - 1) * self.task_type.size + self.task_type.field(field).offset
 
-    def field(self, field):
-        return self.memory[self.field_address(field)]
+    def field(self, field, id=1):
+        return self.memory[self.field_address(field, id)]
 
-    def pages(self):
-        return [self.memory[self.addresses["taskPages"] + 4 * i] for i in range(3)]
+    def idle_address(self, field):
+        return self.addresses["idleTask"] + self.task_type.field(field).offset
+
+    def idle_field(self, field):
+        return self.memory[self.idle_address(field)]
+
+    def pages(self, id=1):
+        return [self.memory[self.field_address("pages", id) + 4 * i] for i in range(3)]
 
     def free_pages(self):
         return [address for address in range(self.globals["kernelReservedEnd"],
@@ -54,6 +61,8 @@ class TaskM(SourceM):
                 if self.call("physicalPageAvailable", address)]
 
     def call(self, name, *args):
+        if name == "taskKernelSp":
+            return self.cpu_sp
         if name == "mapPage":
             self.mapping_calls += 1
             if self.mapping_calls == self.fail_mapping:
@@ -70,7 +79,7 @@ class TaskTests(unittest.TestCase):
         vm = TaskM()
         self.assertTrue(vm.call("taskPrepare"))
         with self.assertRaises(TaskEntered):
-            vm.call("taskStart")
+            vm.call("taskStart", 1000000)
         return vm
 
     def user_trap(self, vm, cause=12, number=0, arg=65, sp=0):
@@ -88,7 +97,7 @@ class TaskTests(unittest.TestCase):
         root = vm.ptbr
         # Valid endpoints, invalid unsigned values and arbitrary unknown numbers.
         cases = [(0, 0, 0), (0, 255, 0), (0, 256, -22), (0, 0xFFFFFFFF, -22),
-                 (2, 77, -38), (0xFFFFFFFF, 88, -38), (0, 65, 0)]
+                 (3, 77, -38), (0xFFFFFFFF, 88, -38), (0, 65, 0)]
         uart = LAYOUT["UART_BASE"]
         for i, (number, arg, result) in enumerate(cases):
             for sp in (0, 3, 0xDEADBEE8):
@@ -125,7 +134,8 @@ class TaskTests(unittest.TestCase):
                 machine.run()
                 self.assertEqual(machine.stop, "iret")
                 self.assertFalse(vm.call("trapExpectationMet"))
-                self.assertEqual(vm.field("state"), 3 if cause == 12 else 4)
+                self.assertEqual(vm.field("state"), 3)
+                self.assertEqual(vm.field("faulted"), cause != 12)
                 self.assertEqual(vm.field("exitCode"), 0xFFFFFF85 if cause == 12 else cause)
                 context = vm.field_address("context")
                 self.assertEqual(vm.memory[context + LAYOUT["TF_EPC"]],
@@ -135,20 +145,20 @@ class TaskTests(unittest.TestCase):
                 self.assertEqual([vm.memory[context + 4 * n] for n in range(32)],
                                  [machine.original[f"r{n}"] for n in range(32)])
                 expected = [0] * 32
-                expected[30] = vm.addresses["kernelStackTop"]
+                expected[30] = vm.idle_field("kernelStackTop")
                 self.assertEqual([machine.get(f"r{n}") for n in range(32)], expected)
                 self.assertEqual(machine.control["epc"], vm.addresses["taskKernelResume"])
-                self.assertEqual(machine.control["status"], 16)  # IRET -> supervisor, IE/SS off
+                self.assertEqual(machine.control["status"], 16)  # IRET -> supervisor, IE/EXL off
                 self.assertEqual(machine.control["fcsr"], 0)
                 self.assertEqual(vm.ptbr, vm.kernel_root | 1)
                 for name in ("kernelStackBottom", "kernelStackTop"):
                     slot = "KERNEL_STACK_BOTTOM" if name.endswith("Bottom") else "KERNEL_STACK_TOP"
-                    self.assertEqual(vm.memory[LAYOUT[slot]], vm.addresses[name])
+                    self.assertEqual(vm.memory[LAYOUT[slot]], vm.idle_field(name))
                 self.assertEqual(vm.memory[LAYOUT["KERNEL_SP"]], expected[30])
-                # The task root and pages stay allocated while trap restore reads its stack.
-                self.assertTrue(vm.call("physicalPageOwned", root, 1, 3))
-                self.assertTrue(all(vm.call("physicalPageReferences", p) == 1 for p in pages))
-                self.assertEqual(machine.accesses[-1], ("lw", machine.frame + LAYOUT["TF_R30"]))
+                # Cleanup ran on the dedicated idle stack before restoring its frame.
+                self.assertTrue(vm.call("physicalPageAvailable", root))
+                self.assertTrue(all(vm.call("physicalPageAvailable", p) for p in pages))
+                self.assertEqual(machine.accesses[-1], ("lw", vm.idle_address("context") + LAYOUT["TF_R30"]))
                 # Model the trusted continuation after IRET switched stacks.
                 vm.controls[0] = 0
                 vm.call("taskReap")
@@ -157,7 +167,7 @@ class TaskTests(unittest.TestCase):
                 self.assertTrue(all(vm.call("physicalPageAvailable", p) for p in pages + [root]))
                 self.assertFalse(vm.call("taskPrepare"))  # terminal task cannot reenter user code
                 with self.assertRaises(KernelPanic):
-                    vm.call("taskStart")
+                    vm.call("taskStart", 1000000)
 
     def test_user_trap_with_wrong_root_does_not_overwrite_task_context(self):
         vm = self.running_task()
@@ -194,7 +204,7 @@ class TaskTests(unittest.TestCase):
                    root, vm.field("kernelStackBottom"), vm.field("kernelStackTop") - PAGE):
             self.assertEqual(vm.leaf(va, root), vm.leaf(va, vm.kernel_root))
             self.assertEqual(vm.leaf(va, root) & 16, 0)
-        for guard in (vm.addresses["kernelStackGuard"], vm.addresses["taskKernelStackGuard"]):
+        for guard in (vm.addresses["kernelStackGuard"], vm.field("kernelStackBottom") - PAGE):
             self.assertEqual(vm.leaf(guard, root), 0)
         self.assertEqual(vm.memory[vm.field("kernelStackBottom")], LAYOUT["STACK_CANARY"])
         self.assertEqual(vm.ptbr, boot_ptbr)  # preparation never activates the root
@@ -208,17 +218,17 @@ class TaskTests(unittest.TestCase):
         self.assertTrue(vm.call("taskPrepare"))
         frame = vm.field_address("context")
         expected = [0] * 32
-        expected[1], expected[2], expected[30] = USER_DATA, PAGE, STACK_TOP
+        expected[1], expected[2], expected[3], expected[30] = USER_DATA, PAGE, 1, STACK_TOP
         self.assertEqual([vm.memory[frame + 4 * i] for i in range(32)], expected)
         for field, value in (("EPC", USER_CODE), ("STATUS", 24), ("FCSR", 0),
-                ("PTBR", vm.field("directory") | 1), ("CAUSE", 0), ("BADADDR", 0)):
+                ("PTBR", vm.field("directory") | 17), ("CAUSE", 0), ("BADADDR", 0)):
             self.assertEqual(vm.memory[frame + LAYOUT["TF_" + field]], value)
         with self.assertRaises(TaskEntered):
-            vm.call("taskStart")
+            vm.call("taskStart", 1000000)
         self.assertEqual(vm.entered, frame)
         self.assertEqual(vm.field("state"), 2)
         self.assertEqual(vm.controls[0] & 1, 0)
-        self.assertEqual(vm.ptbr, vm.field("directory") | 1)
+        self.assertEqual(vm.ptbr, vm.field("directory") | 17)
         for name, field in (("KERNEL_SP", "kernelStackTop"),
                 ("KERNEL_STACK_BOTTOM", "kernelStackBottom"), ("KERNEL_STACK_TOP", "kernelStackTop")):
             self.assertEqual(vm.memory[LAYOUT[name]], vm.field(field))
@@ -233,7 +243,7 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(machine.stop, "iret")
         self.assertEqual([machine.get(f"r{i}") for i in range(32)], expected)
         self.assertEqual(machine.control["epc"], USER_CODE)
-        self.assertEqual(machine.control["status"], 24)  # IRET will set UM=1, IE=SS=0
+        self.assertEqual(machine.control["status"], 26)  # IRET sets UM=IE=1, EXL=SS=0
         self.assertEqual(machine.control["fcsr"], 0)
         self.assertEqual(machine.control["ptbr"], vm.ptbr)
         self.assertEqual(machine.accesses[-1], ("lw", frame + LAYOUT["TF_R30"]))
@@ -245,8 +255,8 @@ class TaskTests(unittest.TestCase):
                           ("mv", ["sp", "r1"]), ("j", ["trapEntry.restore"])])
 
     def test_every_creation_oom_rolls_back_and_can_retry(self):
-        # Task root + three frames + two user tables = six free pages needed.
-        for count in range(6):
+        # Task root + three frames + two user tables + three kernel stack frames = nine free pages needed.
+        for count in range(9):
             with self.subTest(free_pages=count):
                 vm = TaskM()
                 held = []
@@ -288,18 +298,18 @@ class TaskTests(unittest.TestCase):
             baseline = vm.free_pages()
             self.assertFalse(vm.call("taskPrepare"))
             self.assertEqual(vm.free_pages(), baseline)
-        for cpu, pic in ((1, 0), (0, 1)):
+        for cpu, pic in ((1, 0),):
             vm = TaskM()
             vm.controls[0], vm.memory[0xFD000004] = cpu, pic
             self.assertFalse(vm.call("taskPrepare"))
             with self.assertRaises(KernelPanic):
-                vm.call("taskStart")
+                vm.call("taskStart", 1000000)
             self.assertIsNone(vm.entered)
         vm = TaskM()
         self.assertTrue(vm.call("taskPrepare"))
         vm.memory[0xFD000004] = 1
         with self.assertRaises(KernelPanic):
-            vm.call("taskStart")
+            vm.call("taskStart", 1000000)
         self.assertEqual(vm.ptbr, vm.kernel_root | 1)
         self.assertEqual(vm.field("state"), 1)
 
@@ -307,7 +317,8 @@ class TaskTests(unittest.TestCase):
         vm = TaskM()
         self.assertTrue(vm.call("taskPrepare"))
         with self.assertRaises(TaskEntered):
-            vm.call("taskStart")
+            vm.call("taskStart", 1000000)
+        saved_top = vm.field("kernelStackTop")
         machine = EntryMachine(True, 0, kernel_sp=vm.field("kernelStackTop"),
                                bottom=vm.field("kernelStackBottom"), top=vm.field("kernelStackTop"))
         machine.memory = vm.memory
@@ -315,8 +326,8 @@ class TaskTests(unittest.TestCase):
         machine.control["ptbr"] = vm.ptbr
         machine.run()
         self.assertEqual(machine.stop, "iret")
-        self.assertEqual(vm.field("state"), 4)
-        self.assertEqual(machine.frame, vm.field("kernelStackTop") - LAYOUT["TF_SIZE"])
+        self.assertEqual(vm.field("state"), 3)
+        self.assertEqual(machine.frame, saved_top - LAYOUT["TF_SIZE"])
         context = vm.field_address("context")
         self.assertEqual([vm.memory[context + i * 4] for i in range(32)],
                          [machine.original[f"r{i}"] for i in range(32)])
@@ -324,21 +335,15 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(machine.control["epc"], vm.addresses["taskKernelResume"])
         self.assertFalse(any(address < PAGE for _, address in machine.accesses))
 
-    def test_user_blob_is_self_contained_and_both_kernel_stacks_have_guards(self):
+    def test_user_blob_is_self_contained(self):
         parser = parse_asm(LAIX / "src/task/task.asm")
         begin = next(i for i, st in enumerate(parser.stmts) if "userCodeStart" in st.labels)
         instructions = [st for st in parser.stmts[begin:] if st.op and not st.op.startswith(".") and st.op != "="]
-        self.assertEqual([st.op for st in instructions], ["addi", "li", "sw", "lw", "addi", "sw",
-            "li", "li", "syscall", "li", "li", "syscall", "li", "li", "syscall", "j"])
+        self.assertEqual([st.op for st in instructions], ["mv", "addi", "li", "sw", "lw", "addi", "sw",
+            "addi", "li", "syscall", "li", "syscall", "addi", "li", "syscall",
+            "li", "li", "syscall", "li", "li", "syscall", "j"])
         self.assertEqual(instructions[-1].args, [".exit_returned"])
         self.assertTrue(all(st.args[-1] in ("0(sp)", "0(r1)") for st in instructions if st.op in ("lw", "sw")))
-        statements = parse_asm(LAIX / "src/arch/wrm081632/start.asm").stmts
-        guard = next(i for i, st in enumerate(statements) if "taskKernelStackGuard" in st.labels)
-        bottom = next(i for i, st in enumerate(statements) if "taskKernelStackBottom" in st.labels)
-        top = next(i for i, st in enumerate(statements) if "taskKernelStackTop" in st.labels)
-        self.assertEqual((statements[guard - 1].op, statements[guard - 1].args), (".align", ["PAGE_SIZE"]))
-        self.assertEqual([(st.op, st.args) for st in statements[guard:bottom] if st.op], [(".space", ["PAGE_SIZE"])])
-        self.assertEqual([(st.op, st.args) for st in statements[bottom:top] if st.op], [(".space", ["KERNEL_STACK_BYTES"])])
 
 
 if __name__ == "__main__":

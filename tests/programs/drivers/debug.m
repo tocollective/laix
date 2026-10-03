@@ -3,7 +3,7 @@ import { debugPrint } from "../../../src/drivers/debug_uart.m"
 
 let forward(text: *UByte, args: ...): Void { debugPrint(text, args) }
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     debugPrint("hex=$h $h $h\n", 0, 0x1001, 0xFFFFFFFF)
     debugPrint("int=$i $i uint=$u\n", -42, -2147483648, 0xFFFFFFFF)
     debugPrint("r$02i=$h [$5i] [$05i]\n", 7, 0x42, -42, -42)

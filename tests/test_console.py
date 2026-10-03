@@ -26,6 +26,19 @@ class VideoRegisters(dict):
         self.commands = []
         self.fail = {}  # command -> ERROR
         self.takes_mode = True
+        self.clock_count = 0
+        self.clock_step = 1
+
+    def __getitem__(self, address):
+        if address == C["TIMER_FREQUENCY"]:
+            return 1000
+        if address == C["TIMER_COUNT_HI"]:
+            return self.clock_count >> 32
+        if address == C["TIMER_COUNT_LO"]:
+            value = self.clock_count & 0xFFFFFFFF
+            self.clock_count = (self.clock_count + self.clock_step) & 0xFFFFFFFFFFFFFFFF
+            return value
+        return super().__getitem__(address)
 
     def __setitem__(self, address, value):
         super().__setitem__(address, value)

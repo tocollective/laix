@@ -72,7 +72,10 @@ let engineResult(command: UWord, error: UWord): Bool {
 
 let consoleInit(): Bool {
     outputFailed = false
-    videoSetMode(VIDEO_MODE_640_480 | VIDEO_8BPP)
+    if !videoSetMode(VIDEO_MODE_640_480 | VIDEO_8BPP) {
+        consoleFail("video mode setup failed")
+        return false
+    }
     // The engine checks rectangles against its own pitches, not the mode:
     // a mode the card did not take would draw a wrong screen without errors.
     if videoWidth() != SCREEN_WIDTH || videoHeight() != SCREEN_HEIGHT ||
@@ -198,7 +201,7 @@ let printText(text: *UByte): Void {
 
 let waitFrame(): Void {
     if outputFailed return
-    videoWaitFrame()
+    if !videoWaitFrame() consoleFail("video frame wait failed")
 }
 
 let print(text: *UByte): Void {

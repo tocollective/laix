@@ -9,7 +9,7 @@ import { mapPage, mmuSwitchAddressSpace, mmuActivateKernel } from "../../../src/
 import { PROBE_VA, PROBE_OLD_VA, probeRequire, probeSpace, probePage } from "mmu_probe.m"
 extern let triggerMmuLoad(address: UWord): Void
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     kernelInit()
     setPanicStage("asid-reuse-test")
     let first: *mut UWord = probeSpace(7)

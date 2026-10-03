@@ -59,10 +59,10 @@ M-модуль и одноимённый ASM-файл находятся ряд�
 символов `build/laix.map`. Собственный `src/arch/wrm081632/start.asm` задаёт заголовок
 `WRMB`, линкер выравнивает образ до секторов по 512 байт; файловая система и отдельный
 загрузочный сектор не нужны. Это образ для WRM.081632, не для x86 BIOS.
-`run.sh` подключает его как флоппи (`--floppy`); прошивка загружает ядро
-по адресу `0x00010000`. Растры шрифта находятся после загрузочной части
-образа и читаются ядром по необходимости. Флоппи сохраняет исходную
-скорость 62 500 байт/с. Для запуска с диска 0: `LAIX_BOOT=hdd ./laix/run.sh`.
+`run.sh` attaches it as hard disk 0 (`--hdd`) by default; the firmware loads
+the kernel at `0x00010000`. Font bitmaps follow the boot payload and are read
+by the kernel on demand. To boot from the floppy instead, use
+`LAIX_BOOT=floppy ./laix/run.sh`; the floppy transfers 62,500 bytes/s.
 
 - `src/kernel/main.m` — точка входа, начинайте писать ядро здесь.
 - `src/arch/wrm081632/defs.m` и `src/arch/wrm081632/defs.inc` — именованные значения аппаратных регистров,
@@ -93,15 +93,26 @@ M-модуль и одноимённый ASM-файл находятся ряд�
   Контракты — в [этапе 2](docs/02_MEMORY_MMU.md).
 - `src/trap/trap_frame.m` и `src/trap/trap_layout.inc` — общий формат контекста
   на 160 байт и соответствующие ассемблерные смещения.
-- `src/task/task.m` и `src/task/task.asm` — одна задача с отдельными RXU-кодом,
-  RWU-данными и user-стеком, каталогом, kernel-стеком с guard/canary и TCB.
-  Подготовка откатывает ошибки выделения и отображения. Первый вход использует
-  общий restore/IRET при PIE=0; небольшой автономный user entry записывает 1
-  в свои данные, выводит `U\n` через syscall и вызывает exit. Exit/user fault
-  восстанавливают отдельный доверенный kernel-контекст; память задачи
-  освобождается после IRET на boot-стек. Ядро затем остаётся в HLT-цикле.
-  `user/syscalls.m` предоставляет M-обёртки через встроенный `syscall()`.
-  Контракт и проверки — в [этапе 3](docs/03_USER_TASK_SYSCALLS.md).
+- `src/task/task.m` and `src/task/task.asm` provide eight task slots with
+  Ready/Running/Blocked/Dead states, syscall yield (2), and timer preemption.
+  Tasks have separate address spaces and guarded kernel stacks. Restore/IRET
+  preserves GPR/FCSR; the reaper releases Dead resources on the selected stack.
+  With no Ready tasks, a separate idle TCB uses its own guarded kernel stack.
+  Idle checks Ready and enters WFI with IE=EXL=0; the pending IRQ line wakes
+  WRM even with IE clear, then idle enables IE to handle it. Before sleeping,
+  idle verifies that the periodic timer IRQ remains configured and unmasked.
+  `src/drivers/timer.m` uses TIMER FREQUENCY or boot CLOCK to program
+  a nonzero quantum period, enables only IRQ 2, and acknowledges EXPIRED
+  before return. Unexpected IRQs are masked and diagnosed.
+  Source checks: `tests/test_scheduler.py`, `tests/test_timer_irq.py`,
+  `tests/test_idle.py`.
+  Device polling uses COUNT deadlines: one second for video BUSY/FRAME and
+  five seconds for glyph-disk BUSY/DONE. A timeout reports to UART and stops
+  the affected driver/cache; the console propagates failures to its callers.
+  Deadline checks: `tests/test_device_waits.py`.
+  Contract: [stage 4](docs/04_SCHEDULER_IRQ.md).
+  [CPU acceptance](tests/SCHEDULER_ACCEPTANCE.md): seven cases and 20,000 timer
+  switches on preserved ready artifacts, without building.
 - `src/mm/mmu.m:copyFromUser/copyToUser` — проверка полного байтового диапазона,
   V/U/R/W и владельца каждой страницы перед копированием через supervisor-алиасы.
   Блокировка удерживает отображения до конца копирования; неверный user-буфер
@@ -164,8 +175,9 @@ guard page не отображается. Прерывания пока откл
 `KERNEL_SP`, границ текущего стека и временного `r1`; boot info и таблица
 устройств должны заканчиваться ниже `0x1FF0`. Страница 0 не отображается,
 поэтому NULL в ядре после включения MMU даёт page fault.
-Старт инициализирует их загрузочным стеком. `taskStart()` обновляет
-доверенный стек и его границы перед запуском первой задачи с выключенными IRQ.
+Start initializes these slots with the boot stack.
+`taskStart(kernelBootInfo.clock)` selects the trusted task stack, initializes
+the timer with CPU IE clear, and enables user IRQs through PIE at IRET.
 `kernelInit()` отдельно проверяет возврат из встроенного `breakpoint()` и
 контролирует `IE = 0`, PIC `ENABLE = 0` до и после самопроверок.
 

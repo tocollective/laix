@@ -140,6 +140,10 @@ class EntryMachine:
                 if taken:
                     self.pc = self.labels[self.parser.qualify(a[-1], st.scope)]
             elif op == "call":
+                # M sees the live trap STATUS, including EXL exclusion.
+                vm = getattr(self.dispatcher, "__self__", None)
+                if vm is not None:
+                    vm.controls[0] = self.control["status"]
                 if a == ["main"]:
                     self.stop = "main"
                     return
@@ -150,13 +154,22 @@ class EntryMachine:
                     self.bad_stack_call = (self.get("r1"), self.get("r2"), self.get("sp"))
                     self.dispatch.call("trapBadStack", self.get("r1"), self.get("r2"))
                     raise AssertionError("trapBadStack returned")
+                elif a == ["taskReap"]:
+                    # The M cleanup observes the real, newly selected SP.
+                    self.dispatcher.__self__.cpu_sp = self.get("sp")
+                    self.dispatcher("taskReap")
                 else:
                     assert a == ["trapDispatch"]
                     self.frame = self.get("r1")
-                    self.dispatcher("trapDispatch", self.frame)
+                    selected = self.dispatcher("trapDispatch", self.frame)
                 # A compiled M call may clobber these registers.
                 for i in list(range(1, 10)) + [31]:
                     self.put(f"r{i}", 0xBAD000 + i)
+                if a == ["trapDispatch"]:
+                    self.put("r1", selected)
+                    vm = getattr(self.dispatcher, "__self__", None)
+                    if vm and vm.globals.get("schedulerStarted"):
+                        self.control["ptbr"] = vm.ptbr
                 self.control["fcsr"] = 0
             elif op == "iret":
                 if self.selftest:
@@ -201,6 +214,7 @@ def future_user_handler(machine):
         if machine.memory[frame + c["TF_CAUSE"]] == c["CAUSE_SYSCALL"]:
             machine.memory[frame + c["TF_R1"]] = (-c["ERRNO_ENOSYS"]) & 0xFFFFFFFF
         machine.memory[frame + c["TF_EPC"]] += c["INSTRUCTION_BYTES"]
+        return frame
     return handler
 
 

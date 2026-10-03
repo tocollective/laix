@@ -7,7 +7,7 @@ import { mapPage, unmapPage, mmuSwitchAddressSpace } from "../../../src/mm/mmu.m
 import { PROBE_VA, probeRequire, probeSpace, probePage } from "mmu_probe.m"
 extern let triggerMmuLoad(address: UWord): Void
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     kernelInit()
     setPanicStage("mmu-unmap-test")
     let directory: *mut UWord = probeSpace(7)

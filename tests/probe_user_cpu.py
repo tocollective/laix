@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Check Task/IRET/syscalls/faults on a ready CPU image. Never build code.
+"""Check legacy stage-3 Task/IRET/syscalls/faults on a ready CPU image.
+
+Never build code. This probe retains the ABI of the accepted single-task
+artifacts; it does not accept or validate new cooperative scheduler images.
 
 Natural boot executes the complete image, including its user blob. Other
 cases change saved contexts/data in temporary machines and use the existing
@@ -18,7 +21,6 @@ from probe_boot import Monitor, ready_monitor, require, disassemble
 from probe_mmu_cpu import CpuProbe, symbols_from_map
 from probe_unexpected_traps import LAYOUT, instruction, locations
 from run_ready import ROOT, check_layout
-from test_kernel import LAIX, check_m
 
 CODE, DATA, FIXTURE = 0x40000000, 0x40001000, 0x40002000
 PAGE, EXL, PUM, UM = 4096, 16, 8, 4
@@ -29,10 +31,12 @@ COPY_SYMBOLS = {"copyFromUser", "copyToUser", "mmuUserBufferValid"}
 
 
 def task_offsets():
-    # Type/layout checking only; no code generation, assembly or linking.
-    module = check_m(LAIX / "src/task/task.m")[0]
-    task = module.scope["Task"].type
-    return {field.name: field.offset for field in task.fields}
+    # Frozen layout of stage-3 ready artifacts, selected by firstTask/map
+    # preflight. Current source Task has a different ABI and cannot describe
+    # the records in those binaries. Never derive old offsets from new source.
+    return dict(id=0, directory=4, userCode=8, userData=12,
+                userStackBottom=16, userStackTop=20, kernelStackBottom=24,
+                kernelStackTop=28, context=32, state=192, exitCode=196)
 
 
 def check_user_context(before, after, result=None, trapped=False):

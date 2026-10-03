@@ -5,7 +5,7 @@ import { debugPrint } from "../../../src/drivers/debug_uart.m"
 import { POWER_BASE } from "../../../src/arch/wrm081632/defs.m"
 let TEST_POWER: *volatile mut UWord = POWER_BASE as *volatile mut UWord
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     kernelInit()
     debugPrint("trap runtime OK\n")
     *TEST_POWER = 0

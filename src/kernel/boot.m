@@ -2,6 +2,7 @@ import { debugPrint } from "../drivers/debug_uart.m"
 import { panic, setPanicStage } from "panic.m"
 import { trapLayoutValid } from "../trap/trap_frame.m"
 import { trapRegisterSelfTest, trapExpect, trapExpectationMet } from "../trap/trap.m"
+import { timerSetClock } from "../drivers/timer.m"
 import { memoryInit } from "../mm/memory.m"
 import { PAGE_SIZE, PAGE_MASK, WORD_BYTES, BOOT_INFO, BOOT_INFO_MAGIC,
     BOOT_INFO_BYTES, BOOT_INFO_LIMIT, DEVICE_ENTRY_BYTES, CAUSE_BREAKPOINT, CAUSE_SYSCALL,
@@ -71,6 +72,7 @@ let kernelInit(): Void {
         return
     }
     kernelBootInfo = *info
+    timerSetClock(info.clock)
     setPanicStage("memory-init")
     if !memoryInit(info.ramSize) {
         panic("invalid physical page layout", null)

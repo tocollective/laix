@@ -38,7 +38,7 @@ def reserved_end(ram, bss_end=0x98404):
 
 def kernel_permissions(address, guard):
     """Expected W^X identity-map permissions of a RAM page, 0 if unmapped."""
-    if address < 0x1000 or 0x2000 <= address < 0x10000 or address in (guard, guard + 0x4000):
+    if address < 0x1000 or 0x2000 <= address < 0x10000 or address == guard:
         return 0  # NULL page, old firmware stack, stack guard
     if address < 0x2000:
         return V | R | W  # boot info and trap entry state
@@ -63,10 +63,7 @@ class BootstrapM:
         self.decls = {d.name: d for m in modules for d in m.decls
                       if isinstance(d, (s.VarDecl, s.FuncDecl))}
         self.addresses = {"kernelStackGuard": guard, "__bss_end": bss_end}
-        self.addresses.update(kernelStackTop=guard + 0x3000,
-                              taskKernelStackGuard=guard + 0x4000,
-                              taskKernelStackBottom=guard + 0x5000,
-                              taskKernelStackTop=guard + 0x7000)
+        self.addresses.update(kernelStackTop=guard + 0x3000)
         self.addresses.update(SECTIONS)
         self.globals, self.memory, self.events = {}, {}, []
         self.ptbr = 0
@@ -271,8 +268,7 @@ class BootstrapMemoryTests(unittest.TestCase):
         for name, value in (("__start_text", 0x11000), ("__start_rodata", 0x14C9C),
                             ("__start_data", 0x7E124), ("__stop_text", 0x15004),
                             ("__stop_rodata", 0x7F004), ("kernelStackGuard", 0x7E000),
-                            ("taskKernelStackGuard", 0x93000), ("taskKernelStackGuard", 0x94001),
-                            ("taskKernelStackBottom", 0x96000), ("taskKernelStackTop", 0x97400),
+                            ("kernelStackTop", 0x93400),
                             ("__bss_end", 0x400004)):
             with self.subTest(name=name):
                 vm = BootstrapM()

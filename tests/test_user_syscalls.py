@@ -23,6 +23,11 @@ class UserM(SourceM):
 
 
 class UserWrapperTests(unittest.TestCase):
+    def test_yield_wrapper_passes_only_number_and_forwards_result(self):
+        vm = UserM()
+        self.assertEqual(vm.call("yield"), 0xFFFFFFDA)
+        self.assertEqual(vm.calls, [(LAYOUT["CAUSE_SYSCALL"], (2,))])
+
     def test_debug_wrapper_passes_number_and_word_and_returns_kernel_result(self):
         vm = UserM()
         for code in (0, 65, 255, 256, 0xFFFFFFFF):

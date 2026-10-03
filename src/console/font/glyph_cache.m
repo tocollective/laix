@@ -2,6 +2,7 @@ import { BOOT_INFO, BOOT_INFO_MAGIC, BOOT_LOAD, SECTOR_SIZE, SECTOR_MASK,
     DISK0_BASE, DISK1_BASE, FLOPPY_BASE, DISK_PRESENT, DISK_CHANGED, DISK_BUSY,
     DISK_DONE, DISK_READ, SCREEN_WIDTH, SCREEN_HEIGHT,
     WORD_BYTES, WORD_MASK, GLYPH_BYTES } from "../../arch/wrm081632/defs.m"
+import { waitUntil } from "../../drivers/timer.m"
 import { videoWriteWords } from "../../drivers/videocard.m"
 // 16 cached disk pages, each holding sixteen 32-byte glyphs: 8 KiB of VRAM.
 // FIFO replacement keeps hits free of disk I/O and bitmap copies.
@@ -26,6 +27,7 @@ type BootInfo {
     devices: UWord,
     deviceTable: UWord,
 }
+let DISK_WAIT_SECONDS: UWord = 5
 let CACHE_PAGES: UWord = 16
 let GLYPHS_PER_SECTOR: UWord = SECTOR_SIZE / GLYPH_BYTES
 let SECTOR_WORDS: UWord = SECTOR_SIZE / WORD_BYTES
@@ -75,12 +77,23 @@ let cacheGlyph(glyph: UWord): UWord {
     for i: UWord in 0..CACHE_PAGES {
         if pages[i] == page return i * GLYPHS_PER_SECTOR + glyph % GLYPHS_PER_SECTOR
     }
-    while disk.status & DISK_BUSY != 0 {}
+    if !waitUntil(&disk.status as *volatile UWord, DISK_BUSY, 0, false,
+        DISK_WAIT_SECONDS, "glyph disk BUSY") {
+        disk = null
+        return CACHE_GLYPHS
+    }
+    if disk.status & DISK_PRESENT == 0 || disk.status & DISK_CHANGED != 0 return CACHE_GLYPHS
     disk.sector = firstSector + page
     disk.count = 1
     disk.address = &sectorData[0] as UWord
     disk.command = DISK_READ
-    while disk.status & DISK_DONE == 0 {}
+    if !waitUntil(&disk.status as *volatile UWord, DISK_DONE, DISK_DONE, false,
+        DISK_WAIT_SECONDS, "glyph disk DONE") {
+        // DMA may still finish later. Keep its static buffer alive, disable
+        // this cache, and never publish or upload the unfinished sector.
+        disk = null
+        return CACHE_GLYPHS
+    }
     fence()
     let error: UWord = disk.error
     disk.status = DISK_DONE

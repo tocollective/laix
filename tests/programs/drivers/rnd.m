@@ -3,7 +3,7 @@
 // @exit 0
 import { rngWord, rngSeeded, rngFill } from "../../../src/drivers/rnd.m"
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     if !rngSeeded() || !rngSeeded() return 1
     if !rngFill(null, 0) || rngFill(null, 1) return 2
     if rngWord() != 0xADE0B876 return 3

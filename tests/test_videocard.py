@@ -24,7 +24,8 @@ class TimedVideoRegisters(VideoRegisters):
         return super().__getitem__(address)
 
     def __setitem__(self, address, value):
-        if self.busy_reads:
+        if self.busy_reads and (VIDEO <= address < VIDEO + C["PAGE_SIZE"] or
+                                C["VRAM_BASE"] <= address < C["VRAM_BASE"] + 0x400000):
             self.writes_while_busy.append(address)
         super().__setitem__(address, value)
 

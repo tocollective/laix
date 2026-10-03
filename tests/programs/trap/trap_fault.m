@@ -4,7 +4,7 @@ import { kernelInit } from "../../../src/kernel/boot.m"
 import { panic, setPanicStage } from "../../../src/kernel/panic.m"
 extern let triggerMisalignedLoad(): Void
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     kernelInit()
     setPanicStage("trap-fault-test")
     triggerMisalignedLoad()

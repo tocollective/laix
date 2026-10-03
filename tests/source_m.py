@@ -48,10 +48,27 @@ class SourceM(BootstrapM):
             if isinstance(decl, s.VarDecl) and isinstance(decl.init, s.ArrayLit):
                 for i, elem in enumerate(decl.init.elems):
                     self.memory[self.addresses[name] + i * size_of(elem.type)] = self.expr(elem, {})
+        # Struct arrays may contain byte-sized Bool fields between words.
+        # This evaluator stores primitive values at their exact field address.
+        def zero_fields(address, typ):
+            if typ.kind == "struct":
+                for field in typ.fields:
+                    zero_fields(address + field.offset, field.type)
+            elif typ.kind == "array":
+                for i in range(typ.n):
+                    zero_fields(address + i * size_of(typ.elem), typ.elem)
+            else:
+                self.memory.setdefault(address, 0)
+        for name, decl in self.decls.items():
+            if isinstance(decl, s.VarDecl) and not decl.extern and name in self.addresses:
+                zero_fields(self.addresses[name], decl.sym.type)
         self.controls = {0: 0, 6: 0}
         self.output = []
+        self.local_storage = 0x0D000000
 
     def address(self, node, local):
+        if isinstance(node, s.Name) and node.name in local and node.type.kind in ("struct", "array"):
+            return local[node.name]
         if isinstance(node, s.Member):
             struct = node.obj.type
             if struct.kind == "ptr":
@@ -111,7 +128,17 @@ class SourceM(BootstrapM):
             self.memory[self.address(target, local)] = value
 
     def statement(self, node, local):
-        if isinstance(node, s.Switch):
+        if isinstance(node, s.VarDecl) and node.var.type.kind == "struct":
+            # Each invocation gets its own aggregate locals; never alias globals.
+            address = self.local_storage
+            self.local_storage += (size_of(node.var.type) + 7) & ~7
+            local[node.name] = address
+            if node.init is None:
+                for offset in range(0, size_of(node.var.type), 4):
+                    self.memory[address + offset] = 0
+            else:
+                raise AssertionError("unsupported aggregate local initializer")
+        elif isinstance(node, s.Switch):
             value = self.expr(node.value, local)
             selected = next((case for case in node.cases if case.value is not None
                              and self.expr(case.value, local) == value), None)
@@ -134,6 +161,11 @@ class SourceM(BootstrapM):
                 pass
         elif isinstance(node, s.Break):
             raise Broken()
+        elif isinstance(node, s.For):
+            try:
+                super().statement(node, local)
+            except Broken:
+                pass
         elif isinstance(node, s.IncDec):
             step = 1 if node.op == "++" else -1
             self.write(node.target, (self.expr(node.target, local) + step) & 0xFFFFFFFF, local)

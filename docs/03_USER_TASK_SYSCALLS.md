@@ -10,9 +10,21 @@
 Цель — одна изолированная задача, безопасный переход через SYSCALL и
 возврат с сохранением её контекста.
 
+Описание реализации ниже фиксирует однозадачный этап 3 и его готовые
+CPU-артефакты. Текущие исходники расширены добровольным планировщиком:
+таблица задач, ASID, динамические kernel-стеки, syscall 2 и возврат выбранного
+кадра описаны в [этапе 4](04_SCHEDULER_IRQ.md#контракт-добровольного-планировщика).
+Результаты CPU-приёмки этапа 3 на новый планировщик не переносятся.
+
 Зависимости: распределитель и операции MMU из этапа 2. ELF-загрузчик
 пока можно заменить кодом, включённым в образ с явно заданными границами
 и адресом исполнения.
+
+The current stage 4 scheduler initializes the timer in `taskStart(clock)`,
+adds PIE to selected user frames only after IRQ handling is ready, and uses
+`EXL|PIE` for the trusted supervisor WFI context. IRET then enables IE and
+clears EXL. The IRQ-disabled entry/HLT descriptions below document stage 3;
+the current behavior is specified in [stage 4](04_SCHEDULER_IRQ.md).
 
 ## Что сделать
 
@@ -121,17 +133,19 @@ M-обёртки `user/syscalls.m` вызывают builtin `syscall()` и не 
 kernel-функции. У `exit` есть бесконечный user-цикл на случай ошибочного возврата.
 Обёртки предназначены для будущих M user-программ; текущий blob написан на asm.
 
-До первого входа `taskStart()` создаёт отдельный `kernelContext`: нулевые
-GPR/FCSR, sp=`kernelStackTop`, EPC=`taskKernelResume`, STATUS=EXL без PUM/PIE/PSS,
-сохранённый kernel PTBR. При exit `taskFinish()` сохраняет user-контекст с EPC+4;
-при fault оставляет исходный EPC. TCB получает EXITED/FAULTED и код завершения.
-Затем активируется kernel-каталог через FENCE/TLBI.ALL/PTBR, восстанавливаются
-низкие слова boot-стека, а живой кадр заменяется доверенным `kernelContext`.
-Общий restore читает кадр с ещё отображённого kernel-стека задачи; IRET
-переводит CPU в supervisor mode на пустой boot-стек с IE/SS=0.
-`taskKernelResume` вызывает `taskReap()` и остаётся в HLT-цикле.
-Освобождение user-кадров и каталога происходит только в `taskReap()`.
-Терминальный TCB сохраняется для диагностики и повторно не запускается.
+Before the first entry, `taskStart()` creates a separate `idleTask` TCB with
+zero GPR/FCSR, its own guarded supervisor stack, EPC=`taskKernelResume`,
+STATUS=EXL without PUM/PIE/PSS and the kernel PTBR. On exit, `taskFinish()`
+saves the user context with EPC+4; a fault preserves the original EPC.
+The user TCB becomes Dead and retains its exit code and fault flag.
+The scheduler selects another Ready task, or idle when the queue is empty,
+activates its root through FENCE/TLBI.ALL/PTBR and updates trusted stack slots.
+The restore epilogue first moves SP to the selected kernel stack, then calls
+`taskReap()` to release the inactive user frames, root and kernel stack.
+The terminal TCB remains for diagnostics and cannot run again.
+Idle enters supervisor mode with IE/SS=0 and checks Ready before masked WFI;
+after WFI wakes on the timer IRQ line, it enables IE to service the event.
+See the [scheduler contract](04_SCHEDULER_IRQ.md) for the wakeup protocol.
 
 `tests/test_task.py` проверяет реальные M-ветки и assembly save/restore:
 повторные syscall с допустимыми/ошибочными аргументами, сохранение всех GPR/FCSR,

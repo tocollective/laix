@@ -2,13 +2,13 @@
 // Shared supervisor physical window: user code frames become RO here before
 // acquiring X anywhere. Task mappings occupy a separate virtual window.
 import { kernelRamEnd, MAX_PAGES, PAGE_NONE, PAGE_DIRECTORY, PAGE_TABLE,
-    PAGE_USER, PAGE_USER_STACK, allocPage, freePage, physicalPageOwned,
+    PAGE_USER, PAGE_USER_STACK, PAGE_KERNEL_STACK, allocPage, allocPageRun, freePage, physicalPageOwned,
     retainPage, releasePage, physicalPageReferences, pageAccessReferences,
     memoryLock, memoryUnlock } from "memory.m"
 import { panic } from "../kernel/panic.m"
 import { PAGE_SIZE, PAGE_MASK, PAGE_TABLE_ENTRIES, SUPERPAGE_SIZE, BOOT_INFO,
     BOOT_INFO_END, BOOT_LOAD, KERNEL_STACK_BYTES, PTE_V, PTE_R, PTE_W, PTE_X, PTE_U, PTE_RWX_BITS,
-    PTE_RW, PTE_RX, PTE_RO, CR_PTBR, PTBR_ENABLE, TLBI_ALL, VRAM_BASE, IO_BASE, WORD_BYTES, WORD_BITS,
+    PTE_RW, PTE_RX, PTE_RO, CR_PTBR, PTBR_ENABLE, TLBI_ALL, VRAM_BASE, IO_BASE, WORD_BITS,
     ERRNO_EFAULT } from "../arch/wrm081632/defs.m"
 
 let USER_VA_START: UWord = 0x40000000
@@ -19,9 +19,6 @@ let ACCESS_EXEC: UWord = 0x80000000
 let ACCESS_COUNT: UWord = 0x7FFFFFFF
 extern let kernelStackGuard: UByte
 extern let kernelStackTop: UByte
-extern let taskKernelStackGuard: UByte
-extern let taskKernelStackBottom: UWord
-extern let taskKernelStackTop: UByte
 extern let __start_text: UByte
 extern let __stop_text: UByte
 extern let __start_rodata: UByte
@@ -39,18 +36,13 @@ let kernelLayoutValid(): Bool {
     let rodataStart: UWord = &__start_rodata as UWord
     let dataStart: UWord = &__start_data as UWord
     let guard: UWord = &kernelStackGuard as UWord
-    let taskGuard: UWord = &taskKernelStackGuard as UWord
-    let taskBottom: UWord = &taskKernelStackBottom as UWord
-    let taskTop: UWord = &taskKernelStackTop as UWord
     return textStart == BOOT_LOAD && rodataStart & PAGE_MASK == 0 &&
         dataStart & PAGE_MASK == 0 && (&__stop_text as UWord) <= rodataStart &&
         (&__stop_rodata as UWord) <= dataStart && rodataStart <= dataStart &&
         guard & PAGE_MASK == 0 && guard >= dataStart &&
         guard + PAGE_SIZE <= (&__bss_end as UWord) && (&__bss_end as UWord) <= SUPERPAGE_SIZE &&
         (&kernelStackTop as UWord) == guard + PAGE_SIZE + KERNEL_STACK_BYTES &&
-        taskGuard & PAGE_MASK == 0 && taskGuard >= (&kernelStackTop as UWord) + WORD_BYTES &&
-        taskBottom == taskGuard + PAGE_SIZE && taskTop == taskBottom + KERNEL_STACK_BYTES &&
-        taskTop <= (&__bss_end as UWord)
+        (&kernelStackTop as UWord) <= (&__bss_end as UWord)
 }
 
 // Kernel PTE permissions of a RAM page, 0 when it stays unmapped.
@@ -63,7 +55,7 @@ let kernelPagePermissions(address: UWord): UWord {
     if address < BOOT_LOAD return 0
     if address < (&__start_rodata as UWord) return PTE_RX
     if address < (&__start_data as UWord) return PTE_RO
-    if address == (&kernelStackGuard as UWord) || address == (&taskKernelStackGuard as UWord) return 0
+    if address == (&kernelStackGuard as UWord) return 0
     return PTE_RW
 }
 
@@ -500,6 +492,56 @@ let mmuSplitSuperpage(directory: *mut UWord, owner: UWord, virtual: UWord): Bool
     return true
 }
 
+// RAM tables are shared by EVERY root, including roots created earlier. Thus
+// the guard and both old/new stacks keep identical supervisor mappings across
+// PTBR switches. The guard's frame stays owned until the stack is released.
+let mmuAllocKernelStack(owner: UWord): UWord {
+    let status: UWord = memoryLock()
+    if kernelPageDirectory == null || owner == 0 || owner == MMU_KERNEL_OWNER {
+        memoryUnlock(status)
+        return PAGE_NONE
+    }
+    let guard: UWord = allocPageRun(owner, PAGE_KERNEL_STACK, 1 + KERNEL_STACK_BYTES / PAGE_SIZE)
+    if guard == PAGE_NONE {
+        memoryUnlock(status)
+        return PAGE_NONE
+    }
+    let table: *mut UWord = (kernelPageDirectory[guard / SUPERPAGE_SIZE] & ~PAGE_MASK) as *mut UWord
+    table[guard / PAGE_SIZE % PAGE_TABLE_ENTRIES] = 0
+    mmuInvalidate()
+    memoryUnlock(status)
+    return guard + PAGE_SIZE
+}
+
+// Only after CPU has left this stack AND its task directory. Restore the
+// physical-window guard alias before returning its frame to the allocator.
+let mmuFreeKernelStack(bottom: UWord, owner: UWord): Bool {
+    let status: UWord = memoryLock()
+    if kernelPageDirectory == null || bottom < PAGE_SIZE || bottom & PAGE_MASK != 0 {
+        memoryUnlock(status)
+        return false
+    }
+    let guard: UWord = bottom - PAGE_SIZE
+    let count: UWord = 1 + KERNEL_STACK_BYTES / PAGE_SIZE
+    for i: UWord in 0..count {
+        if !physicalPageOwned(guard + i * PAGE_SIZE, owner, PAGE_KERNEL_STACK) ||
+            physicalPageReferences(guard + i * PAGE_SIZE) != 0 {
+            memoryUnlock(status)
+            return false
+        }
+    }
+    let table: *mut UWord = (kernelPageDirectory[guard / SUPERPAGE_SIZE] & ~PAGE_MASK) as *mut UWord
+    if table[guard / PAGE_SIZE % PAGE_TABLE_ENTRIES] != 0 {
+        memoryUnlock(status)
+        return false
+    }
+    table[guard / PAGE_SIZE % PAGE_TABLE_ENTRIES] = guard | PTE_RW
+    mmuInvalidate()
+    for i: UWord in 0..count mmuRequire(freePage(guard + i * PAGE_SIZE, owner, PAGE_KERNEL_STACK))
+    memoryUnlock(status)
+    return true
+}
+
 let mmuSwitchAddressSpace(directory: *mut UWord, owner: UWord, asid: UWord): Bool {
     let status: UWord = memoryLock()
     if !mmuSpaceOwned(directory, owner) || asid > 255 {
@@ -597,4 +639,4 @@ export { USER_VA_START, USER_VA_END, mmuUserRangeValid, mmuInit,
     mmuUserByteRangeValid, mmuUserBufferValid, copyFromUser, copyToUser,
     mmuInitAddressSpace, mmuCreateAddressSpace, mapPage, unmapPage,
     setPagePermissions, mmuSplitSuperpage, mmuSwitchAddressSpace,
-    mmuActivateKernel, mmuDestroyAddressSpace }
+    mmuActivateKernel, mmuDestroyAddressSpace, mmuAllocKernelStack, mmuFreeKernelStack }

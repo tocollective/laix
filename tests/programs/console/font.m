@@ -3,7 +3,7 @@
 import { font, loadFont, glyphIndex } from "../../../src/console/font/font.m"
 import { fontData, fontDataEnd } from "../../../src/console/font/data.m"
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     let size: UWord = (&fontDataEnd as UWord) - (&fontData as UWord)
     if loadFont(&fontData, 31) return 1
     if loadFont(&fontData, size - 1) return 2

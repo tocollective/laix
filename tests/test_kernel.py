@@ -47,6 +47,35 @@ def asm_constants(parser):
 
 
 class KernelContractTests(unittest.TestCase):
+    def test_timer_and_pic_registers_match_emulator_headers(self):
+        # Device fixtures use LA/IX constants, so they cannot detect a shared
+        # wrong base. Compare against the emulator's independent bus ABI.
+        def defines(path):
+            return {name: int(value, 0) for name, value in re.findall(
+                r"^#define\s+(\w+)\s+(0x[0-9A-Fa-f]+|[0-9]+)\b",
+                path.read_text(), re.MULTILINE)}
+
+        include = LAIX.parent / "include"
+        board = defines(include / "motherboard.h")
+        pit = defines(include / "devices/pit.h")
+        pic = defines(include / "devices/pic.h")
+        constants = asm_constants(parse_asm(LAIX / "src/arch/wrm081632/defs.inc"))
+        self.assertEqual(constants["TIMER_BASE"], board["MB_PIT_BASE"])
+        self.assertEqual(constants["TIMER_IRQ"], board["MB_IRQ_PIT"])
+        for register in ("COUNT_LO", "COUNT_HI", "FREQUENCY", "RELOAD", "CONTROL", "STATUS"):
+            with self.subTest(register=register):
+                self.assertEqual(constants["TIMER_" + register],
+                                 board["MB_PIT_BASE"] + pit["PIT_REG_" + register])
+        for register in ("ENABLE", "CLAIM"):
+            self.assertEqual(constants["PIC_" + register],
+                             board["MB_PIC_BASE"] + pic["PIC_REG_" + register])
+        self.assertEqual(constants["PIC_NO_IRQ"], pic["PIC_NO_IRQ"])
+        self.assertEqual(constants["PIC_LINE_COUNT"], pic["PIC_LINE_COUNT"])
+        for flag, hardware in (("ENABLE", "PIT_CONTROL_ENABLE"),
+                               ("PERIODIC", "PIT_CONTROL_PERIODIC"),
+                               ("EXPIRED", "PIT_STATUS_EXPIRED")):
+            self.assertEqual(constants["TIMER_" + flag], pit[hardware])
+
     def test_m_and_assembly_constants_match(self):
         for m_name, asm_name in (("arch/wrm081632/defs.m", "arch/wrm081632/defs.inc"),
                                  ("trap/trap_frame.m", "trap/trap_layout.inc")):
@@ -86,7 +115,7 @@ class KernelContractTests(unittest.TestCase):
         module = check_m(LAIX / "src/trap/trap.m")[0]
         handler = module.scope["userSyscall"].decl
         dispatch = next(st for st in handler.body.stmts if isinstance(st, Switch))
-        self.assertEqual({case.value.const for case in dispatch.cases if case.value is not None}, {0, 1})
+        self.assertEqual({case.value.const for case in dispatch.cases if case.value is not None}, {0, 1, 2})
         for case in dispatch.cases:
             last = case.body[-1]
             while isinstance(last, Block):
@@ -119,7 +148,7 @@ class KernelContractTests(unittest.TestCase):
         parsers = [parse_asm(path) for path in paths]
         labels = {label for parser in parsers for statement in parser.stmts
                   for label in statement.labels}
-        labels.update(("main", "trapDispatch", "trapExpect", "trapBadStack", "taskReap"))
+        labels.update(("main", "trapDispatch", "trapExpect", "trapBadStack", "taskReap", "taskIdlePoll"))
         jumps = {"j", "call", "beq", "bne", "blt", "bge", "bltu", "bgeu",
                  "beqz", "bnez", "bltz", "bgez", "bgtz", "blez"}
         for parser in parsers:

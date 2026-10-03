@@ -6,7 +6,7 @@ import { fontData, fontDataEnd } from "../../../src/console/font/data.m"
 import { CACHE_BASE, CACHE_GLYPHS, glyphCacheInit, cacheGlyph } from "../../../src/console/font/glyph_cache.m"
 import { BOOT_INFO, BOOT_FIELD_DISK, WORD_BYTES, VRAM_BASE, DISK_CHANGED } from "../../../src/arch/wrm081632/defs.m"
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     let size: UWord = (&fontDataEnd as UWord) - (&fontData as UWord)
     if !loadFont(&fontData, size) || !glyphCacheInit(font.count) return 1
     // Also boot this test via Drag & Drop: init must consume the insertion

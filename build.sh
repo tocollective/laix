@@ -25,7 +25,7 @@ case "$(basename -- "$main_source")" in
         set -- "$@" "$obj_dir/mmu_probe.o"
         ;;
 esac
-for module in arch/wrm081632/defs kernel/boot mm/memory mm/mmu trap/trap_frame task/task trap/trap kernel/panic drivers/debug_uart drivers/videocard console/console drivers/rnd console/font/font console/font/glyph_cache console/font/data; do
+for module in arch/wrm081632/defs kernel/boot mm/memory mm/mmu trap/trap_frame task/task trap/trap kernel/panic drivers/debug_uart drivers/timer drivers/videocard console/console drivers/rnd console/font/font console/font/glyph_cache console/font/data; do
     mkdir -p "$(dirname -- "$obj_dir/$module.o")"
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/$module.m" -o "$obj_dir/$module.o"
     set -- "$@" "$obj_dir/$module.o"

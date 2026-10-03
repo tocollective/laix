@@ -30,7 +30,7 @@ let mut kernelReservedEnd: UWord
 let mut kernelRamEnd: UWord
 let mut nextFreePage: UWord
 
-// Single CPU, before preemption: save/restore IE, never unconditionally enable
+// Single CPU, including preemption: save/restore IE, never unconditionally enable
 // interrupts. Nested calls also work in EXL=1. Fences order metadata and page
 // clearing before restoring IE. This is not an SMP lock.
 let memoryLock(): UWord {
@@ -186,6 +186,35 @@ let allocPage(owner: UWord, purpose: UWord): UWord {
     return PAGE_NONE
 }
 
+// Reserve a contiguous run for a kernel stack and its guard. Scan the whole
+// free window: fragmentation must not make us leak a partially allocated run.
+let allocPageRun(owner: UWord, purpose: UWord, count: UWord): UWord {
+    let status: UWord = memoryLock()
+    if kernelRamEnd == 0 || owner == 0 || !pagePurposeValid(purpose) ||
+        count == 0 || count > (kernelRamEnd - kernelReservedEnd) / PAGE_SIZE {
+        memoryUnlock(status)
+        return PAGE_NONE
+    }
+    let mut run: UWord = 0
+    for page: UWord in (kernelReservedEnd / PAGE_SIZE)..(kernelRamEnd / PAGE_SIZE) {
+        if pageBitmap[page / WORD_BITS] & (1 as UWord << (page % WORD_BITS)) != 0 run = 0
+        else run += 1
+        if run != count continue
+        let first: UWord = page + 1 - count
+        for allocated: UWord in first..(page + 1) {
+            pageBitmap[allocated / WORD_BITS] |= 1 as UWord << (allocated % WORD_BITS)
+            pageOwners[allocated] = owner
+            pagePurposes[allocated] = purpose
+        }
+        let data: *mut UWord = (first * PAGE_SIZE) as *mut UWord
+        for i: UWord in 0..(count * PAGE_SIZE / WORD_BYTES) data[i] = 0
+        memoryUnlock(status)
+        return first * PAGE_SIZE
+    }
+    memoryUnlock(status)
+    return PAGE_NONE
+}
+
 // Caller must first remove user mappings and deactivate any directory/stack
 // using the frame. Reserved, foreign, misaligned, referenced and free pages
 // are rejected. The supervisor physical window remains available for reuse.
@@ -281,4 +310,4 @@ export { kernelReservedEnd, kernelRamEnd, PAGE_NONE, PAGE_KERNEL,
     memoryInit, physicalPageAvailable, physicalPageOwned,
     MAX_PAGES, memoryLock, memoryUnlock, retainPage, releasePage, physicalPageReferences,
     pageAccessReferences,
-    allocPage, freePage, allocTaskPages, freeTaskPages }
+    allocPage, allocPageRun, freePage, allocTaskPages, freeTaskPages }

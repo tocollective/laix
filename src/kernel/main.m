@@ -1,11 +1,11 @@
 // LA/IX start.asm clears BSS, installs trapEntry and provides a kernel stack.
-// kernelInit enables the stack guard through MMU; interrupts stay disabled.
-import { kernelInit } from "boot.m"
+// kernelInit enables the stack guard through MMU; IRQs stay disabled until taskStart.
+import { kernelInit, kernelBootInfo } from "boot.m"
 import { panic, setPanicStage } from "panic.m"
 import { consoleInit, print } from "../console/console.m"
-import { taskPrepare, taskStart } from "../task/task.m"
+import { taskPrepare, taskCreate, taskStart } from "../task/task.m"
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     kernelInit()
     if !consoleInit() {
         panic("console initialization failed", null)
@@ -15,12 +15,12 @@ let main(argc: UWord, argv: *UByte[]): Word {
     print("LA/IX\n")
 
     setPanicStage("task-prepare")
-    if !taskPrepare() {
-        panic("could not prepare user task", null)
+    if !taskPrepare() || taskCreate() != 2 {
+        panic("could not prepare user tasks", null)
         return 1
     }
     setPanicStage("user-task")
-    taskStart()
+    taskStart(kernelBootInfo.clock)
     panic("user task entry returned", null)
     return 1
 }

@@ -1,9 +1,10 @@
-import { STACK_CANARY, KERNEL_STACK_BOTTOM, KERNEL_STACK_TOP, CAUSE_BREAKPOINT, CAUSE_SYSCALL,
+import { STACK_CANARY, KERNEL_STACK_BOTTOM, KERNEL_STACK_TOP, CAUSE_BREAKPOINT, CAUSE_SYSCALL, CAUSE_INTERRUPT,
     INSTRUCTION_BYTES, REG_RESULT, REG_SYSCALL, ERRNO_ENOSYS, ERRNO_EINVAL,
-    SYS_DEBUG_PUT_CHAR, SYS_EXIT, STATUS_PUM } from "../arch/wrm081632/defs.m"
+    SYS_DEBUG_PUT_CHAR, SYS_EXIT, SYS_YIELD, STATUS_PUM } from "../arch/wrm081632/defs.m"
 import { TrapFrame } from "trap_frame.m"
 import { panic } from "../kernel/panic.m"
-import { taskSaveContext, taskOwnsTrap, taskFinish } from "../task/task.m"
+import { taskSaveContext, taskOwnsTrap, taskFinish, taskYield, taskTick } from "../task/task.m"
+import { timerInterrupt } from "../drivers/timer.m"
 import { debugPutChar } from "../drivers/debug_uart.m"
 
 extern let trapEntry(): Void
@@ -28,7 +29,7 @@ let takeExpectedTrap(frame: *TrapFrame): Bool {
     return true
 }
 
-let userSyscall(frame: *mut TrapFrame): Void {
+let userSyscall(frame: *mut TrapFrame): *TrapFrame {
     // Read the saved ABI registers, never live dispatcher argument registers.
     // All outcomes consume this instruction exactly once, including exit.
     frame.epc += INSTRUCTION_BYTES
@@ -41,57 +42,67 @@ let userSyscall(frame: *mut TrapFrame): Void {
                 frame.regs[REG_RESULT] = 0
             }
             taskSaveContext(frame)
-            return
+            return frame
         }
         case SYS_EXIT:
-            taskFinish(frame, frame.regs[1] as Word, false)
-            return
+            return taskFinish(frame, frame.regs[1] as Word, false)
+        case SYS_YIELD:
+            frame.regs[REG_RESULT] = 0
+            return taskYield(frame)
         default:
             frame.regs[REG_RESULT] = (-ERRNO_ENOSYS) as UWord
             taskSaveContext(frame)
-            return
+            return frame
     }
+    return frame
 }
 
-let trapDispatch(frame: *mut TrapFrame): Void {
+let trapDispatch(frame: *mut TrapFrame): *TrapFrame {
     // The entry selected and checked the current task's trusted kernel stack.
     // No nesting: low entry state remains stable until IRET.
     let bottomSlot: *UWord = KERNEL_STACK_BOTTOM as *UWord
     let bottom: *UWord = *bottomSlot as *UWord
     if *bottom != STACK_CANARY {
         panic("kernel stack canary damaged", frame)
-        return
+        return frame
     }
     if frame.status & STATUS_PUM != 0 {
         if !taskOwnsTrap(frame) {
             panic("user trap without running task", frame)
-            return
+            return frame
         }
         taskSaveContext(frame)
-        if frame.cause == CAUSE_SYSCALL userSyscall(frame)
-        else taskFinish(frame, frame.cause as Word, true)
-        return
+    }
+    // IRQs have a separate device acknowledgement and scheduling path.
+    if frame.cause == CAUSE_INTERRUPT {
+        if timerInterrupt() return taskTick(frame)
+        return frame
+    }
+    if frame.status & STATUS_PUM != 0 {
+        if frame.cause == CAUSE_SYSCALL return userSyscall(frame)
+        return taskFinish(frame, frame.cause as Word, true)
     }
     switch frame.cause {
         case CAUSE_BREAKPOINT: {
             if !takeExpectedTrap(frame) {
                 panic("unexpected breakpoint", frame)
-                return
+                return frame
             }
             frame.epc += INSTRUCTION_BYTES
-            return
+            return frame
         }
         case CAUSE_SYSCALL: {
             if !takeExpectedTrap(frame) {
                 panic("unexpected syscall", frame)
-                return
+                return frame
             }
             frame.regs[REG_RESULT] = (-ERRNO_ENOSYS) as UWord
             frame.epc += INSTRUCTION_BYTES
-            return
+            return frame
         }
         default: panic("unexpected exception", frame)
     }
+    return frame
 }
 
 // trapEntry's .bad_stack path, on its static emergency stack after the early

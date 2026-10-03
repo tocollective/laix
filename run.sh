@@ -19,8 +19,8 @@ if [ ! -f "$laix_dir/build/laix.img" ]; then
     exit 1
 fi
 
-# Boot from the floppy by default; bitmap sectors are read on demand.
-case "${LAIX_BOOT:-floppy}" in
+# Boot from hard disk 0 by default; bitmap sectors are read on demand.
+case "${LAIX_BOOT:-hdd}" in
     hdd) boot_option=--hdd ;;
     floppy) boot_option=--floppy ;;
     *) printf 'LAIX_BOOT must be hdd or floppy.\n' >&2; exit 1 ;;

@@ -5,7 +5,7 @@ import { kernelInit } from "../../../src/kernel/boot.m"
 import { panic, setPanicStage } from "../../../src/kernel/panic.m"
 extern let triggerStackGuardFault(): Void
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     kernelInit()
     setPanicStage("stack-guard-test")
     triggerStackGuardFault()

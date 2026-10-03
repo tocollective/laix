@@ -1,5 +1,11 @@
 import { VIDEO_BASE, VRAM_BASE, VIDEO_BUSY, VIDEO_ENABLE, VIDEO_FILL,
-    VIDEO_COPY, VIDEO_EXPAND, WORD_BYTES } from "../arch/wrm081632/defs.m"
+    VIDEO_COPY, VIDEO_EXPAND, WORD_BYTES, WORD_MASK } from "../arch/wrm081632/defs.m"
+
+import { waitUntil } from "timer.m"
+
+let VIDEO_WAIT_SECONDS: UWord = 1
+let VIDEO_WAIT_TIMEOUT: UWord = WORD_MASK // driver error, distinct from card ERROR
+let mut videoFailed: Bool
 
 let VIDEO_RESERVED_WORDS: UWord = 4
 
@@ -36,17 +42,24 @@ type VideoRegs {
 
 let video: *volatile mut VideoRegs = VIDEO_BASE as *volatile mut VideoRegs
 
-let videoWaitIdle(): Void {
-    while video.status & VIDEO_BUSY != 0 {}
+let videoWaitIdle(): Bool {
+    if videoFailed return false
+    if !waitUntil(&video.status as *volatile UWord, VIDEO_BUSY, 0, false,
+        VIDEO_WAIT_SECONDS, "video BUSY") {
+        videoFailed = true
+        return false
+    }
+    return true
 }
 
 // Leave scanout disabled until the caller has checked the actual mode and
 // prepared the framebuffer. This also drains DMA left by the firmware.
-let videoSetMode(mode: UWord): Void {
-    videoWaitIdle()
+let videoSetMode(mode: UWord): Bool {
+    if !videoWaitIdle() return false
     video.control = 0
     video.mode = mode
     video.start = 0
+    return true
 }
 
 let videoMode(): UWord { return video.mode }
@@ -57,10 +70,12 @@ let videoPitch(): UWord { return video.pitch }
 let videoVramSize(): UWord { return video.vramSize }
 
 let videoEnable(): Void {
+    if videoFailed return
     video.control = VIDEO_ENABLE
 }
 
 let videoSetPalette(index: UWord, color: UWord): Void {
+    if videoFailed return
     video.paletteIndex = index
     video.paletteData = color
 }
@@ -70,7 +85,7 @@ let videoSetPalette(index: UWord, color: UWord): Void {
 // EXPAND from VRAM complete within the command store: return ERROR directly.
 // The card validates rectangles; a nonzero ERROR means nothing was drawn.
 let videoFill(base: UWord, pitch: UWord, xy: UWord, size: UWord, color: UWord): UWord {
-    videoWaitIdle()
+    if !videoWaitIdle() return VIDEO_WAIT_TIMEOUT
     video.dstBase = base
     video.dstPitch = pitch
     video.dstXY = xy
@@ -83,7 +98,7 @@ let videoFill(base: UWord, pitch: UWord, xy: UWord, size: UWord, color: UWord): 
 // COPY supports overlapping source and destination rectangles.
 let videoCopy(dstBase: UWord, dstPitch: UWord, dstXY: UWord,
     srcBase: UWord, srcPitch: UWord, srcXY: UWord, size: UWord): UWord {
-    videoWaitIdle()
+    if !videoWaitIdle() return VIDEO_WAIT_TIMEOUT
     video.dstBase = dstBase
     video.dstPitch = dstPitch
     video.dstXY = dstXY
@@ -99,7 +114,7 @@ let videoCopy(dstBase: UWord, dstPitch: UWord, dstXY: UWord,
 let videoExpand(dstBase: UWord, dstPitch: UWord, dstXY: UWord,
     srcBase: UWord, srcPitch: UWord, srcXY: UWord, size: UWord,
     fg: UWord, bg: UWord): UWord {
-    videoWaitIdle()
+    if !videoWaitIdle() return VIDEO_WAIT_TIMEOUT
     video.dstBase = dstBase
     video.dstPitch = dstPitch
     video.dstXY = dstXY
@@ -121,19 +136,25 @@ let videoWriteWords(offset: UWord, source: *UWord, count: UWord): Bool {
     if source == null || (source as UWord) % WORD_BYTES != 0 || offset % WORD_BYTES != 0 return false
     let capacity: UWord = videoVramSize()
     if offset > capacity || count > (capacity - offset) / WORD_BYTES return false
-    videoWaitIdle()
+    if !videoWaitIdle() return false
     let target: *volatile mut UWord = (VRAM_BASE + offset) as *volatile mut UWord
     for i: UWord in 0..count target[i] = source[i]
     fence()
     return true
 }
 
-// Scanout happens at the next frame. Wait before the caller can HLT.
-let videoWaitFrame(): Void {
+// Scanout happens at the next frame; report a stopped frame clock.
+let videoWaitFrame(): Bool {
+    if videoFailed return false
     let frame: UWord = video.frame
-    while video.frame == frame {}
+    if !waitUntil(&video.frame as *volatile UWord, WORD_MASK, frame, true,
+        VIDEO_WAIT_SECONDS, "video FRAME") {
+        videoFailed = true
+        return false
+    }
+    return true
 }
 
-export { videoSetMode, videoMode, videoWidth, videoHeight, videoBpp, videoPitch,
+export { VIDEO_WAIT_TIMEOUT, videoSetMode, videoMode, videoWidth, videoHeight, videoBpp, videoPitch,
     videoVramSize, videoEnable, videoSetPalette, videoFill, videoCopy, videoExpand,
     videoWriteWords, videoWaitFrame }

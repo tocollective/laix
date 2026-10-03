@@ -9,7 +9,7 @@ import { mapPage, unmapPage, setPagePermissions, mmuSwitchAddressSpace,
     mmuActivateKernel, mmuDestroyAddressSpace } from "../../../src/mm/mmu.m"
 import { PROBE_VA, PROBE_OLD_VA, probeRequire, probeSpace, probePage } from "mmu_probe.m"
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     kernelInit()
     setPanicStage("mmu-remap-test")
     let owner: UWord = 7

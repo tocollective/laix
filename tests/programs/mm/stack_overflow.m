@@ -12,7 +12,7 @@ let recurse(depth: UWord): UWord {
     return recurse(depth + 1) + depth
 }
 
-let main(argc: UWord, argv: *UByte[]): Word {
+let main(): Word {
     kernelInit()
     setPanicStage("stack-overflow-test")
     recurse(0)
