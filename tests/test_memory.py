@@ -87,7 +87,16 @@ class BootstrapM:
         if isinstance(node, s.Name):
             return self.addresses[node.name]
         if isinstance(node, s.Index):
-            return self.expr(node.obj, local) + 4 * self.expr(node.index, local)
+            return self.expr(node.obj, local) + size_of(node.type) * self.expr(node.index, local)
+        if isinstance(node, s.Member):
+            typ = node.obj.type
+            if typ.kind == "ptr":
+                base, typ = self.expr(node.obj, local), typ.target
+            else:
+                base = self.address(node.obj, local)
+            return base + typ.field(node.name).offset
+        if isinstance(node, s.Unary) and node.op == "*":
+            return self.expr(node.operand, local)
         raise AssertionError(type(node).__name__)
 
     def expr(self, node, local):
@@ -97,7 +106,9 @@ class BootstrapM:
             return 0
         if isinstance(node, s.Name):
             return local[node.name] if node.name in local else self.globals[node.name]
-        if isinstance(node, s.Index):
+        if isinstance(node, (s.Index, s.Member)):
+            if node.type.kind in ("struct", "array"):
+                return self.address(node, local)
             return self.memory[self.address(node, local)]
         if isinstance(node, s.Cast):
             return self.expr(node.expr, local)

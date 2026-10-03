@@ -69,6 +69,13 @@ class SourceM(BootstrapM):
     def address(self, node, local):
         if isinstance(node, s.Name) and node.name in local and node.type.kind in ("struct", "array"):
             return local[node.name]
+        if isinstance(node, s.Name) and node.name in local:
+            addresses = local.setdefault("__scalar_addresses", {})
+            if node.name not in addresses:
+                addresses[node.name] = self.local_storage
+                self.local_storage += 8
+                self.memory[addresses[node.name]] = local[node.name]
+            return addresses[node.name]
         if isinstance(node, s.Member):
             struct = node.obj.type
             if struct.kind == "ptr":
@@ -86,6 +93,8 @@ class SourceM(BootstrapM):
         return super().address(node, local)
 
     def expr(self, node, local):
+        if isinstance(node, s.Name) and node.name in local.get("__scalar_addresses", {}):
+            return self.memory[local["__scalar_addresses"][node.name]]
         if isinstance(node, s.Name) and node.type.kind == "struct":
             return self.address(node, local)
         if isinstance(node, s.StringLit):
@@ -133,12 +142,17 @@ class SourceM(BootstrapM):
                 self.memory[address + 4 * i] = word
         elif isinstance(target, s.Name):
             scope = local if target.name in local else self.globals
-            scope[target.name] = value
+            if target.name in local.get("__scalar_addresses", {}):
+                self.memory[local["__scalar_addresses"][target.name]] = value
+            else:
+                scope[target.name] = value
         else:
             self.memory[self.address(target, local)] = value
 
     def statement(self, node, local):
-        if isinstance(node, s.VarDecl) and node.var.type.kind == "struct":
+        if isinstance(node, s.VarDecl):
+            local.get("__scalar_addresses", {}).pop(node.name, None)
+        if isinstance(node, s.VarDecl) and node.var.type.kind in ("struct", "array"):
             # Each invocation gets its own aggregate locals; never alias globals.
             address = self.local_storage
             self.local_storage += (size_of(node.var.type) + 7) & ~7

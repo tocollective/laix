@@ -116,7 +116,7 @@ class KernelContractTests(unittest.TestCase):
         handler = module.scope["userSyscall"].decl
         dispatch = next(st for st in handler.body.stmts if isinstance(st, Switch))
         self.assertEqual({case.value.const for case in dispatch.cases if case.value is not None},
-                         {0, 1, 2, 16, 17, 18, 19, 20, 21, 22, 23})
+                         {0, 1, 2, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35})
         for case in dispatch.cases:
             last = case.body[-1]
             while isinstance(last, Block):
@@ -142,7 +142,7 @@ class KernelContractTests(unittest.TestCase):
                 check_m(path)
 
     def test_assembly_opcodes_and_jump_targets(self):
-        paths = (LAIX / "src/arch/wrm081632/start.asm", LAIX / "src/trap/trap.asm", LAIX / "src/task/task.asm", LAIX / "src/console/font/data.asm",
+        paths = (LAIX / "src/arch/wrm081632/start.asm", LAIX / "src/kernel/bootstrap.asm", LAIX / "src/trap/trap.asm", LAIX / "src/task/task.asm", LAIX / "src/console/font/data.asm",
                  LAIX / "tests/programs/trap/trap_fault.asm", LAIX / "tests/programs/mm/stack_guard.asm",
                  LAIX / "tests/programs/mm/null_call.asm", LAIX / "tests/programs/mm/text_write.asm",
                  LAIX / "tests/programs/mm/data_exec.asm")

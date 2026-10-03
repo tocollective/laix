@@ -33,7 +33,7 @@ def require(condition, message):
 
 
 @contextmanager
-def ready_monitor(data, emulator, rom, timeout, full_image=False):
+def ready_monitor(data, emulator, rom, timeout, full_image=False, extra_args=()):
     """Open a temporary, paused machine using existing executable bytes only."""
     with tempfile.TemporaryDirectory(prefix="laix-ready-monitor-") as directory:
         disk = Path(directory) / "boot.img"
@@ -46,7 +46,7 @@ def ready_monitor(data, emulator, rom, timeout, full_image=False):
             port = reservation.getsockname()[1]
         with tempfile.TemporaryFile(mode="w+") as stdout, tempfile.TemporaryFile(mode="w+") as stderr:
             process = subprocess.Popen([str(emulator), "--headless", "--no-net", "--rom", str(rom),
-                                        "--hdd", str(disk), f"--monitor={port}", "--pause"],
+                                        "--hdd", str(disk), f"--monitor={port}", "--pause", *extra_args],
                                        cwd=directory, stdout=stdout, stderr=stderr)
             connection = None
             try:

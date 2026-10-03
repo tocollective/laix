@@ -14,7 +14,12 @@ if [ ! -f "$rom" ]; then
     printf 'ROM not found: %s (set WRM_ROM to an existing ROM image)\n' "$rom" >&2
     exit 1
 fi
-if [ ! -f "$laix_dir/build/laix.img" ]; then
+case "${LAIX_CONSOLE:-uart}" in
+    uart) image_name=laix ;;
+    screen|services) image_name=$LAIX_CONSOLE ;;
+    *) printf '%s\n' 'LAIX_CONSOLE must be uart, screen or services' >&2; exit 1 ;;
+esac
+if [ ! -f "$laix_dir/build/$image_name.img" ]; then
     printf 'Run laix/build.sh first.\n' >&2
     exit 1
 fi
@@ -27,4 +32,4 @@ case "${LAIX_BOOT:-hdd}" in
 esac
 
 exec "$emulator" --rom "$rom" \
-    "$boot_option" "$laix_dir/build/laix.img" "$@"
+    "$boot_option" "$laix_dir/build/$image_name.img" "$@"

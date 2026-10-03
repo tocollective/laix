@@ -1,3 +1,6 @@
+// Supervisor-only regression fixture. The user service uses
+// user/screen/cache.m and the bitmap endpoint, without direct disk access.
+// sectorData's address is physical only in this kernel identity window.
 import { BOOT_INFO, BOOT_INFO_MAGIC, BOOT_LOAD, SECTOR_SIZE, SECTOR_MASK,
     DISK0_BASE, DISK1_BASE, FLOPPY_BASE, DISK_PRESENT, DISK_CHANGED, DISK_BUSY,
     DISK_DONE, DISK_READ, SCREEN_WIDTH, SCREEN_HEIGHT,

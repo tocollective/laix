@@ -10,6 +10,9 @@ import { PAGE_SIZE, PAGE_MASK, PAGE_TABLE_ENTRIES, SUPERPAGE_SIZE, BOOT_INFO,
     BOOT_INFO_END, BOOT_LOAD, KERNEL_STACK_BYTES, PTE_V, PTE_R, PTE_W, PTE_X, PTE_U, PTE_RWX_BITS,
     PTE_RW, PTE_RX, PTE_RO, CR_PTBR, PTBR_ENABLE, TLBI_ALL, VRAM_BASE, IO_BASE, WORD_BITS,
     ERRNO_EFAULT } from "../arch/wrm081632/defs.m"
+import { SCREEN_VRAM_VA, SCREEN_VIDEO_VA, SCREEN_FONT_VA, SCREEN_VRAM_BYTES,
+    VIDEO_BASE } from "../arch/wrm081632/defs.m"
+import { fontData, fontDataEnd } from "../console/font/data.m"
 
 let USER_VA_START: UWord = 0x40000000
 let USER_VA_END: UWord = 0xC0000000 // exclusive; all other VA belongs to the kernel
@@ -30,6 +33,102 @@ let mut kernelPageDirectory: *mut UWord
 // The owner already lives in allocator records: only one initialization bit
 // per physical frame is needed here, not another full-size owner array.
 let mut spaceInitialized: UWord[MAX_PAGES / WORD_BITS]
+
+// Immutable bootstrap grants, separate from allocator-backed RAM aliases.
+// No syscall exposes this constructor. Only the three fixed screen resources
+// can be installed; a directory cannot impersonate a different owner.
+type ResourceGrant {
+    directory: UWord,
+    owner: UWord,
+    virtual: UWord,
+    physical: UWord,
+    bytes: UWord,
+    permissions: UWord,
+}
+let MAX_RESOURCE_GRANTS: UWord = 3
+let mut resourceGrants: ResourceGrant[MAX_RESOURCE_GRANTS]
+let mut resourcesSealed: Bool
+
+let mmuResourceLeaf(directory: *mut UWord, owner: UWord, virtual: UWord, leaf: UWord): Bool {
+    for i: UWord in 0..MAX_RESOURCE_GRANTS {
+        let grant: *ResourceGrant = &resourceGrants[i]
+        if grant.directory != (directory as UWord) || grant.owner != owner ||
+            virtual < grant.virtual || virtual - grant.virtual >= grant.bytes continue
+        return (leaf & ~PTE_AD) == (grant.physical + virtual - grant.virtual | grant.permissions)
+    }
+    return false
+}
+
+let mmuGrantResource(directory: *mut UWord, owner: UWord, virtual: UWord,
+    physical: UWord, bytes: UWord, permissions: UWord): Bool {
+    let status: UWord = memoryLock()
+    let fontStart: UWord = &fontData as UWord
+    let fontBytes: UWord = ((&fontDataEnd as UWord) - fontStart + PAGE_MASK) & ~PAGE_MASK
+    let valid: Bool = (virtual == SCREEN_VRAM_VA && physical == VRAM_BASE &&
+        bytes == SCREEN_VRAM_BYTES && permissions == (PTE_RW | PTE_U)) ||
+        (virtual == SCREEN_VIDEO_VA && physical == VIDEO_BASE && bytes == PAGE_SIZE &&
+        permissions == (PTE_RO | PTE_U)) ||
+        (virtual == SCREEN_FONT_VA && physical == fontStart && bytes == fontBytes &&
+        permissions == (PTE_RO | PTE_U) && fontStart >= (&__start_rodata as UWord) &&
+        fontStart < (&__stop_rodata as UWord) && fontBytes <= (&__stop_rodata as UWord) - fontStart)
+    if resourcesSealed || !valid || !mmuSpaceOwned(directory, owner) || bytes == 0 ||
+        virtual & PAGE_MASK != 0 || physical & PAGE_MASK != 0 || bytes & PAGE_MASK != 0 ||
+        !mmuUserByteRangeValid(virtual, bytes) || bytes > SUPERPAGE_SIZE ||
+        virtual / SUPERPAGE_SIZE != (virtual + bytes - 1) / SUPERPAGE_SIZE {
+        memoryUnlock(status)
+        return false
+    }
+    let mut slot: UWord = MAX_RESOURCE_GRANTS
+    for i: UWord in 0..MAX_RESOURCE_GRANTS {
+        // Resources are exclusive even under a different VA or directory.
+        if resourceGrants[i].directory != 0 && resourceGrants[i].physical == physical {
+            memoryUnlock(status)
+            return false
+        }
+        if resourceGrants[i].directory == 0 slot = i
+    }
+    if slot == MAX_RESOURCE_GRANTS || directory[virtual / SUPERPAGE_SIZE] != 0 {
+        memoryUnlock(status)
+        return false
+    }
+    let tableAddress: UWord = mmuAllocTable(owner)
+    if tableAddress == PAGE_NONE {
+        memoryUnlock(status)
+        return false
+    }
+    let table: *mut UWord = tableAddress as *mut UWord
+    for i: UWord in 0..(bytes / PAGE_SIZE) table[i] = physical + i * PAGE_SIZE | permissions
+    resourceGrants[slot].directory = directory as UWord
+    resourceGrants[slot].owner = owner
+    resourceGrants[slot].virtual = virtual
+    resourceGrants[slot].physical = physical
+    resourceGrants[slot].bytes = bytes
+    resourceGrants[slot].permissions = permissions
+    fence()
+    directory[virtual / SUPERPAGE_SIZE] = tableAddress | PTE_V
+    mmuInvalidate()
+    memoryUnlock(status)
+    return true
+}
+
+let mmuSealResources(): Void { resourcesSealed = true }
+
+let mmuScreenResourcesValid(directory: *mut UWord, owner: UWord, fontBytes: UWord): Bool {
+    if fontBytes != (&fontDataEnd as UWord) - (&fontData as UWord) return false
+    let mut count: UWord = 0
+    for i: UWord in 0..MAX_RESOURCE_GRANTS {
+        let grant: *ResourceGrant = &resourceGrants[i]
+        if grant.directory != (directory as UWord) || grant.owner != owner continue
+        let entry: UWord = directory[grant.virtual / SUPERPAGE_SIZE]
+        if !mmuPrivateTable(entry, owner) return false
+        let table: *UWord = (entry & ~PAGE_MASK) as *UWord
+        for page: UWord in 0..(grant.bytes / PAGE_SIZE) {
+            if !mmuResourceLeaf(directory, owner, grant.virtual + page * PAGE_SIZE, table[page]) return false
+        }
+        count += 1
+    }
+    return count == MAX_RESOURCE_GRANTS
+}
 
 let kernelLayoutValid(): Bool {
     let textStart: UWord = &__start_text as UWord
@@ -589,7 +688,8 @@ let mmuDestroyAddressSpace(directory: *mut UWord, owner: UWord): Bool {
         if slot >= USER_VA_START / SUPERPAGE_SIZE && slot < USER_VA_END / SUPERPAGE_SIZE {
             let table: *UWord = (entry & ~PAGE_MASK) as *UWord
             for i: UWord in 0..PAGE_TABLE_ENTRIES {
-                if table[i] != 0 && mmuUserLeaf(directory, owner, slot * SUPERPAGE_SIZE + i * PAGE_SIZE) == 0 {
+                if table[i] != 0 && mmuUserLeaf(directory, owner, slot * SUPERPAGE_SIZE + i * PAGE_SIZE) == 0 &&
+                    !mmuResourceLeaf(directory, owner, slot * SUPERPAGE_SIZE + i * PAGE_SIZE, table[i]) {
                     memoryUnlock(status)
                     return false
                 }
@@ -616,6 +716,10 @@ let mmuDestroyAddressSpace(directory: *mut UWord, owner: UWord): Bool {
             for i: UWord in 0..PAGE_TABLE_ENTRIES {
                 let physical: UWord = table[i] & ~PAGE_MASK
                 if table[i] == 0 continue
+                if mmuResourceLeaf(directory, owner, slot * SUPERPAGE_SIZE + i * PAGE_SIZE, table[i]) {
+                    table[i] = 0
+                    continue
+                }
                 let purpose: UWord = mmuUserPurpose(physical, owner)
                 if mmuChangeAccess(physical, 0, table[i]) windowChanged = true
                 table[i] = 0
@@ -627,6 +731,9 @@ let mmuDestroyAddressSpace(directory: *mut UWord, owner: UWord): Bool {
         mmuFreeTable(address, owner)
     }
     if windowChanged mmuInvalidate()
+    for i: UWord in 0..MAX_RESOURCE_GRANTS {
+        if resourceGrants[i].directory == root && resourceGrants[i].owner == owner resourceGrants[i].directory = 0
+    }
     let page: UWord = root / PAGE_SIZE
     spaceInitialized[page / WORD_BITS] &= ~(1 as UWord << (page % WORD_BITS))
     mmuRequire(releasePage(root, owner, PAGE_DIRECTORY))
@@ -636,6 +743,7 @@ let mmuDestroyAddressSpace(directory: *mut UWord, owner: UWord): Bool {
 }
 
 export { USER_VA_START, USER_VA_END, mmuUserRangeValid, mmuInit,
+    mmuGrantResource, mmuSealResources, mmuScreenResourcesValid,
     mmuUserByteRangeValid, mmuUserBufferValid, copyFromUser, copyToUser,
     mmuInitAddressSpace, mmuCreateAddressSpace, mapPage, unmapPage,
     setPagePermissions, mmuSplitSuperpage, mmuSwitchAddressSpace,

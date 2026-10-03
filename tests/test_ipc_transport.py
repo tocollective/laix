@@ -11,8 +11,8 @@ from mlang.typesys import size_of
 
 
 class TransportM(TaskM):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, root=None):
+        super().__init__(root=root)
         self.wakes = Counter()
         self.copies = []
 

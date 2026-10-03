@@ -1,22 +1,31 @@
 // Preemptive round-robin: one CPU, one thread per task, no nested traps.
 import { PAGE_SIZE, WORD_BYTES, GPR_COUNT, REG_SP, STATUS_IE, STATUS_PIE, STATUS_PUM,
-    STATUS_EXL, STATUS_UM, CR_STATUS, CR_PTBR, PTBR_ENABLE, PTE_U, PTE_RX, PTE_RW,
+    STATUS_EXL, STATUS_UM, CR_STATUS, CR_PTBR, PTBR_ENABLE, PTE_U, PTE_RX, PTE_RW, PTE_RO,
     STACK_CANARY, KERNEL_STACK_BYTES, KERNEL_SP, KERNEL_STACK_BOTTOM,
     KERNEL_STACK_TOP, PIC_ENABLE } from "../arch/wrm081632/defs.m"
 import { TrapFrame } from "../trap/trap_frame.m"
-import { PAGE_NONE, PAGE_USER, PAGE_USER_STACK, allocTaskPages, freePage,
+import { PAGE_NONE, PAGE_USER, PAGE_USER_STACK, allocPage, allocTaskPages, freePage,
     physicalPageOwned, memoryLock, memoryUnlock } from "../mm/memory.m"
 import { USER_VA_START, USER_VA_END, mmuCreateAddressSpace, mmuDestroyAddressSpace,
     mmuSwitchAddressSpace, mmuActivateKernel, mapPage,
     mmuAllocKernelStack, mmuFreeKernelStack } from "../mm/mmu.m"
+import { mmuSealResources, mmuScreenResourcesValid } from "../mm/mmu.m"
+import { irqReleaseTask, irqSeal, irqTokenValid } from "../drivers/irq.m"
+import { fontCancelOwner, fontReap, screenReleaseOwner, serviceDevicesQuiescent } from "../drivers/service_devices.m"
+import { inputReleaseOwner } from "../drivers/input_device.m"
+import { ServiceStart, serviceStartValid } from "service_start.m"
 import { panic } from "../kernel/panic.m"
 import { debugPrint } from "../drivers/debug_uart.m"
 import { timerReady, timerInit, timerCanSleep } from "../drivers/timer.m"
-import { HandleTable, handlesReleaseTask, endpointBootstrap, handleCopy,
-    handleClose, endpointSealBootstrap } from "../ipc/objects.m"
+import { Handle, HandleTable, handlesReleaseTask, endpointBootstrap, handleCopy,
+    handleClose, endpointSealBootstrap, handleEntry, handleLookup, ENDPOINT_SERVICE } from "../ipc/objects.m"
+import { TaskStart, taskStartBlockValid } from "start.m"
 import { ipcCancelTask } from "../ipc/ipc.m"
 import { Endpoint } from "../ipc/objects.m"
-import { RIGHT_SEND, IPC_MESSAGE_MAX } from "../arch/wrm081632/defs.m"
+import { RIGHT_SEND, IPC_MESSAGE_MAX, START_BLOCK_VA, START_BLOCK_BYTES,
+    START_ROLE_SERVER, START_ROLE_STORAGE, DEVICE_UART_TX,
+    SERVICE_START_BYTES, VIDEO_IRQ, KEYBOARD_IRQ, START_ROLE_INPUT, START_ROLE_DISK,
+    START_ROLE_FILE, START_ROLE_CLIENT, START_PROTOCOL_FILE, DEVICE_INPUT, DEVICE_DISK } from "../arch/wrm081632/defs.m"
 
 let SCHEDULER_QUANTUM_HZ: UWord = 100
 let MAX_TASKS: UWord = 8
@@ -26,6 +35,7 @@ let TASK_READY: UWord = 1
 let TASK_RUNNING: UWord = 2
 let TASK_DEAD: UWord = 3
 let TASK_BLOCKED: UWord = 4
+let TASK_CREATED: UWord = 5 // private construction, never in the ready queue
 let WAIT_NONE: UWord = 0
 let WAIT_EVENT: UWord = 1
 let WAIT_IPC_SEND: UWord = 2
@@ -33,6 +43,7 @@ let WAIT_IPC_RECEIVE: UWord = 3 // reserved; generic event callers must avoid IP
 let WAIT_IPC_CALL: UWord = 4
 let WAIT_IPC_ACCEPT: UWord = 5
 let WAIT_IPC_REPLY: UWord = 6
+let WAIT_IRQ: UWord = 7
 let USER_CODE: UWord = USER_VA_START
 let USER_DATA: UWord = USER_CODE + PAGE_SIZE
 let USER_STACK_TOP: UWord = USER_VA_END
@@ -51,6 +62,8 @@ type Task {
     userStackTop: UWord,
     kernelStackBottom: UWord,
     kernelStackTop: UWord,
+    bootPage: UWord,
+    deviceRights: UWord, // kernel-granted narrow operations; never user memory
     context: TrapFrame,
     state: UWord,
     queued: Bool,
@@ -85,6 +98,8 @@ let taskPurposes: UWord[TASK_PAGE_COUNT] = [PAGE_USER, PAGE_USER, PAGE_USER_STAC
 extern let taskKernelResume: UByte
 extern let userCodeStart: UByte
 extern let userCodeEnd: UByte
+extern let __start_text: UByte
+extern let __stop_text: UByte
 extern let trapRestoreFrame(frame: *TrapFrame): Void
 extern let taskKernelSp(): UWord
 
@@ -94,7 +109,7 @@ let taskIrqsDisabled(): Bool {
 }
 
 let taskTransitionAllowed(previous: UWord, next: UWord): Bool {
-    return (previous == TASK_EMPTY && next == TASK_READY) ||
+    return ((previous == TASK_EMPTY || previous == TASK_CREATED) && next == TASK_READY) ||
         (previous == TASK_READY && next == TASK_RUNNING) ||
         (previous == TASK_RUNNING && (next == TASK_READY || next == TASK_BLOCKED || next == TASK_DEAD)) ||
         (previous == TASK_BLOCKED && (next == TASK_READY || next == TASK_DEAD))
@@ -128,6 +143,13 @@ let taskRollback(task: *mut Task): Void {
         return
     }
     task.directory = null
+    if physicalPageOwned(task.bootPage, task.id, PAGE_USER) &&
+        !freePage(task.bootPage, task.id, PAGE_USER) {
+        panic("could not roll back start block", null)
+        return
+    }
+    task.bootPage = PAGE_NONE
+    task.deviceRights = 0
     for i: UWord in 0..TASK_PAGE_COUNT {
         if physicalPageOwned(task.pages[i], task.id, taskPurposes[i]) &&
             !freePage(task.pages[i], task.id, taskPurposes[i]) {
@@ -146,10 +168,15 @@ let taskRollback(task: *mut Task): Void {
 
 // A bounded lifetime table: Dead records remain for diagnostics, slots are
 // not recycled yet. Failed creations leave an Empty slot and can be retried.
-let taskCreate(): UWord {
-    if !taskIrqsDisabled() return 0
-    let codeBytes: UWord = (&userCodeEnd as UWord) - (&userCodeStart as UWord)
-    if codeBytes == 0 || codeBytes > PAGE_SIZE || codeBytes % WORD_BYTES != 0 return 0
+// Trusted init API, sealed by schedulerStarted. Only embedded, aligned text
+// images are accepted. Allocation stays on the kernel-owned per-task ledger.
+// Successful construction is NOT schedulable until resources are installed.
+let taskCreateImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord): UWord {
+    if !taskIrqsDisabled() || schedulerStarted || sourceStart < (&__start_text as UWord) ||
+        sourceEnd > (&__stop_text as UWord) || sourceEnd <= sourceStart ||
+        sourceStart % WORD_BYTES != 0 || sourceEnd % WORD_BYTES != 0 return 0
+    let codeBytes: UWord = sourceEnd - sourceStart
+    if codeBytes > PAGE_SIZE || entryOffset >= codeBytes || entryOffset % WORD_BYTES != 0 return 0
     let mut task: *mut Task = null
     for i: UWord in 0..MAX_TASKS {
         if tasks[i].state == TASK_EMPTY {
@@ -175,7 +202,7 @@ let taskCreate(): UWord {
     let stack: *mut UWord = task.kernelStackBottom as *mut UWord
     stack[0] = STACK_CANARY
     // Copy before granting X: the shared kernel alias then becomes read-only.
-    let source: *UWord = &userCodeStart as *UWord
+    let source: *UWord = sourceStart as *UWord
     let code: *mut UWord = task.pages[0] as *mut UWord
     for i: UWord in 0..(codeBytes / WORD_BYTES) code[i] = source[i]
     if !mapPage(task.directory, task.id, USER_CODE, task.pages[0], PTE_RX | PTE_U) ||
@@ -189,14 +216,10 @@ let taskCreate(): UWord {
     task.userStackBottom = USER_STACK_BOTTOM
     task.userStackTop = USER_STACK_TOP
     task.ptbr = (task.directory as UWord) | (task.asid << 4) | PTBR_ENABLE
-    // Private entry ABI: r1=data base, r2=data bytes, r3=task ID for the demo.
     // No TLS/crt0: tp, fp, ra and FCSR start at zero; user sp is aligned.
     for i: UWord in 0..GPR_COUNT task.context.regs[i] = 0
-    task.context.regs[1] = USER_DATA
-    task.context.regs[2] = PAGE_SIZE
-    task.context.regs[3] = task.id
     task.context.regs[REG_SP] = USER_STACK_TOP
-    task.context.epc = USER_CODE
+    task.context.epc = USER_CODE + entryOffset
     task.context.status = STATUS_EXL | STATUS_PUM // PIE=PSS=IE=UM=SS=0
     task.context.cause = 0
     task.context.badaddr = 0
@@ -204,8 +227,129 @@ let taskCreate(): UWord {
     task.context.ptbr = task.ptbr
     task.context.reserved[0] = 0
     task.context.reserved[1] = 0
-    taskEnqueue(task)
+    task.state = TASK_CREATED
     return task.id
+}
+
+// Retained for scheduler/CPU acceptance fixtures. Only trusted kernel init
+// can load this demo and grant its diagnostic UART operation.
+let taskCreate(): UWord {
+    let id: UWord = taskCreateImage(&userCodeStart as UWord, &userCodeEnd as UWord, 0)
+    if id == 0 return 0
+    let task: *mut Task = taskGet(id)
+    task.context.regs[1] = USER_DATA
+    task.context.regs[2] = PAGE_SIZE
+    task.context.regs[3] = id
+    task.deviceRights = DEVICE_UART_TX
+    taskEnqueue(task)
+    return id
+}
+
+// Exact rights are checked against the task's own table before copying the
+// start record into a private RO/NX page. User claims never grant authority.
+let taskInstallStart(id: UWord, block: *TaskStart): Bool {
+    if !taskIrqsDisabled() || schedulerStarted || block == null || !taskStartBlockValid(block) return false
+    let task: *mut Task = taskGet(id)
+    if task == null || task.state != TASK_CREATED || task.bootPage != PAGE_NONE || block.taskId != id return false
+    let entry: *mut Handle = handleEntry(&mut task.handles, block.endpoint)
+    let object: *mut Endpoint = handleLookup(&mut task.handles, block.endpoint, block.rights)
+    if entry == null || entry.rights != block.rights || object == null || object.mode != ENDPOINT_SERVICE ||
+        (block.role == START_ROLE_SERVER && object.manager != id) return false
+    task.bootPage = allocPage(id, PAGE_USER)
+    if task.bootPage == PAGE_NONE return false
+    let destination: *mut TaskStart = task.bootPage as *mut TaskStart
+    destination[0] = *block
+    if !mapPage(task.directory, id, START_BLOCK_VA, task.bootPage, PTE_RO | PTE_U) {
+        if !freePage(task.bootPage, id, PAGE_USER) panic("could not release start block", null)
+        task.bootPage = PAGE_NONE
+        return false
+    }
+    task.deviceRights = block.devices
+    task.context.regs[1] = START_BLOCK_VA
+    task.context.regs[2] = START_BLOCK_BYTES
+    return true
+}
+
+let taskInstallServiceStart(id: UWord, block: *ServiceStart, diskIrq: UWord): Bool {
+    if !taskIrqsDisabled() || schedulerStarted || !serviceStartValid(block) || block.taskId != id return false
+    let task: *mut Task = taskGet(id)
+    if task == null || task.state != TASK_CREATED || task.bootPage != PAGE_NONE return false
+    let entry: *mut Handle = handleEntry(&mut task.handles, block.endpoint)
+    let object: *mut Endpoint = handleLookup(&mut task.handles, block.endpoint, block.rights)
+    if entry == null || entry.rights != block.rights || object == null || object.mode != ENDPOINT_SERVICE ||
+        (block.role != 2 && object.manager != id) return false
+    if block.role == START_ROLE_SERVER {
+        let bitmap: *mut Handle = handleEntry(&mut task.handles, block.bitmapEndpoint)
+        let storage: *mut Endpoint = handleLookup(&mut task.handles, block.bitmapEndpoint, RIGHT_SEND)
+        if bitmap == null || bitmap.rights != RIGHT_SEND || storage == null || storage.mode != ENDPOINT_SERVICE ||
+            !irqTokenValid(id, block.irq, VIDEO_IRQ) ||
+            !mmuScreenResourcesValid(task.directory, id, block.fontBytes) return false
+    } else if ((block.role == START_ROLE_STORAGE || block.role == START_ROLE_DISK) &&
+        !irqTokenValid(id, block.irq, diskIrq)) return false
+    else if block.role == START_ROLE_INPUT && !irqTokenValid(id, block.irq, KEYBOARD_IRQ) return false
+    if block.role == START_ROLE_FILE || (block.role == START_ROLE_CLIENT && block.protocol == START_PROTOCOL_FILE) {
+        let upstream: *mut Handle = handleEntry(&mut task.handles, block.bitmapEndpoint)
+        let service: *mut Endpoint = handleLookup(&mut task.handles, block.bitmapEndpoint, RIGHT_SEND)
+        if upstream == null || upstream.rights != RIGHT_SEND || service == null || service.mode != ENDPOINT_SERVICE return false
+        let manager: *mut Task = taskGet(service.manager)
+        let mut expected: UWord = DEVICE_DISK
+        if block.role == START_ROLE_CLIENT expected = DEVICE_INPUT
+        if manager == null || manager.deviceRights != expected || manager.bootPage == PAGE_NONE return false
+        let upstreamStart: *ServiceStart = manager.bootPage as *ServiceStart
+        if block.role == START_ROLE_FILE && upstreamStart.role != START_ROLE_DISK return false
+        if block.role == START_ROLE_CLIENT {
+            if upstreamStart.role != START_ROLE_INPUT return false
+            let fileTask: *mut Task = taskGet(object.manager)
+            if fileTask == null || fileTask.bootPage == PAGE_NONE return false
+            let fileStart: *ServiceStart = fileTask.bootPage as *ServiceStart
+            if fileStart.role != START_ROLE_FILE || fileStart.protocol != START_PROTOCOL_FILE return false
+        }
+    }
+    task.bootPage = allocPage(id, PAGE_USER)
+    if task.bootPage == PAGE_NONE return false
+    let destination: *mut ServiceStart = task.bootPage as *mut ServiceStart
+    destination[0] = *block
+    if !mapPage(task.directory, id, START_BLOCK_VA, task.bootPage, PTE_RO | PTE_U) {
+        if !freePage(task.bootPage, id, PAGE_USER) panic("could not release service start", null)
+        task.bootPage = PAGE_NONE
+        return false
+    }
+    task.deviceRights = block.devices
+    task.context.regs[1] = START_BLOCK_VA
+    task.context.regs[2] = SERVICE_START_BYTES
+    return true
+}
+
+let taskPublish(id: UWord): Bool {
+    if !taskIrqsDisabled() || schedulerStarted return false
+    let task: *mut Task = taskGet(id)
+    if task == null || task.state != TASK_CREATED || task.bootPage == PAGE_NONE return false
+    taskEnqueue(task)
+    return true
+}
+
+// Failure before publication revokes endpoints, restores W^X aliases and
+// frees only this task's owned resources. Handle generations are preserved.
+let taskDiscardCreated(id: UWord): Bool {
+    if !taskIrqsDisabled() || schedulerStarted return false
+    let task: *mut Task = taskGet(id)
+    if task == null || task.state != TASK_CREATED || task.queued return false
+    handlesReleaseTask(&mut task.handles, id)
+    irqReleaseTask(id)
+    fontCancelOwner(id)
+    screenReleaseOwner(id)
+    inputReleaseOwner(id)
+    taskRollback(task)
+    task.state = TASK_EMPTY
+    return true
+}
+
+let taskInitAvailable(): Bool {
+    if !taskIrqsDisabled() || schedulerStarted || readyCount != 0 return false
+    for i: UWord in 0..MAX_TASKS {
+        if tasks[i].state != TASK_EMPTY return false
+    }
+    return true
 }
 
 let taskPrepare(): Bool {
@@ -310,6 +454,8 @@ let taskStart(clock: UWord): Void {
     idleTask.context.reserved[0] = 0
     idleTask.context.reserved[1] = 0
     endpointSealBootstrap()
+    mmuSealResources()
+    irqSeal()
     schedulerStarted = true
     if !timerInit(clock, SCHEDULER_QUANTUM_HZ) {
         panic("invalid scheduler timer configuration", null)
@@ -373,6 +519,13 @@ let taskTick(frame: *TrapFrame): *TrapFrame {
     return taskSelect()
 }
 
+// A device wake can schedule from idle immediately without rotating a user
+// task or pretending that this IRQ is a timer quantum.
+let taskIrqReturn(frame: *TrapFrame): *TrapFrame {
+    if currentTask == &mut idleTask && readyCount != 0 return taskSelect()
+    return frame
+}
+
 // Kernel-only blocking primitive; IPC publishes its pinned wait before this call.
 let taskBlock(frame: *TrapFrame, reason: UWord): *TrapFrame {
     if !taskIrqsDisabled() || !taskOwnsTrap(frame) || reason == WAIT_NONE {
@@ -415,6 +568,11 @@ let taskFinish(frame: *TrapFrame, code: Word, faulted: Bool): *TrapFrame {
     currentTask.exitCode = code
     currentTask.faulted = faulted
     handlesReleaseTask(&mut currentTask.handles, currentTask.id)
+    irqReleaseTask(currentTask.id)
+    fontCancelOwner(currentTask.id)
+    screenReleaseOwner(currentTask.id)
+    inputReleaseOwner(currentTask.id)
+    currentTask.deviceRights = 0
     currentTask.waitReason = WAIT_NONE
     currentTask.state = TASK_DEAD
     currentTask = null
@@ -433,6 +591,11 @@ let taskAbortBlocked(id: UWord, code: Word, faulted: Bool): Bool {
     task.waitReason = WAIT_NONE
     task.state = TASK_DEAD
     handlesReleaseTask(&mut task.handles, id)
+    irqReleaseTask(id)
+    fontCancelOwner(id)
+    screenReleaseOwner(id)
+    inputReleaseOwner(id)
+    task.deviceRights = 0
     return true
 }
 
@@ -452,6 +615,7 @@ let taskReap(): Void {
         panic("invalid task cleanup stack", null)
         return
     }
+    fontReap()
     for i: UWord in 0..MAX_TASKS {
         let task: *mut Task = &mut tasks[i]
         if task.state != TASK_DEAD || task.reaped continue
@@ -460,6 +624,7 @@ let taskReap(): Void {
             panic("task resources still in use", null)
             return
         }
+        if !serviceDevicesQuiescent(task.id) continue
         taskRollback(task)
         task.reaped = true
         debugPrint("LA/IX: task $u stopped, state=$u code=$i cause=$u epc=$h\n",
@@ -468,8 +633,10 @@ let taskReap(): Void {
 }
 
 export { Task, tasks, idleTask, currentTask, MAX_TASKS, TASK_EMPTY, TASK_READY, TASK_RUNNING,
-    TASK_BLOCKED, TASK_DEAD, WAIT_NONE, WAIT_EVENT, WAIT_IPC_SEND, WAIT_IPC_RECEIVE,
-    WAIT_IPC_CALL, WAIT_IPC_ACCEPT, WAIT_IPC_REPLY,
+    TASK_BLOCKED, TASK_DEAD, TASK_CREATED, WAIT_NONE, WAIT_EVENT, WAIT_IPC_SEND, WAIT_IPC_RECEIVE,
+    WAIT_IPC_CALL, WAIT_IPC_ACCEPT, WAIT_IPC_REPLY, WAIT_IRQ,
     USER_CODE, USER_DATA, USER_STACK_BOTTOM, USER_STACK_TOP, USER_STACK_GUARD,
     taskPrepare, taskCreate, taskGet, taskStart, taskBootstrapEndpoints, taskIdlePoll, taskTransitionAllowed,
+    taskCreateImage, taskInstallStart, taskPublish, taskDiscardCreated, taskInitAvailable,
+    taskInstallServiceStart, taskIrqReturn,
     taskSaveContext, taskOwnsTrap, taskYield, taskTick, taskBlock, taskWake, taskFinish, taskAbortBlocked, taskReap }

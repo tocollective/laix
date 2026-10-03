@@ -1,8 +1,9 @@
 # Minimal service request/reply contract
 
 Status: implemented; source checks and request/reply CPU acceptance pass
-without building. The M helper is source-checked; executing it in a user
-service image remains a stage-6 check. Existing syscalls 19/20 remain raw
+without building. The M accept helper is source-checked; the embedded console uses the raw
+accept ABI and executes its public M ABI output helper on CPU. See the
+[console contract](CONSOLE_SERVICE.md). Existing syscalls 19/20 remain raw
 synchronous message transport. This contract adds an atomic `call` and a
 kernel-issued, one-use reply right. See the [acceptance record](../tests/IPC_REQUEST_REPLY_ACCEPTANCE.md).
 Timeouts, reply delegation, general deadlock detection and service discovery
@@ -33,7 +34,8 @@ their rendezvous completes before a service response exists.
 
 Numbers 21..23 are implemented by `src/trap/trap.m` and `src/ipc/ipc.m`.
 `endpointBootstrapService` creates Service endpoints before root issuance is
-sealed; the existing two-task demo still uses its Raw endpoint policy.
+sealed. Normal boot uses the [embedded service bootstrap](BOOTSTRAP.md);
+the old Raw endpoint policy remains only as a kernel acceptance fixture.
 Every new call preserves r3..r31
 and FCSR and advances saved EPC exactly once before any blocking transition.
 

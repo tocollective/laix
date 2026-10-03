@@ -14,7 +14,7 @@
 | 3 | [Пользовательская задача и syscall](03_USER_TASK_SYSCALLS.md) | Выполнен для одной задачи: 11 CPU-сценариев Task/syscall/fault и 9 сценариев копирования user-буферов при EXL=1 |
 | 4 | [Планировщик, таймер и IRQ](04_SCHEDULER_IRQ.md) | Passed seven CPU cases and 20,000 timer switches; [acceptance report](../tests/SCHEDULER_ACCEPTANCE.md) |
 | 5 | [IPC и права на объекты](05_IPC_RIGHTS.md) | Rights/transport source checks pass; request/reply passes ten CPU cases and 128 exchanges; standalone Raw transport CPU acceptance remains pending |
-| 6 | [Сервисы и драйверы вне ядра](06_USER_SERVICES.md) | Предстоит; существующая консоль работает внутри ядра |
+| 6 | [Сервисы и драйверы вне ядра](06_USER_SERVICES.md) | UART service and optional screen/bitmap services implemented; 11 UART and 14 screen CPU cases pass. Restart and additional failure/stress acceptance remain pending |
 
 ## Общий чек-лист
 
@@ -33,6 +33,17 @@
 продолжает работать. Затем приложение получает услугу от сервера через IPC.
 
 ## Как двигаться
+
+The first stage-6 UART text service is implemented: [embedded init](BOOTSTRAP.md)
+loads the isolated server and application with exact resource grants. The
+[console protocol](CONSOLE_SERVICE.md) and [acceptance record](../tests/CONSOLE_SERVICE_ACCEPTANCE.md)
+cover bounded output, errors and ordering. Default UART boot does not initialize
+the screen console. The optional [screen boot](SCREEN_IRQ_DMA.md) moves
+rendering/font/cache into user components with exclusive NX mappings,
+notification-based IRQ waits and a narrow physical-DMA broker. Its eight
+implementation items are complete; [acceptance](../tests/SCREEN_IRQ_DMA_ACCEPTANCE.md)
+records source and CPU evidence. Continue with restart and additional service
+failure/CPU stress.
 
 Next: stage 5 IPC and rights. Stage 4 CPU acceptance is recorded in
 [the scheduler report](../tests/SCHEDULER_ACCEPTANCE.md). Вход одной задачи, syscall/exit и уход по user fault подтверждены

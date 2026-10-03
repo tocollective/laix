@@ -45,6 +45,14 @@ ID и ASID равны номеру слота + 1. Dead-слоты пока не
 `taskPrepare()` создаёт первую задачу, `taskCreate()` — следующие;
 `main.m` создаёт две задачи с отдельными каталогами, кодом, данными и стеками.
 
+The above describes the legacy scheduler fixtures. Normal boot now calls
+[trusted embedded init](BOOTSTRAP.md), which stages `Created` tasks through
+`taskCreateImage`, installs their startup/resource grants and publishes both
+through `taskPublish` before `taskStart`. The original demo APIs remain
+kernel-only and reject creation once scheduling has started. The scheduler
+CPU probe's natural case follows the new server/client boot when bootstrap
+symbols are present; its yield/timer/lifecycle fixtures keep the original blob.
+
 Допустимы `Empty → Ready`, `Ready → Running`,
 `Running → Ready/Blocked/Dead`, `Blocked → Ready`.
 `taskEnqueue()` — единственная публикация Ready; флаг `queued` запрещает

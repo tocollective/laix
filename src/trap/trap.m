@@ -2,11 +2,21 @@ import { STACK_CANARY, KERNEL_STACK_BOTTOM, KERNEL_STACK_TOP, CAUSE_BREAKPOINT, 
     INSTRUCTION_BYTES, REG_RESULT, REG_SYSCALL, ERRNO_ENOSYS, ERRNO_EINVAL,
     SYS_DEBUG_PUT_CHAR, SYS_EXIT, SYS_YIELD, SYS_HANDLE_CLOSE, SYS_HANDLE_COPY,
     SYS_ENDPOINT_DESTROY, SYS_IPC_SEND, SYS_IPC_RECEIVE, SYS_IPC_CALL, SYS_IPC_ACCEPT,
-    SYS_IPC_REPLY, STATUS_PUM } from "../arch/wrm081632/defs.m"
+    SYS_IPC_REPLY, STATUS_PUM, ERRNO_EPERM, DEVICE_UART_TX } from "../arch/wrm081632/defs.m"
 import { TrapFrame } from "trap_frame.m"
 import { panic } from "../kernel/panic.m"
-import { taskSaveContext, taskOwnsTrap, taskFinish, taskYield, taskTick } from "../task/task.m"
+import { currentTask, taskSaveContext, taskOwnsTrap, taskFinish, taskYield, taskTick } from "../task/task.m"
 import { timerInterrupt } from "../drivers/timer.m"
+import { irqWait, irqComplete } from "../drivers/irq.m"
+import { screenControl, fontValidate, fontBegin, fontFinish, fontCancelOwner } from "../drivers/service_devices.m"
+import { inputRead } from "../drivers/input_device.m"
+import { diskInfo, diskBegin } from "../drivers/service_devices.m"
+import { SYS_INPUT_READ, SYS_DISK_INFO, SYS_DISK_BEGIN, SYS_DISK_FINISH,
+    SYS_DISK_CANCEL, DEVICE_INPUT, DEVICE_DISK } from "../arch/wrm081632/defs.m"
+import { taskIrqReturn } from "../task/task.m"
+import { SYS_IRQ_WAIT, SYS_IRQ_COMPLETE, SYS_SCREEN_CONTROL, SYS_FONT_VALIDATE,
+    SYS_FONT_BEGIN, SYS_FONT_FINISH, SYS_FONT_CANCEL, DEVICE_SCREEN,
+    DEVICE_FONT } from "../arch/wrm081632/defs.m"
 import { debugPutChar } from "../drivers/debug_uart.m"
 import { ipcClose, ipcCopy, ipcDestroy, ipcSend, ipcReceive, ipcCall, ipcAccept, ipcReply } from "../ipc/ipc.m"
 
@@ -39,7 +49,9 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
     switch frame.regs[REG_SYSCALL] {
         case SYS_DEBUG_PUT_CHAR: {
             let code: UWord = frame.regs[1]
-            if code > 255 frame.regs[REG_RESULT] = (-ERRNO_EINVAL) as UWord
+            if currentTask == null || currentTask.deviceRights & DEVICE_UART_TX == 0 {
+                frame.regs[REG_RESULT] = (-ERRNO_EPERM) as UWord
+            } else if code > 255 frame.regs[REG_RESULT] = (-ERRNO_EINVAL) as UWord
             else {
                 debugPutChar(code)
                 frame.regs[REG_RESULT] = 0
@@ -74,11 +86,53 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
             frame.regs[REG_RESULT] = ipcDestroy(frame.regs[1]) as UWord
             taskSaveContext(frame)
             return frame
+        case SYS_IRQ_WAIT:
+            return irqWait(frame, frame.regs[1], frame.regs[2])
+        case SYS_IRQ_COMPLETE:
+            return deviceResult(frame, irqComplete(currentTask.id, frame.regs[1]))
+        case SYS_SCREEN_CONTROL:
+            if currentTask.deviceRights != DEVICE_SCREEN return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, screenControl(currentTask.id, frame.regs[1]))
+        case SYS_FONT_VALIDATE:
+            if currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, fontValidate(currentTask.id))
+        case SYS_FONT_BEGIN:
+            if currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, fontBegin(currentTask.id, frame.regs[1], frame.regs[2]))
+        case SYS_FONT_FINISH:
+            if currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, fontFinish(currentTask.id, frame.regs[1]))
+        case SYS_FONT_CANCEL:
+            if currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
+            fontCancelOwner(currentTask.id)
+            return deviceResult(frame, 0)
+        case SYS_INPUT_READ:
+            if currentTask.deviceRights != DEVICE_INPUT return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, inputRead(currentTask.id, frame.regs[1]))
+        case SYS_DISK_INFO:
+            if currentTask.deviceRights != DEVICE_DISK return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, diskInfo(currentTask.id))
+        case SYS_DISK_BEGIN:
+            if currentTask.deviceRights != DEVICE_DISK return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, diskBegin(currentTask.id, frame.regs[1], frame.regs[2]))
+        case SYS_DISK_FINISH:
+            if currentTask.deviceRights != DEVICE_DISK return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, fontFinish(currentTask.id, frame.regs[1]))
+        case SYS_DISK_CANCEL:
+            if currentTask.deviceRights != DEVICE_DISK return deviceResult(frame, -ERRNO_EPERM)
+            fontCancelOwner(currentTask.id)
+            return deviceResult(frame, 0)
         default:
             frame.regs[REG_RESULT] = (-ERRNO_ENOSYS) as UWord
             taskSaveContext(frame)
             return frame
     }
+    return frame
+}
+
+let deviceResult(frame: *mut TrapFrame, result: Word): *TrapFrame {
+    frame.regs[REG_RESULT] = result as UWord
+    taskSaveContext(frame)
     return frame
 }
 
@@ -101,7 +155,7 @@ let trapDispatch(frame: *mut TrapFrame): *TrapFrame {
     // IRQs have a separate device acknowledgement and scheduling path.
     if frame.cause == CAUSE_INTERRUPT {
         if timerInterrupt() return taskTick(frame)
-        return frame
+        return taskIrqReturn(frame)
     }
     if frame.status & STATUS_PUM != 0 {
         if frame.cause == CAUSE_SYSCALL return userSyscall(frame)

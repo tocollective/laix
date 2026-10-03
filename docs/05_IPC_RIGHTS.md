@@ -91,12 +91,15 @@ Endpoint generations advance on each pool allocation; a released endpoint at
 If all usable slots are busy or retired, allocation returns the same bounded
 capacity error: `-EMFILE` for a handle table or `-ENFILE` for the endpoint pool.
 
-Trusted `taskBootstrapEndpoints` grants task 1 send/receive/manage and task 2
+The legacy kernel test fixture `taskBootstrapEndpoints` grants task 1 send/receive/manage and task 2
 send on a shared endpoint before scheduling starts. Each initial token is placed
 in r4 of that task's private entry frame. Tasks created without this policy have
 empty tables and r4=0. The existing user demo does not consume r4 yet.
 `taskStart` permanently seals root issuance before the first user IRET. There is
 no user endpoint-create syscall and no later API for minting root rights.
+Normal boot instead uses [embedded init](BOOTSTRAP.md), which grants only
+receive + UART TX to the server and send to the client through checked startup
+records, and discards the temporary root handle before the first user entry.
 
 | Syscall | Arguments in saved r1..r3 | Result in r1 |
 | --- | --- | --- |

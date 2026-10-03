@@ -21,8 +21,8 @@ class TaskEntered(Exception):
 
 
 class TaskM(SourceM):
-    def __init__(self, ram=0x100000):
-        super().__init__(LAIX / "src/trap/trap.m")
+    def __init__(self, ram=0x100000, root=None):
+        super().__init__(root or LAIX / "src/trap/trap.m")
         self.task_type = self.decls["tasks"].sym.type.elem
         self.addresses.update(userCodeStart=0x14000, userCodeEnd=0x1401C,
                               kernelStackBottom=0x91000, taskKernelResume=0x14100)

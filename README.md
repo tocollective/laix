@@ -2,7 +2,18 @@
 
 Первый этап микроядра на M для WRM.081632: собственный старт, стек ядра,
 сохранение контекста исключений и аварийная диагностика через UART.
-После самопроверки входа и инициализации консоли ядро запускает одну user-задачу.
+After entry self-tests, trusted init starts an isolated user text-console
+server and application with receive/send authority. The application prints
+the normal boot banner through the bounded request/reply console protocol.
+The versioned startup block, memory API and resource policy are specified in
+[the bootstrap contract](docs/BOOTSTRAP.md) and [console contract](docs/CONSOLE_SERVICE.md).
+[Console acceptance](tests/CONSOLE_SERVICE_ACCEPTANCE.md) checks normal IPC
+output, malformed messages and denied client UART/MMIO/start-page accesses.
+The optional screen boot runs separate user screen and bitmap services,
+with exclusive NX device grants, IRQ notification/wait/rearm and a narrow
+trusted physical-DMA broker. Its [implementation contract](docs/SCREEN_IRQ_DMA.md)
+and [acceptance record](tests/SCREEN_IRQ_DMA_ACCEPTANCE.md) cover the eight
+completed screen/IRQ/DMA items, 17 dedicated source checks and 14 CPU cases.
 Есть bitmap-распределитель физических страниц с владением и отображение MMU
 с защитой стеков. Task, IRET, user syscall/exit и user fault подтверждены
 [11 CPU-сценариями](tests/USER_ACCEPTANCE.md) на обновлённом образе.
@@ -23,9 +34,9 @@ laix/
 │   ├── task/           # задача, TCB и вход в user mode
 │   ├── trap/           # обработчики, TrapFrame и самопроверка контекста
 │   ├── ipc/            # endpoints, task-local handles, and capability lifecycle
-│   ├── drivers/        # UART и RNG
-│   └── console/        # экранная консоль и font/ с загрузчиком и кешем
-├── user/               # пользовательские M-обёртки syscall
+│   ├── drivers/        # UART, timer, IRQ grants and trusted device broker
+│   └── console/        # supervisor screen/font regression fixtures
+├── user/               # syscall wrappers, UART client and screen/bitmap services
 ├── tests/
 │   ├── programs/       # M/ASM-сценарии: trap/, mm/, console/, drivers/
 │   └── *.py, *.md      # проверки исходников, CPU probes и отчёты приёмки
@@ -49,6 +60,16 @@ M-модуль и одноимённый ASM-файл находятся ряд�
 ./laix/run.sh
 ```
 
+For user-mode screen/Unicode output, build and select the separate screen image:
+
+```sh
+LAIX_CONSOLE=screen sh laix/build.sh
+LAIX_CONSOLE=screen sh laix/run.sh
+```
+
+Screen artifacts are `build/screen.img` and `build/screen.map`; default UART
+artifacts remain `build/laix.img` and `build/laix.map`.
+
 Нужны Python 3, готовый эмулятор `bin/wrm081632` и готовый ROM
 `bin/firmware.rom`. Для других путей используйте переменные
 `WRM_EMULATOR=/путь/к/wrm081632` и `WRM_ROM=/путь/к/firmware.rom`.
@@ -64,7 +85,8 @@ M-модуль и одноимённый ASM-файл находятся ряд�
 загрузочный сектор не нужны. Это образ для WRM.081632, не для x86 BIOS.
 `run.sh` attaches it as hard disk 0 (`--hdd`) by default; the firmware loads
 the kernel at `0x00010000`. Font bitmaps follow the boot payload and are read
-by the kernel on demand. To boot from the floppy instead, use
+through the narrow broker on demand in screen mode (or by supervisor test
+fixtures). To boot from the floppy instead, use
 `LAIX_BOOT=floppy ./laix/run.sh`; the floppy transfers 62,500 bytes/s.
 
 - `src/kernel/main.m` — точка входа, начинайте писать ядро здесь.
@@ -92,7 +114,8 @@ by the kernel on demand. To boot from the floppy instead, use
   переключение PTBR/ASID и уничтожение с учётом ссылок.
   W^X учитывает все алиасы кадра: физическое окно ядра становится R,
   пока кадр исполняемый; общие таблицы RAM распространяют права на все каталоги.
-  Пользовательский стек не получает X, MMIO/VRAM остаются без U/X.
+  User stacks have no X; physical MMIO/VRAM aliases have no U/X.
+  Screen boot adds only the selected service's exclusive NX VRAM/video aliases.
   Контракты — в [этапе 2](docs/02_MEMORY_MMU.md).
 - `src/trap/trap_frame.m` и `src/trap/trap_layout.inc` — общий формат контекста
   на 160 байт и соответствующие ассемблерные смещения.
@@ -140,6 +163,12 @@ by the kernel on demand. To boot from the floppy instead, use
   без аргумента остаются в тексте. `panic(format, frame, ...)` передаёт
   аргументы в UART-форматирование, например
   `panic("invalid address=$h", frame, address)`.
+- `user/screen/` implements the ordinary user screen path. Its video/Unicode/
+  font/cache modules render through exclusive VRAM and a bitmap endpoint;
+  `src/drivers/irq.m` delivers notifications and `service_devices.m` owns
+  the narrow trusted physical-DMA broker.
+- The following supervisor screen/font modules are retained for regression
+  fixtures; they are not initialized by either ordinary boot variant.
 - `src/drivers/videocard.m` — драйвер видеокарты: настройка режима и палитры,
   чтение параметров экрана и размера VRAM, FILL/COPY/EXPAND, загрузка слов
   через окно VRAM и ожидание кадра. Регистры остаются внутри драйвера;
@@ -479,3 +508,15 @@ let ok: Bool = rngFill(bytes, 16)
 `tests/programs/drivers/rnd.m` содержит runtime-тест с `--seed=0`: эталонный поток ChaCha20,
 размеры буфера 0–5 и 32 байта, границы записи и переход между блоками RNG.
 Команда `--check` выше проверяет только синтаксис и типы этого теста.
+
+A separate simple-service profile starts keyboard input, a read-only disk extent,
+an immutable `/font` file service and a capability-limited application:
+
+```sh
+LAIX_CONSOLE=services sh laix/build.sh
+LAIX_CONSOLE=services sh laix/run.sh --ram 2M --no-net
+```
+
+See the [protocols and failure lifecycle](docs/SIMPLE_SERVICES.md) and
+[source/CPU acceptance](tests/SIMPLE_SERVICES_ACCEPTANCE.md). Runtime restart,
+networking, a general user ELF loader and a full filesystem remain deferred.

@@ -11,11 +11,27 @@ python3 "$laix_dir/tools/pack_unifont.py" \
 
 # mc.py's image mode always adds crt0/trap. Compile modules separately and
 # link our start object first. Same-name module .asm files are included by M.
-obj_dir="$laix_dir/build/obj"
+obj_dir="$laix_dir/build/obj/${LAIX_CONSOLE:-uart}"
 mkdir -p "$obj_dir"
 python3 "$repo_dir/mc/asm.py" -c "$laix_dir/src/arch/wrm081632/start.asm" -o "$obj_dir/start.o"
 set -- "$obj_dir/start.o"
 main_source=${LAIX_MAIN:-$laix_dir/src/kernel/main.m}
+case "${LAIX_CONSOLE:-uart}" in
+    uart) ;;
+    screen|services)
+        if [ -n "${LAIX_MAIN:-}" ]; then
+            printf '%s\n' 'LAIX_CONSOLE=screen/services cannot be combined with LAIX_MAIN' >&2
+            exit 1
+        fi
+        if [ "$LAIX_CONSOLE" = services ]; then
+            main_source="$laix_dir/src/kernel/simple_main.m"
+        else
+            main_source="$laix_dir/src/kernel/screen_main.m"
+        fi
+        sh "$laix_dir/tools/build_services.sh" "$LAIX_CONSOLE"
+        ;;
+    *) printf '%s\n' 'LAIX_CONSOLE must be uart, screen or services' >&2; exit 1 ;;
+esac
 python3 "$repo_dir/mc/mc.py" -c "$main_source" -o "$obj_dir/main.o"
 set -- "$@" "$obj_dir/main.o"
 # The MMU CPU probes share a test-only M module and its assembly companion.
@@ -25,16 +41,26 @@ case "$(basename -- "$main_source")" in
         set -- "$@" "$obj_dir/mmu_probe.o"
         ;;
 esac
-for module in arch/wrm081632/defs kernel/boot mm/memory mm/mmu trap/trap_frame ipc/objects task/task ipc/ipc trap/trap kernel/panic drivers/debug_uart drivers/timer drivers/videocard console/console drivers/rnd console/font/font console/font/glyph_cache console/font/data; do
+for module in arch/wrm081632/defs kernel/boot kernel/bootstrap mm/memory mm/mmu trap/trap_frame ipc/objects task/start task/service_start task/task ipc/ipc trap/trap kernel/panic drivers/debug_uart drivers/timer drivers/irq drivers/service_devices drivers/input_device drivers/videocard console/console drivers/rnd console/font/font console/font/glyph_cache console/font/data; do
     mkdir -p "$(dirname -- "$obj_dir/$module.o")"
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/$module.m" -o "$obj_dir/$module.o"
     set -- "$@" "$obj_dir/$module.o"
 done
+if [ "${LAIX_CONSOLE:-uart}" != uart ]; then
+    bootstrap_module=kernel/service_bootstrap
+    if [ "$LAIX_CONSOLE" = services ]; then bootstrap_module=kernel/simple_bootstrap; fi
+    for module in task/program kernel/service_policy "$bootstrap_module"; do
+        python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/$module.m" -o "$obj_dir/$module.o"
+        set -- "$@" "$obj_dir/$module.o"
+    done
+fi
 python3 "$repo_dir/mc/asm.py" -c "$repo_dir/mc/runtime/mem.asm" -o "$obj_dir/mem.o"
+image_name=laix
+if [ "${LAIX_CONSOLE:-uart}" != uart ]; then image_name=$LAIX_CONSOLE; fi
 python3 "$repo_dir/mc/ld.py" --layout boot "$@" "$obj_dir/mem.o" \
-    -o "$laix_dir/build/laix.img" --map "$laix_dir/build/laix.map"
+    -o "$laix_dir/build/$image_name.img" --map "$laix_dir/build/$image_name.map"
 
 python3 "$laix_dir/tools/append_font.py" \
-    "$laix_dir/build/laix.img" "$laix_dir/fonts/unifont-console.laf"
+    "$laix_dir/build/$image_name.img" "$laix_dir/fonts/unifont-console.laf"
 
-printf 'Boot image: %s\n' "$laix_dir/build/laix.img"
+printf 'Boot image: %s\n' "$laix_dir/build/$image_name.img"

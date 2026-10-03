@@ -515,7 +515,18 @@ def run_case(case, data, symbols, emulator, rom, timeout, layout, switches, log_
         monitor.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         p = None
         try:
-            if case == "natural":
+            if case == "natural" and "bootstrapInit" in symbols:
+                # Normal boot now runs the receive-only service and client.
+                # Legacy fixture cases still use taskCreate's original blob.
+                from probe_bootstrap_cpu import BootProbe, preflight as bootstrap_preflight
+                boot = BootProbe(monitor, symbols, bootstrap_preflight(data, symbols))
+                boot.inspect_resources(data)
+                boot.natural()
+                transcript, uart = boot.log, uart_text(stdout)
+                require("LA/IX microkernel v1.0.0\n" in uart and "PANIC" not in uart, "natural service exchange failed")
+                result = dict(case=case, boot_trap_selftests=True, bootstrap_service=True,
+                              client_exit=True, server_blocked=True)
+            elif case == "natural":
                 transcript = [monitor.receive()]
                 transcript.append(monitor.stop_at(symbols["taskKernelResume.idle"]))
                 require(monitor.words(symbols["tasks"] + layout[1]["state"], 1) == [3] and

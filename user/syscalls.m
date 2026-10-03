@@ -1,6 +1,8 @@
 // User-only wrappers: import constants, never kernel code or the boot runtime.
 import { SYS_DEBUG_PUT_CHAR, SYS_EXIT, SYS_YIELD, SYS_HANDLE_CLOSE, SYS_HANDLE_COPY,
     SYS_ENDPOINT_DESTROY, SYS_IPC_SEND, SYS_IPC_RECEIVE, SYS_IPC_CALL, SYS_IPC_REPLY } from "../src/arch/wrm081632/defs.m"
+import { SYS_IRQ_WAIT, SYS_IRQ_COMPLETE, SYS_SCREEN_CONTROL, SYS_FONT_BEGIN,
+    SYS_FONT_FINISH, SYS_FONT_CANCEL, SYS_FONT_VALIDATE } from "../src/arch/wrm081632/defs.m"
 
 type AcceptResult {
     length: Word,
@@ -10,7 +12,8 @@ type AcceptResult {
 // Assembly captures r2 before an M call can discard the second result word.
 extern let ipcAcceptResult(handle: UWord, buffer: *mut UByte, capacity: UWord, result: *mut AcceptResult): Word
 
-// One UART byte, 0..255. Returns 0 or -EINVAL; no user pointer is read.
+// One UART byte, 0..255. Requires the init-granted DEVICE_UART_TX operation;
+// returns 0, -EPERM or -EINVAL. No user pointer or MMIO address is accepted.
 let debugPutChar(code: UWord): Word {
     return syscall(SYS_DEBUG_PUT_CHAR, code)
 }
@@ -66,3 +69,22 @@ let reply(token: UWord, response: *UByte, length: UWord): Word {
 }
 
 export { AcceptResult, debugPutChar, exit, yield, closeHandle, copyHandle, destroyEndpoint, send, recv, call, accept, reply }
+
+let irqWait(token: UWord, seconds: UWord): Word { return syscall(SYS_IRQ_WAIT, token, seconds) }
+let irqComplete(token: UWord): Word { return syscall(SYS_IRQ_COMPLETE, token) }
+let screenControl(operation: UWord): Word { return syscall(SYS_SCREEN_CONTROL, operation) }
+let fontBegin(glyph: UWord, chunk: UWord): Word { return syscall(SYS_FONT_BEGIN, glyph, chunk) }
+let fontFinish(destination: *mut UByte): Word { return syscall(SYS_FONT_FINISH, destination) }
+let fontCancel(): Word { return syscall(SYS_FONT_CANCEL) }
+let fontValidate(): Word { return syscall(SYS_FONT_VALIDATE) }
+
+export { irqWait, irqComplete, screenControl, fontBegin, fontFinish, fontCancel, fontValidate }
+
+import { SYS_INPUT_READ, SYS_DISK_INFO, SYS_DISK_BEGIN, SYS_DISK_FINISH,
+    SYS_DISK_CANCEL } from "../src/arch/wrm081632/defs.m"
+let inputRead(destination: *mut UByte): Word { return syscall(SYS_INPUT_READ, destination) }
+let diskInfo(): Word { return syscall(SYS_DISK_INFO) }
+let diskBegin(offset: UWord, bytes: UWord): Word { return syscall(SYS_DISK_BEGIN, offset, bytes) }
+let diskFinish(destination: *mut UByte): Word { return syscall(SYS_DISK_FINISH, destination) }
+let diskCancel(): Word { return syscall(SYS_DISK_CANCEL) }
+export { inputRead, diskInfo, diskBegin, diskFinish, diskCancel }

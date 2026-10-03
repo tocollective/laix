@@ -4,6 +4,7 @@ import { CR_STATUS, STATUS_IE, PIC_ENABLE, PIC_CLAIM, PIC_NO_IRQ,
     TIMER_RELOAD, TIMER_CONTROL, TIMER_STATUS,
     TIMER_IRQ, TIMER_IRQ_MASK, TIMER_ENABLE, TIMER_PERIODIC, TIMER_EXPIRED } from "../arch/wrm081632/defs.m"
 import { debugPrint } from "debug_uart.m"
+import { irqNotify, irqTimerTick } from "irq.m"
 
 let mut timerReady: Bool
 let mut timerBootClock: UWord
@@ -133,8 +134,10 @@ let timerInterrupt(): Bool {
     if irq == TIMER_IRQ && timerReady && status[0] & TIMER_EXPIRED != 0 {
         status[0] = TIMER_EXPIRED
         fence() // deassert the device before selecting/restoring any context
+        irqTimerTick()
         return true
     }
+    if irq < PIC_LINE_COUNT && irqNotify(irq) return false
     if irq < PIC_LINE_COUNT enabled[0] &= ~(1 << irq)
     else enabled[0] = 0
     fence()
