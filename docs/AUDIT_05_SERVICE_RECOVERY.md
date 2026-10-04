@@ -1,6 +1,6 @@
 # A5. Service restart and discovery
 
-[Audit overview](../../docs/LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_04_IPC_LIVENESS.md) · [Next item](AUDIT_06_CAPABILITY_TRANSFER_QUOTAS.md)
+[Audit overview](LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_04_IPC_LIVENESS.md) · [Next item](AUDIT_06_CAPABILITY_TRANSFER_QUOTAS.md)
 
 Date: 2026-10-04. Priority: **P1**.
 

@@ -54,10 +54,11 @@ class SchedulerTests(unittest.TestCase):
         return machine
 
     def test_states_table_capacity_and_queue_wrap(self):
-        allowed = {(0, 1), (1, 2), (2, 1), (2, 3), (2, 4), (4, 1), (4, 3)}
+        allowed = {(0, 5), (5, 1), (5, 0), (1, 2), (1, 3), (2, 1),
+                   (2, 3), (2, 4), (4, 1), (4, 3), (3, 0)}
         vm = self.start(8)
-        for previous in range(5):
-            for next in range(5):
+        for previous in range(6):
+            for next in range(6):
                 self.assertEqual(bool(vm.call("taskTransitionAllowed", previous, next)),
                                  (previous, next) in allowed)
         baseline = vm.free_pages()

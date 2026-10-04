@@ -248,7 +248,7 @@ class BootstrapTests(unittest.TestCase):
         self.assertFalse(vm.call("taskDiscardCreated", 2))
         self.assertFalse(vm.call("bootstrapInit"))
         self.assertEqual(vm.free_pages(), before)
-        # No task-create/memory-control number is installed in the syscall ABI.
+        # Unknown syscall numbers remain denied; runtime creation requires a capability.
         vm.invoke(63, 2, 7, 0xDEADBEEF)
         self.assertEqual(vm.result(1)[0], error(38))
 

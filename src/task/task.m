@@ -3,11 +3,13 @@ import { PAGE_SIZE, WORD_BYTES, GPR_COUNT, REG_SP, STATUS_IE, STATUS_PIE, STATUS
     STATUS_EXL, STATUS_UM, CR_STATUS, CR_PTBR, PTBR_ENABLE, PTE_U, PTE_RX, PTE_RW, PTE_RO,
     STACK_CANARY, KERNEL_STACK_BYTES, KERNEL_SP, KERNEL_STACK_BOTTOM,
     KERNEL_STACK_TOP, PIC_ENABLE } from "../arch/wrm081632/defs.m"
+import { taskRecordCompletion, taskRecordReaped, taskReleaseSupervisor, taskControlSeal } from "control.m"
+import { PTE_X, PTE_W, PAGE_MASK, STACK_ALIGNMENT } from "../arch/wrm081632/defs.m"
 import { TrapFrame } from "../trap/trap_frame.m"
 import { PAGE_NONE, PAGE_USER, PAGE_USER_STACK, allocPage, allocTaskPages, freePage,
     physicalPageOwned, memoryLock, memoryUnlock } from "../mm/memory.m"
 import { USER_VA_START, USER_VA_END, mmuCreateAddressSpace, mmuDestroyAddressSpace,
-    mmuSwitchAddressSpace, mmuActivateKernel, mapPage,
+    mmuSwitchAddressSpace, mmuActivateKernel, mapPage, mmuUserLeaf,
     mmuAllocKernelStack, mmuFreeKernelStack } from "../mm/mmu.m"
 import { mmuSealResources, mmuScreenResourcesValid } from "../mm/mmu.m"
 import { irqReleaseTask, irqSeal, irqTokenValid } from "../drivers/irq.m"
@@ -36,6 +38,8 @@ let TASK_RUNNING: UWord = 2
 let TASK_DEAD: UWord = 3
 let TASK_BLOCKED: UWord = 4
 let TASK_CREATED: UWord = 5 // private construction, never in the ready queue
+let TASK_SLOT_MASK: UWord = 255
+let TASK_GENERATION_MAX: UWord = 0x7FFFFF // references fit a positive syscall result
 let WAIT_NONE: UWord = 0
 let WAIT_EVENT: UWord = 1
 let WAIT_IPC_SEND: UWord = 2
@@ -52,7 +56,9 @@ let USER_STACK_GUARD: UWord = USER_STACK_BOTTOM - PAGE_SIZE
 let TASK_PAGE_COUNT: UWord = 3
 
 type Task {
-    id: UWord,
+    id: UWord, // generation-bearing reference, including resource ownership
+    slot: UWord, // diagnostic index only; never authority
+    createImages: UWord, // nontransferable bootstrap creation capability (image mask)
     directory: *mut UWord,
     ptbr: UWord,
     asid: UWord,
@@ -71,6 +77,8 @@ type Task {
     exitCode: Word,
     faulted: Bool,
     reaped: Bool,
+    reusable: Bool, // runtime construction only; legacy boot diagnostics remain
+    configured: Bool,
     pages: UWord[TASK_PAGE_COUNT],
     handles: HandleTable,
     ipcEndpoint: *mut Endpoint, // one pinned wait, independent of handles
@@ -88,7 +96,7 @@ type Task {
 
 align(8) let mut tasks: Task[MAX_TASKS]
 let mut currentTask: *mut Task
-let mut readyQueue: UWord[MAX_TASKS] // stable IDs, never user pointers
+let mut readyQueue: UWord[MAX_TASKS] // generation-bearing references, never user pointers
 let mut readyHead: UWord
 let mut readyCount: UWord
 let mut schedulerStarted: Bool
@@ -109,21 +117,31 @@ let taskIrqsDisabled(): Bool {
 }
 
 let taskTransitionAllowed(previous: UWord, next: UWord): Bool {
-    return ((previous == TASK_EMPTY || previous == TASK_CREATED) && next == TASK_READY) ||
-        (previous == TASK_READY && next == TASK_RUNNING) ||
+    return (previous == TASK_EMPTY && next == TASK_CREATED) ||
+        (previous == TASK_CREATED && (next == TASK_READY || next == TASK_EMPTY)) ||
+        (previous == TASK_READY && (next == TASK_RUNNING || next == TASK_DEAD)) ||
         (previous == TASK_RUNNING && (next == TASK_READY || next == TASK_BLOCKED || next == TASK_DEAD)) ||
-        (previous == TASK_BLOCKED && (next == TASK_READY || next == TASK_DEAD))
+        (previous == TASK_BLOCKED && (next == TASK_READY || next == TASK_DEAD)) ||
+        (previous == TASK_DEAD && next == TASK_EMPTY)
+}
+
+// Slot lookup is kernel-internal enumeration, never user task resolution.
+let taskSlot(slot: UWord): *mut Task {
+    if slot == 0 || slot > MAX_TASKS return null
+    return &mut tasks[slot - 1]
 }
 
 let taskGet(id: UWord): *mut Task {
-    if id == 0 || id > MAX_TASKS return null
-    return &mut tasks[id - 1]
+    let task: *mut Task = taskSlot(id & TASK_SLOT_MASK)
+    if task == null || task.id != id || task.state == TASK_EMPTY return null
+    return task
 }
 
 // Only this operation publishes Ready, including creation and wakeup. All
 // scheduler mutations require IE=0 or EXL=1, independent of PIC ENABLE.
 let taskEnqueue(task: *mut Task): Void {
-    if !taskIrqsDisabled() || task == &mut idleTask || task.queued || task.ipcEndpoint != null || readyCount == MAX_TASKS ||
+    if !taskIrqsDisabled() || task == &mut idleTask || task.state == TASK_EMPTY ||
+        (task.state == TASK_CREATED && task.reusable && !task.configured) || task.queued || task.ipcEndpoint != null || readyCount == MAX_TASKS ||
         !taskTransitionAllowed(task.state, TASK_READY) {
         panic("invalid ready transition", null)
         return
@@ -166,36 +184,54 @@ let taskRollback(task: *mut Task): Void {
     task.kernelStackTop = 0
 }
 
-// A bounded lifetime table: Dead records remain for diagnostics, slots are
-// not recycled yet. Failed creations leave an Empty slot and can be retried.
-// Trusted init API, sealed by schedulerStarted. Only embedded, aligned text
-// images are accepted. Allocation stays on the kernel-owned per-task ledger.
-// Successful construction is NOT schedulable until resources are installed.
-let taskCreateImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord): UWord {
-    if !taskIrqsDisabled() || schedulerStarted || sourceStart < (&__start_text as UWord) ||
+// Shared checked mechanism: trusted pointers only, no implicit authority.
+// Boot and runtime policy select approved ranges before reaching this entry.
+let taskConstructImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord): UWord {
+    if !taskIrqsDisabled() || sourceStart < (&__start_text as UWord) ||
         sourceEnd > (&__stop_text as UWord) || sourceEnd <= sourceStart ||
         sourceStart % WORD_BYTES != 0 || sourceEnd % WORD_BYTES != 0 return 0
     let codeBytes: UWord = sourceEnd - sourceStart
     if codeBytes > PAGE_SIZE || entryOffset >= codeBytes || entryOffset % WORD_BYTES != 0 return 0
     let mut task: *mut Task = null
     for i: UWord in 0..MAX_TASKS {
-        if tasks[i].state == TASK_EMPTY {
+        if tasks[i].state == TASK_EMPTY && tasks[i].id >> 8 < TASK_GENERATION_MAX {
             task = &mut tasks[i]
             break
         }
     }
     if task == null return 0
-    task.id = ((task as UWord) - (&tasks[0] as UWord)) / sizeof(Task) + 1
-    task.asid = task.id // 1..8; full TLB flush on every activation, no leases
+    task.slot = ((task as UWord) - (&tasks[0] as UWord)) / sizeof(Task) + 1
+    // Generation zero is the first boot lifetime. Every later reservation,
+    // including failed construction, advances; exhausted slots never wrap.
+    let mut generation: UWord = task.id >> 8
+    if task.id != 0 generation += 1
+    task.id = (generation << 8) | task.slot
+    task.asid = task.slot // full TLB flush on activation, no ASID leases
+    task.state = TASK_CREATED
+    task.reaped = false
+    task.reusable = false
+    task.configured = false
+    task.createImages = 0
+    task.exitCode = 0
+    task.faulted = false
+    task.waitReason = WAIT_NONE
+    task.ipcKind = WAIT_NONE
+    task.bootPage = PAGE_NONE
+    for i: UWord in 0..TASK_PAGE_COUNT task.pages[i] = PAGE_NONE
     task.directory = mmuCreateAddressSpace(task.id) as *mut UWord
-    if task.directory == null return 0
+    if task.directory == null {
+        task.state = TASK_EMPTY
+        return 0
+    }
     if !allocTaskPages(task.id, &taskPurposes[0], &mut task.pages[0], TASK_PAGE_COUNT) {
         taskRollback(task)
+        task.state = TASK_EMPTY
         return 0
     }
     task.kernelStackBottom = mmuAllocKernelStack(task.id)
     if task.kernelStackBottom == 0 {
         taskRollback(task)
+        task.state = TASK_EMPTY
         return 0
     }
     task.kernelStackTop = task.kernelStackBottom + KERNEL_STACK_BYTES
@@ -209,6 +245,7 @@ let taskCreateImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord): U
         !mapPage(task.directory, task.id, USER_DATA, task.pages[1], PTE_RW | PTE_U) ||
         !mapPage(task.directory, task.id, USER_STACK_BOTTOM, task.pages[2], PTE_RW | PTE_U) {
         taskRollback(task)
+        task.state = TASK_EMPTY
         return 0
     }
     task.userCode = USER_CODE
@@ -229,6 +266,12 @@ let taskCreateImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord): U
     task.context.reserved[1] = 0
     task.state = TASK_CREATED
     return task.id
+}
+
+// Bootstrap policy remains sealed independently of the shared mechanism.
+let taskCreateImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord): UWord {
+    if schedulerStarted return 0
+    return taskConstructImage(sourceStart, sourceEnd, entryOffset)
 }
 
 // Retained for scheduler/CPU acceptance fixtures. Only trusted kernel init
@@ -267,6 +310,7 @@ let taskInstallStart(id: UWord, block: *TaskStart): Bool {
     task.deviceRights = block.devices
     task.context.regs[1] = START_BLOCK_VA
     task.context.regs[2] = START_BLOCK_BYTES
+    task.configured = true
     return true
 }
 
@@ -317,21 +361,37 @@ let taskInstallServiceStart(id: UWord, block: *ServiceStart, diskIrq: UWord): Bo
     task.deviceRights = block.devices
     task.context.regs[1] = START_BLOCK_VA
     task.context.regs[2] = SERVICE_START_BYTES
+    task.configured = true
     return true
 }
 
-let taskPublish(id: UWord): Bool {
-    if !taskIrqsDisabled() || schedulerStarted return false
+let taskPublishChecked(id: UWord): Bool {
+    if !taskIrqsDisabled() return false
     let task: *mut Task = taskGet(id)
-    if task == null || task.state != TASK_CREATED || task.bootPage == PAGE_NONE return false
+    if task == null || task.state != TASK_CREATED || !task.configured || task.bootPage == PAGE_NONE ||
+        task.queued || task.ipcEndpoint != null || task.context.ptbr != task.ptbr ||
+        task.context.status != (STATUS_EXL | STATUS_PUM) || task.context.epc % WORD_BYTES != 0 ||
+        task.context.regs[1] != START_BLOCK_VA ||
+        task.context.regs[REG_SP] != task.userStackTop || task.userStackTop % STACK_ALIGNMENT != 0 return false
+    let code: UWord = mmuUserLeaf(task.directory, id, task.context.epc & ~PAGE_MASK)
+    let stack: UWord = mmuUserLeaf(task.directory, id, task.userStackBottom)
+    let start: UWord = mmuUserLeaf(task.directory, id, START_BLOCK_VA)
+    if code & (PTE_U | PTE_X | PTE_W) != (PTE_U | PTE_X) ||
+        stack & (PTE_U | PTE_W | PTE_X) != (PTE_U | PTE_W) ||
+        start & ~PAGE_MASK != task.bootPage || start & (PTE_U | PTE_W | PTE_X) != PTE_U return false
     taskEnqueue(task)
     return true
 }
 
+let taskPublish(id: UWord): Bool {
+    if schedulerStarted return false
+    return taskPublishChecked(id)
+}
+
 // Failure before publication revokes endpoints, restores W^X aliases and
 // frees only this task's owned resources. Handle generations are preserved.
-let taskDiscardCreated(id: UWord): Bool {
-    if !taskIrqsDisabled() || schedulerStarted return false
+let taskDiscardChecked(id: UWord): Bool {
+    if !taskIrqsDisabled() return false
     let task: *mut Task = taskGet(id)
     if task == null || task.state != TASK_CREATED || task.queued return false
     handlesReleaseTask(&mut task.handles, id)
@@ -344,6 +404,11 @@ let taskDiscardCreated(id: UWord): Bool {
     return true
 }
 
+let taskDiscardCreated(id: UWord): Bool {
+    if schedulerStarted return false
+    return taskDiscardChecked(id)
+}
+
 let taskInitAvailable(): Bool {
     if !taskIrqsDisabled() || schedulerStarted || readyCount != 0 return false
     for i: UWord in 0..MAX_TASKS {
@@ -354,7 +419,7 @@ let taskInitAvailable(): Bool {
 
 let taskPrepare(): Bool {
     if tasks[0].state != TASK_EMPTY || schedulerStarted return false
-    return taskCreate() == 1
+    return taskCreate() != 0
 }
 
 // Trusted boot policy: task 1 manages the endpoint, task 2 can only send.
@@ -453,6 +518,7 @@ let taskStart(clock: UWord): Void {
     idleTask.context.ptbr = idleTask.ptbr
     idleTask.context.reserved[0] = 0
     idleTask.context.reserved[1] = 0
+    taskControlSeal()
     endpointSealBootstrap()
     mmuSealResources()
     irqSeal()
@@ -559,49 +625,82 @@ let taskWake(id: UWord): Bool {
     return true
 }
 
+let taskRemoveReady(task: *mut Task): Void {
+    let mut position: UWord = 0
+    while position < readyCount && readyQueue[(readyHead + position) % MAX_TASKS] != task.id position += 1
+    if !task.queued || position == readyCount {
+        panic("missing ready task", null)
+        return
+    }
+    while position + 1 < readyCount {
+        readyQueue[(readyHead + position) % MAX_TASKS] = readyQueue[(readyHead + position + 1) % MAX_TASKS]
+        position += 1
+    }
+    readyQueue[(readyHead + readyCount - 1) % MAX_TASKS] = 0
+    readyCount -= 1
+    task.queued = false
+}
+
+// Logical death never frees the stack/root. Detach waits before revoking
+// handles so cancellation cannot wake or queue the terminating task.
+let taskStop(task: *mut Task, code: Word, faulted: Bool, terminated: Bool): Void {
+    if task.queued taskRemoveReady(task)
+    ipcCancelTask(task.id)
+    task.exitCode = code
+    task.faulted = faulted
+    task.waitReason = WAIT_NONE
+    task.state = TASK_DEAD
+    task.createImages = 0
+    handlesReleaseTask(&mut task.handles, task.id)
+    irqReleaseTask(task.id)
+    fontCancelOwner(task.id)
+    screenReleaseOwner(task.id)
+    inputReleaseOwner(task.id)
+    task.deviceRights = 0
+    taskRecordCompletion(task, terminated)
+    taskReleaseSupervisor(task.id)
+}
+
 let taskFinish(frame: *TrapFrame, code: Word, faulted: Bool): *TrapFrame {
     if !taskIrqsDisabled() || !taskOwnsTrap(frame) {
         panic("user trap without running task", frame)
         return null
     }
     taskSaveContext(frame)
-    currentTask.exitCode = code
-    currentTask.faulted = faulted
-    handlesReleaseTask(&mut currentTask.handles, currentTask.id)
-    irqReleaseTask(currentTask.id)
-    fontCancelOwner(currentTask.id)
-    screenReleaseOwner(currentTask.id)
-    inputReleaseOwner(currentTask.id)
-    currentTask.deviceRights = 0
-    currentTask.waitReason = WAIT_NONE
-    currentTask.state = TASK_DEAD
+    taskStop(currentTask, code, faulted, false)
     currentTask = null
     return taskSelect()
 }
 
-// Kernel-only termination of a suspended task. Its stack/root are inactive;
-// the normal reaper runs later on the current task's selected stack.
+// Authorized syscall code resolves a scoped control capability before this
+// mechanism. On one CPU a Running target is necessarily the calling task.
+let taskTerminateChecked(frame: *TrapFrame, id: UWord, code: Word): *TrapFrame {
+    let task: *mut Task = taskGet(id)
+    if !taskIrqsDisabled() || task == null ||
+        (task.state != TASK_READY && task.state != TASK_RUNNING && task.state != TASK_BLOCKED) return frame
+    if task == currentTask {
+        taskSaveContext(frame)
+        taskStop(task, code, false, true)
+        currentTask = null
+        return taskSelect()
+    }
+    taskStop(task, code, false, true)
+    return frame
+}
+
+// Kernel-only fixture helper, using the same cancellation and death path.
 let taskAbortBlocked(id: UWord, code: Word, faulted: Bool): Bool {
     if !taskIrqsDisabled() return false
     let task: *mut Task = taskGet(id)
     if task == null || task == currentTask || task.state != TASK_BLOCKED || task.queued return false
-    ipcCancelTask(id)
-    task.exitCode = code
-    task.faulted = faulted
-    task.waitReason = WAIT_NONE
-    task.state = TASK_DEAD
-    handlesReleaseTask(&mut task.handles, id)
-    irqReleaseTask(id)
-    fontCancelOwner(id)
-    screenReleaseOwner(id)
-    inputReleaseOwner(id)
-    task.deviceRights = 0
+    taskStop(task, code, faulted, true)
     return true
 }
 
 // Assembly has ALREADY moved sp onto the selected kernel stack. Never run
 // this from taskFinish: its M frames still occupy the retiring task's stack.
-// Terminal TCB contexts remain intact after resources are released.
+// Runtime slots become Empty only after physical reclamation. Boot fixture
+// contexts remain intact; bounded diagnostic history is independent of reuse.
 let taskReap(): Void {
     if !schedulerStarted || !taskIrqsDisabled() {
         panic("invalid task cleanup context", null)
@@ -627,8 +726,10 @@ let taskReap(): Void {
         if !serviceDevicesQuiescent(task.id) continue
         taskRollback(task)
         task.reaped = true
+        taskRecordReaped(task.id)
         debugPrint("LA/IX: task $u stopped, state=$u code=$i cause=$u epc=$h\n",
             task.id, task.state, task.exitCode, task.context.cause, task.context.epc)
+        if task.reusable task.state = TASK_EMPTY
     }
 }
 
@@ -638,5 +739,6 @@ export { Task, tasks, idleTask, currentTask, MAX_TASKS, TASK_EMPTY, TASK_READY, 
     USER_CODE, USER_DATA, USER_STACK_BOTTOM, USER_STACK_TOP, USER_STACK_GUARD,
     taskPrepare, taskCreate, taskGet, taskStart, taskBootstrapEndpoints, taskIdlePoll, taskTransitionAllowed,
     taskCreateImage, taskInstallStart, taskPublish, taskDiscardCreated, taskInitAvailable,
-    taskInstallServiceStart, taskIrqReturn,
+    taskInstallServiceStart, taskIrqReturn, taskSlot, TASK_SLOT_MASK, TASK_GENERATION_MAX,
+    taskConstructImage, taskPublishChecked, taskDiscardChecked, taskTerminateChecked,
     taskSaveContext, taskOwnsTrap, taskYield, taskTick, taskBlock, taskWake, taskFinish, taskAbortBlocked, taskReap }

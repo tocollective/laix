@@ -1,6 +1,6 @@
 # A2. Runtime memory authority
 
-[Audit overview](../../docs/LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_01_TASK_LIFECYCLE.md) · [Next item](AUDIT_03_RUNTIME_CAPABILITIES.md)
+[Audit overview](LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_01_TASK_LIFECYCLE.md) · [Next item](AUDIT_03_RUNTIME_CAPABILITIES.md)
 
 Date: 2026-10-04. Priority: **P1**.
 

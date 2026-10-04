@@ -18,6 +18,13 @@ set -- "$obj_dir/start.o"
 main_source=${LAIX_MAIN:-$laix_dir/src/kernel/main.m}
 case "${LAIX_CONSOLE:-uart}" in
     uart) ;;
+    supervisor)
+        if [ -n "${LAIX_MAIN:-}" ]; then
+            printf '%s\n' 'LAIX_CONSOLE=supervisor cannot be combined with LAIX_MAIN' >&2
+            exit 1
+        fi
+        main_source="$laix_dir/src/kernel/supervisor_main.m"
+        ;;
     screen|services)
         if [ -n "${LAIX_MAIN:-}" ]; then
             printf '%s\n' 'LAIX_CONSOLE=screen/services cannot be combined with LAIX_MAIN' >&2
@@ -30,7 +37,7 @@ case "${LAIX_CONSOLE:-uart}" in
         fi
         sh "$laix_dir/tools/build_services.sh" "$LAIX_CONSOLE"
         ;;
-    *) printf '%s\n' 'LAIX_CONSOLE must be uart, screen or services' >&2; exit 1 ;;
+    *) printf '%s\n' 'LAIX_CONSOLE must be uart, screen, services or supervisor' >&2; exit 1 ;;
 esac
 python3 "$repo_dir/mc/mc.py" -c "$main_source" -o "$obj_dir/main.o"
 set -- "$@" "$obj_dir/main.o"
@@ -41,18 +48,22 @@ case "$(basename -- "$main_source")" in
         set -- "$@" "$obj_dir/mmu_probe.o"
         ;;
 esac
-for module in arch/wrm081632/defs kernel/boot kernel/bootstrap mm/memory mm/mmu trap/trap_frame ipc/objects task/start task/service_start task/task ipc/ipc trap/trap kernel/panic drivers/debug_uart drivers/timer drivers/irq drivers/service_devices drivers/input_device drivers/videocard console/console drivers/rnd console/font/font console/font/glyph_cache console/font/data; do
+for module in arch/wrm081632/defs kernel/boot kernel/bootstrap mm/memory mm/mmu trap/trap_frame ipc/objects task/start task/service_start task/runtime_start task/control task/task ipc/ipc trap/trap kernel/panic drivers/debug_uart drivers/timer drivers/irq drivers/service_devices drivers/input_device drivers/videocard console/console drivers/rnd console/font/font console/font/glyph_cache console/font/data; do
     mkdir -p "$(dirname -- "$obj_dir/$module.o")"
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/$module.m" -o "$obj_dir/$module.o"
     set -- "$@" "$obj_dir/$module.o"
 done
-if [ "${LAIX_CONSOLE:-uart}" != uart ]; then
+if [ "${LAIX_CONSOLE:-uart}" = screen ] || [ "${LAIX_CONSOLE:-uart}" = services ]; then
     bootstrap_module=kernel/service_bootstrap
     if [ "$LAIX_CONSOLE" = services ]; then bootstrap_module=kernel/simple_bootstrap; fi
     for module in task/program kernel/service_policy "$bootstrap_module"; do
         python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/$module.m" -o "$obj_dir/$module.o"
         set -- "$@" "$obj_dir/$module.o"
     done
+fi
+if [ "${LAIX_CONSOLE:-uart}" = supervisor ]; then
+    python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/kernel/supervisor_bootstrap.m" -o "$obj_dir/supervisor_bootstrap.o"
+    set -- "$@" "$obj_dir/supervisor_bootstrap.o"
 fi
 python3 "$repo_dir/mc/asm.py" -c "$repo_dir/mc/runtime/mem.asm" -o "$obj_dir/mem.o"
 image_name=laix

@@ -23,6 +23,13 @@ Endpoint objects and task-local capability handles are implemented; message
 transfer supports messages up to 32 bytes with FIFO blocking and cancellation.
 See the [IPC contract](docs/05_IPC_RIGHTS.md).
 
+Runtime task construction and supervision are available in the separate
+`LAIX_CONSOLE=supervisor` boot profile. It launches 24 approved children,
+collects their exit codes, then collects a faulting child. Task references
+carry generations; scoped control capabilities, completion storage, rollback
+and DMA quarantine are specified in [the runtime task contract](docs/RUNTIME_TASKS.md)
+and [acceptance record](tests/RUNTIME_TASKS_ACCEPTANCE.md).
+
 Исходники сгруппированы по подсистемам:
 
 ```text

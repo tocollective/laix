@@ -88,3 +88,16 @@ let diskBegin(offset: UWord, bytes: UWord): Word { return syscall(SYS_DISK_BEGIN
 let diskFinish(destination: *mut UByte): Word { return syscall(SYS_DISK_FINISH, destination) }
 let diskCancel(): Word { return syscall(SYS_DISK_CANCEL) }
 export { inputRead, diskInfo, diskBegin, diskFinish, diskCancel }
+
+import { SYS_TASK_CREATE, SYS_TASK_CONFIGURE, SYS_TASK_PUBLISH, SYS_TASK_INSPECT,
+    SYS_TASK_TERMINATE, SYS_TASK_COLLECT } from "../src/arch/wrm081632/defs.m"
+import { TaskEvent } from "../src/task/runtime_start.m"
+let createTask(image: UWord): Word { return syscall(SYS_TASK_CREATE, image) }
+let configureTask(reference: UWord, endpoint: UWord, rights: UWord, argument: UWord): Word {
+    return syscall(SYS_TASK_CONFIGURE, reference, endpoint, rights, argument)
+}
+let publishTask(reference: UWord): Word { return syscall(SYS_TASK_PUBLISH, reference) }
+let inspectTask(reference: UWord, event: *mut TaskEvent): Word { return syscall(SYS_TASK_INSPECT, reference, event) }
+let terminateTask(reference: UWord, code: Word): Word { return syscall(SYS_TASK_TERMINATE, reference, code) }
+let collectTask(reference: UWord, event: *mut TaskEvent): Word { return syscall(SYS_TASK_COLLECT, reference, event) }
+export { createTask, configureTask, publishTask, inspectTask, terminateTask, collectTask }

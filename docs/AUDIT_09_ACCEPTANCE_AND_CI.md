@@ -1,6 +1,6 @@
 # A9. Acceptance and CI need to follow the current architecture
 
-[Audit overview](../../docs/LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_08_LIMITS_AND_LATENCY.md) · [Next item](AUDIT_10_OPTIONAL_EXTENSIONS.md)
+[Audit overview](LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_08_LIMITS_AND_LATENCY.md) · [Next item](AUDIT_10_OPTIONAL_EXTENSIONS.md)
 
 Date: 2026-10-04. Priority: **P2**.
 

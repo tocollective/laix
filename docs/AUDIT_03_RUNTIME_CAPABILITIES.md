@@ -1,6 +1,6 @@
 # A3. Runtime object and resource creation
 
-[Audit overview](../../docs/LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_02_RUNTIME_MEMORY.md) · [Next item](AUDIT_04_IPC_LIVENESS.md)
+[Audit overview](LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_02_RUNTIME_MEMORY.md) · [Next item](AUDIT_04_IPC_LIVENESS.md)
 
 Date: 2026-10-04. Priority: **P1**.
 

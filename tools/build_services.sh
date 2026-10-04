@@ -29,9 +29,10 @@ for image in $images; do
         set -- "$@" "$object"
     done
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/task/service_start.m" -o "$service_dir/$image-start.o"
+    python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/task/runtime_start.m" -o "$service_dir/$image-task-abi.o"
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/arch/wrm081632/defs.m" -o "$service_dir/$image-defs.o"
     python3 "$repo_dir/mc/asm.py" -c "$repo_dir/mc/runtime/mem.asm" -o "$service_dir/$image-mem.o"
     python3 "$repo_dir/mc/ld.py" --layout exec --base 0x41000000 "$@" \
-        "$service_dir/$image-start.o" "$service_dir/$image-defs.o" "$service_dir/$image-mem.o" \
+        "$service_dir/$image-start.o" "$service_dir/$image-task-abi.o" "$service_dir/$image-defs.o" "$service_dir/$image-mem.o" \
         -o "$service_dir/$image.elf" --map "$service_dir/$image.map"
 done

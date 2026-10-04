@@ -220,7 +220,8 @@ class SimpleProtocolTests(unittest.TestCase):
             for module in check_m(root):
                 path = Path(module.path)
                 self.assertTrue(path.is_relative_to(LAIX / 'user') or
-                                path in (LAIX / 'src/task/service_start.m', LAIX / 'src/arch/wrm081632/defs.m'))
+                                path in (LAIX / 'src/task/service_start.m', LAIX / 'src/task/runtime_start.m',
+                                         LAIX / 'src/arch/wrm081632/defs.m'))
             self.assertFalse(any(st.op in ('mtcr', 'iret', 'wfi') for st in parse_asm(root.with_suffix('.asm')).stmts))
 
     def test_input_malformed_size_or_header_never_reads_device(self):

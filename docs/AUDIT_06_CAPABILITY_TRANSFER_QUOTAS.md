@@ -1,6 +1,6 @@
 # A6. Capability transfer can exhaust a foreign table
 
-[Audit overview](../../docs/LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_05_SERVICE_RECOVERY.md) · [Next item](AUDIT_07_DEVICE_BOUNDARY.md)
+[Audit overview](LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_05_SERVICE_RECOVERY.md) · [Next item](AUDIT_07_DEVICE_BOUNDARY.md)
 
 Date: 2026-10-04. Priority: **P2**.
 

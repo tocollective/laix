@@ -1,10 +1,12 @@
 # A1. Runtime task lifecycle and supervision
 
-[Audit overview](../../docs/LAIX_MICROKERNEL_AUDIT.md) · [Next item](AUDIT_02_RUNTIME_MEMORY.md)
+[Audit overview](LAIX_MICROKERNEL_AUDIT.md) · [Next item](AUDIT_02_RUNTIME_MEMORY.md)
 
 Date: 2026-10-04. Priority: **P1**.
 
-These checklists describe proposed work, not completed implementation.
+The implementation checklist is completed for the approved-image runtime scope
+described in [the runtime task contract](RUNTIME_TASKS.md). Broader acceptance
+items below retain their independent evidence level.
 
 ## Dependencies
 
@@ -54,27 +56,30 @@ must be able to observe that delay without resurrecting the old identity.
 
 ## Implementation checklist
 
-- [ ] Define a generation-bearing task reference and distinguish it from a diagnostic numeric slot ID.
-- [ ] Specify which capability permits create, configure, publish, inspect, terminate and collect a task; creation authority must not imply control over unrelated tasks.
-- [ ] Separate the reusable live task record from retained exit/fault diagnostic history.
-- [ ] Audit task references in ready queues, endpoint managers, reply owners, IRQ grants, device owners and allocator metadata before enabling slot reuse.
-- [ ] Introduce a runtime Created state that stays unschedulable until context, mappings, startup records and initial rights are valid.
-- [ ] Refactor the sealed boot constructor into shared checked construction mechanisms and a separate bootstrap policy.
-- [ ] Define an explicit resource ledger and rollback for every allocation/grant performed during runtime construction.
-- [ ] Add bounded task completion/fault events for the supervisor, including the final exit code and available trap diagnostics.
-- [ ] Implement authorized termination for Ready, Running and Blocked tasks, including removal from queues and cancellation of IPC/IRQ waits.
-- [ ] Preserve the existing rule that reaping runs on another selected stack and only after the address space is inactive.
-- [ ] Keep DMA-dependent resources quarantined until the broker reports physical quiescence; do not make a quarantined slot reusable.
-- [ ] Add a minimal user supervisor that launches an approved image and collects completion without kernel policy for specific services.
+- [x] Define a generation-bearing task reference and distinguish it from a diagnostic numeric slot ID.
+- [x] Specify which capability permits create, configure, publish, inspect, terminate and collect a task; creation authority must not imply control over unrelated tasks.
+- [x] Separate the reusable live task record from retained exit/fault diagnostic history.
+- [x] Audit task references in ready queues, endpoint managers, reply owners, IRQ grants, device owners and allocator metadata before enabling slot reuse.
+- [x] Introduce a runtime Created state that stays unschedulable until context, mappings, startup records and initial rights are valid.
+- [x] Refactor the sealed boot constructor into shared checked construction mechanisms and a separate bootstrap policy.
+- [x] Define an explicit resource ledger and rollback for every allocation/grant performed during runtime construction.
+- [x] Add bounded task completion/fault events for the supervisor, including the final exit code and available trap diagnostics.
+- [x] Implement authorized termination for Ready, Running and Blocked tasks, including removal from queues and cancellation of IPC/IRQ waits.
+- [x] Preserve the existing rule that reaping runs on another selected stack and only after the address space is inactive.
+- [x] Keep DMA-dependent resources quarantined until the broker reports physical quiescence; do not make a quarantined slot reusable.
+- [x] Add a minimal user supervisor that launches an approved image and collects completion without kernel policy for specific services.
 
 ## Acceptance checklist
 
-- [ ] Run more than eight sequential task lifetimes in one boot and verify stable resource counts after collection.
-- [ ] Terminate tasks in Ready, Running, Raw wait, AwaitAccept, AwaitReply and IRQ wait states; each survivor receives the documented result once.
-- [ ] Reuse a slot and prove that old task-control, reply, IRQ and endpoint references cannot affect the replacement.
-- [ ] Deny foreign task control and forged task references without changing either task.
-- [ ] Inject failure after each construction step and verify that no partial task becomes runnable.
-- [ ] Kill a DMA owner while BUSY is held and prove that its stack, mappings, buffer and task identity remain unavailable for reuse.
+- [x] Run more than eight sequential task lifetimes in one boot and verify stable resource counts after collection. See [40 checked-source lifetimes and 25 CPU child lifetimes](../tests/RUNTIME_TASKS_ACCEPTANCE.md).
+- [x] Terminate tasks in Ready, Running, Raw wait, AwaitAccept, AwaitReply and IRQ wait states; each survivor receives the documented result once. See the [authorized termination matrix](../tests/RUNTIME_TASKS_ACCEPTANCE.md#adversarial-acceptance).
+- [x] Reuse a slot and prove that old task-control, reply, IRQ and endpoint references cannot affect the replacement. See the [joint stale-reference case](../tests/RUNTIME_TASKS_ACCEPTANCE.md#adversarial-acceptance).
+- [x] Deny foreign task control and forged task references without changing either task. See the [denial snapshots](../tests/RUNTIME_TASKS_ACCEPTANCE.md#adversarial-acceptance).
+- [x] Inject failure after each construction step and verify that no partial task becomes runnable. See the [construction failure boundaries](../tests/RUNTIME_TASKS_ACCEPTANCE.md#adversarial-acceptance).
+- [x] Kill a DMA owner while BUSY is held and prove that its stack, mappings, buffer and task identity remain unavailable for reuse. See the [BUSY slot-pressure case](../tests/RUNTIME_TASKS_ACCEPTANCE.md#adversarial-acceptance).
+
+The five adversarial checks above use checked-source execution and controlled
+device fixtures. The linked record distinguishes them from CPU acceptance.
 
 ## Completion record
 
@@ -82,3 +87,10 @@ When work is accepted, link each completed requirement to its tests and record
 the source and image provenance, remaining limitations and CPU acceptance
 results. A checked box must not imply a stronger evidence level than the linked
 record establishes.
+
+Implementation evidence: [runtime task contract](RUNTIME_TASKS.md),
+[checked-source lifecycle tests](../tests/test_runtime_tasks.py),
+[adversarial acceptance tests](../tests/test_runtime_task_acceptance.py),
+[CPU supervisor probe](../tests/probe_runtime_tasks_cpu.py), and
+[acceptance record](../tests/RUNTIME_TASKS_ACCEPTANCE.md).
+The current-state section above describes the pre-implementation baseline.

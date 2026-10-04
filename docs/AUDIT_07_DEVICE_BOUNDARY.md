@@ -1,6 +1,6 @@
 # A7. Device mechanisms still contain service policy
 
-[Audit overview](../../docs/LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_06_CAPABILITY_TRANSFER_QUOTAS.md) · [Next item](AUDIT_08_LIMITS_AND_LATENCY.md)
+[Audit overview](LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_06_CAPABILITY_TRANSFER_QUOTAS.md) · [Next item](AUDIT_08_LIMITS_AND_LATENCY.md)
 
 Date: 2026-10-04. Priority: **P2**.
 

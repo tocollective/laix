@@ -742,7 +742,7 @@ let mmuDestroyAddressSpace(directory: *mut UWord, owner: UWord): Bool {
     return true
 }
 
-export { USER_VA_START, USER_VA_END, mmuUserRangeValid, mmuInit,
+export { USER_VA_START, USER_VA_END, mmuUserRangeValid, mmuInit, mmuUserLeaf,
     mmuGrantResource, mmuSealResources, mmuScreenResourcesValid,
     mmuUserByteRangeValid, mmuUserBufferValid, copyFromUser, copyToUser,
     mmuInitAddressSpace, mmuCreateAddressSpace, mapPage, unmapPage,

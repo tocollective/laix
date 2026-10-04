@@ -1,5 +1,5 @@
 // Public kernel entry points always resolve authority in the calling task.
-import { Task, currentTask, taskGet, TASK_RUNNING, TASK_READY, TASK_BLOCKED,
+import { Task, currentTask, taskGet, taskSlot, TASK_RUNNING, TASK_READY, TASK_BLOCKED,
     MAX_TASKS, WAIT_NONE, WAIT_IPC_SEND, WAIT_IPC_RECEIVE, WAIT_IPC_CALL, WAIT_IPC_ACCEPT,
     WAIT_IPC_REPLY, taskOwnsTrap, taskSaveContext, taskBlock, taskWake } from "../task/task.m"
 import { Endpoint, Handle, handleLookup, handleClose, handleCopy, endpointDestroy, objectAssertAtomic,
@@ -62,7 +62,7 @@ let ipcAccess(token: UWord, rights: UWord): Word {
     return 0
 }
 
-// FIFO entries contain only stable kernel IDs. A wait owns an endpoint
+// FIFO entries contain generation-bearing task references. A wait owns an endpoint
 // reference until detached; a TCB can belong to exactly one IPC queue.
 let ipcWaiter(object: *mut Endpoint, kind: UWord): *mut Task {
     let mut id: UWord = 0
@@ -248,7 +248,7 @@ let ipcAcceptCall(client: *mut Task, service: *mut Task, buffer: UWord, capacity
     client.ipcReplyOwner = service.id
     client.ipcSize = 0
     ipcClearMessage(client)
-    return ((client.ipcCallGeneration << 8) | client.id) as Word
+    return ((client.ipcCallGeneration << 8) | client.slot) as Word
 }
 
 let ipcCall(frame: *mut TrapFrame, token: UWord, buffer: UWord, size: UWord,
@@ -322,7 +322,7 @@ let ipcAccept(frame: *mut TrapFrame, token: UWord, buffer: UWord, capacity: UWor
 let ipcReply(frame: *mut TrapFrame, token: UWord, buffer: UWord, size: UWord): *TrapFrame {
     if !ipcCallerValid() || !taskOwnsTrap(frame) return ipcResult(frame, -ERRNO_EPERM, 0)
     // A numeric token selects a record, but authority is its kernel-owned owner.
-    let client: *mut Task = taskGet(token & 255)
+    let client: *mut Task = taskSlot(token & 255)
     if token >> 8 == 0 || token >> 8 > HANDLE_GENERATION_MAX || client == null {
         return ipcResult(frame, -ERRNO_EBADF, 0)
     }
@@ -370,7 +370,7 @@ let ipcCancelEndpoint(object: *mut Endpoint): Void {
     while object.senderCount != 0 ipcComplete(ipcWaiter(object, sending), -ERRNO_EPIPE, 0)
     while object.receiverCount != 0 ipcComplete(ipcWaiter(object, receiving), -ERRNO_EPIPE, 0)
     for id: UWord in 1..(MAX_TASKS + 1) {
-        let task: *mut Task = taskGet(id)
+        let task: *mut Task = taskSlot(id)
         if task.ipcEndpoint == object && task.ipcKind == WAIT_IPC_REPLY ipcComplete(task, -ERRNO_EPIPE, 0)
     }
 }

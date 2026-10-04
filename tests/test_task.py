@@ -41,7 +41,7 @@ class TaskM(SourceM):
         self.events.clear()
 
     def field_address(self, field, id=1):
-        return self.addresses["tasks"] + (id - 1) * self.task_type.size + self.task_type.field(field).offset
+        return self.addresses["tasks"] + ((id & 255) - 1) * self.task_type.size + self.task_type.field(field).offset
 
     def field(self, field, id=1):
         return self.memory[self.field_address(field, id)]

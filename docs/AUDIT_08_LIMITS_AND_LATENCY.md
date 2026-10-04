@@ -1,6 +1,6 @@
 # A8. Limits and execution latency
 
-[Audit overview](../../docs/LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_07_DEVICE_BOUNDARY.md) · [Next item](AUDIT_09_ACCEPTANCE_AND_CI.md)
+[Audit overview](LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_07_DEVICE_BOUNDARY.md) · [Next item](AUDIT_09_ACCEPTANCE_AND_CI.md)
 
 Date: 2026-10-04. Priority: **P2**.
 

@@ -1,3 +1,7 @@
+import { SYS_TASK_CREATE, SYS_TASK_CONFIGURE, SYS_TASK_PUBLISH, SYS_TASK_INSPECT,
+    SYS_TASK_TERMINATE, SYS_TASK_COLLECT } from "../arch/wrm081632/defs.m"
+import { taskRuntimeCreate, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
+    taskRuntimeTerminate } from "../task/control.m"
 import { STACK_CANARY, KERNEL_STACK_BOTTOM, KERNEL_STACK_TOP, CAUSE_BREAKPOINT, CAUSE_SYSCALL, CAUSE_INTERRUPT,
     INSTRUCTION_BYTES, REG_RESULT, REG_SYSCALL, ERRNO_ENOSYS, ERRNO_EINVAL,
     SYS_DEBUG_PUT_CHAR, SYS_EXIT, SYS_YIELD, SYS_HANDLE_CLOSE, SYS_HANDLE_COPY,
@@ -86,6 +90,18 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
             frame.regs[REG_RESULT] = ipcDestroy(frame.regs[1]) as UWord
             taskSaveContext(frame)
             return frame
+        case SYS_TASK_CREATE:
+            return deviceResult(frame, taskRuntimeCreate(frame.regs[1]))
+        case SYS_TASK_CONFIGURE:
+            return deviceResult(frame, taskRuntimeConfigure(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4]))
+        case SYS_TASK_PUBLISH:
+            return deviceResult(frame, taskRuntimePublish(frame.regs[1]))
+        case SYS_TASK_INSPECT:
+            return deviceResult(frame, taskRuntimeRead(frame.regs[1], frame.regs[2], false))
+        case SYS_TASK_COLLECT:
+            return deviceResult(frame, taskRuntimeRead(frame.regs[1], frame.regs[2], true))
+        case SYS_TASK_TERMINATE:
+            return taskRuntimeTerminate(frame, frame.regs[1], frame.regs[2] as Word)
         case SYS_IRQ_WAIT:
             return irqWait(frame, frame.regs[1], frame.regs[2])
         case SYS_IRQ_COMPLETE:

@@ -1,6 +1,6 @@
 # A4. IPC liveness and deadlines
 
-[Audit overview](../../docs/LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_03_RUNTIME_CAPABILITIES.md) · [Next item](AUDIT_05_SERVICE_RECOVERY.md)
+[Audit overview](LAIX_MICROKERNEL_AUDIT.md) · [Previous item](AUDIT_03_RUNTIME_CAPABILITIES.md) · [Next item](AUDIT_05_SERVICE_RECOVERY.md)
 
 Date: 2026-10-04. Priority: **P1**.
 
