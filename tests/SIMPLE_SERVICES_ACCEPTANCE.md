@@ -1,5 +1,11 @@
 # Simple services and failure acceptance
 
+This report describes its historical fixed-bootstrap images. Explicit runtime
+Disk/Files recovery is accepted separately in [A5](SERVICE_RECOVERY_ACCEPTANCE.md).
+[A9](ACCEPTANCE_CI.md) adds actual host HID/overflow and explicitly sampled
+BUSY-at-death, timeout/late completion, post-quiescence canaries and media events.
+The original natural-empty-FIFO result and artifact hashes remain unchanged.
+
 Status on 2026-10-04: Input, Disk and Files are independent user images, with
 bounded protocols and explicit rights/failure behavior. Runtime restart is
 unavailable; constructors and grants are sealed. DMA-owner destruction waits

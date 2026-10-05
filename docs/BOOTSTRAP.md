@@ -111,8 +111,12 @@ and exits after its banner is acknowledged. The server remains Blocked in
 
 See [console acceptance](../tests/CONSOLE_SERVICE_ACCEPTANCE.md), the historical
 [bootstrap acceptance](../tests/BOOTSTRAP_ACCEPTANCE.md) and
-[service request/reply](IPC_REQUEST_REPLY.md). Screen migration, service restart
-and device IRQ/DMA policy remain subsequent work.
+[service request/reply](IPC_REQUEST_REPLY.md). Screen migration and bounded
+IRQ/DMA mechanisms are implemented in [Screen](SCREEN_IRQ_DMA.md) and
+[the device contract](DEVICE_CONTRACT.md). Explicit runtime Disk/Files recovery
+is accepted in [A5](../tests/SERVICE_RECOVERY_ACCEPTANCE.md). Fixed UART/Screen
+automatic restart remains unsupported; the [readiness matrix](READINESS_MATRIX.md)
+separates that limit from completed containment and current stress evidence.
 
 ## Runtime extension
 

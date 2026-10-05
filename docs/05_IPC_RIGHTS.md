@@ -5,8 +5,10 @@
 Status: endpoint objects, task-local handles, synchronous send/receive and
 FIFO waits are implemented and checked from source without building. The
 minimal service request/reply contract passes source checks and ten CPU cases
-on a matching ready image. Standalone Raw transport CPU acceptance remains
-pending; see the [request/reply acceptance record](../tests/IPC_REQUEST_REPLY_ACCEPTANCE.md).
+on a matching ready image. Standalone Raw transport now has seven maintained CPU scenarios and a
+128-exchange stress case in [A9](../tests/ACCEPTANCE_CI.md). The older
+[request/reply record](../tests/IPC_REQUEST_REPLY_ACCEPTANCE.md) retains its
+original artifact scope.
 
 ## Начальный контракт
 

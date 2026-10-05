@@ -1,8 +1,10 @@
 # Minimal service request/reply contract
 
 Status: implemented; source checks and request/reply CPU acceptance pass
-without building. The M accept helper is source-checked; the embedded console uses the raw
-accept ABI and executes its public M ABI output helper on CPU. See the
+without building. The embedded UART console uses the raw accept ABI and executes its public
+M ABI output helper on CPU. Newer Screen/simple-service images execute the
+compiled M `accept` helper; [current evidence](../tests/ACCEPTANCE_CI.md) and
+[the readiness matrix](READINESS_MATRIX.md) distinguish those images. See the
 [console contract](CONSOLE_SERVICE.md). Existing syscalls 19/20 remain raw
 synchronous message transport. This contract adds an atomic `call` and a
 kernel-issued, one-use reply right. See the [acceptance record](../tests/IPC_REQUEST_REPLY_ACCEPTANCE.md).
@@ -223,8 +225,10 @@ reply tokens never address the replacement instance.
 - [x] Source checks and CPU acceptance have separate records; no build is used as verification.
 - [x] Repeat exchange, rejection, buffer and lifecycle scenarios on a matching
   ready CPU image: ten cases and 128 maximal-message exchanges under timer preemption.
-- [ ] Execute the M helper in the first user service image in stage 6;
-  the accepted image exercises the kernel ABI through its existing user SYSCALL.
+- [x] Execute the compiled M `accept` helper in newer Screen/simple-service
+  user images; see [the current acceptance](../tests/ACCEPTANCE_CI.md).
+  The older request/reply probe image still exercises the kernel ABI through
+  its existing user SYSCALL; its historical artifact claim is unchanged.
 
 See [stage 5](05_IPC_RIGHTS.md) for existing transport and rights, and
 [stage 6](06_USER_SERVICES.md) for the first console service.

@@ -1,5 +1,10 @@
 # Service request/reply acceptance
 
+Current readiness is tracked in [A9](ACCEPTANCE_CI.md) and
+[the readiness matrix](../docs/READINESS_MATRIX.md). Newer Screen/simple-service
+images execute the compiled M `accept` helper. The helper limitation and hashes
+below remain the historical claim for this report's own image.
+
 Date: 2026-10-04. Implementation, source acceptance and request/reply CPU
 acceptance are complete. All ten CPU cases passed on preserved matching
 ready artifacts. No build, compiler code generation,

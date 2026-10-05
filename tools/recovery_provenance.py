@@ -12,10 +12,11 @@ def digest(path):
 
 def source_manifest():
     paths = set()
-    for tree in ('laix/src', 'laix/user', 'laix/tests', 'mc'):
+    for tree in ('laix/src', 'laix/user', 'laix/tests', 'mc/mlang', 'mc/runtime'):
         for path in (ROOT / tree).rglob('*'):
             if path.is_file() and path.suffix in ('.m', '.asm', '.inc', '.py'):
                 paths.add(path)
+    paths.update((ROOT / 'mc').glob('*.py'))
     paths.update([LAIX/'build.sh', LAIX/'tools/build_recovery.sh', Path(__file__).resolve(),
                   LAIX/'tools/append_font.py', LAIX/'tools/pack_unifont.py', LAIX/'fonts/unifont-index.laf',
                   LAIX/'fonts/unifont-console.laf', LAIX/'fonts/storage-extent.bin'])

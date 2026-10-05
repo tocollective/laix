@@ -65,17 +65,95 @@ class SimpleProbe(ScreenProbe):
             else:
                 require(self.field(peer, 'state') == 4, 'unrelated service did not continue')
 
+    def only(self, pc):
+        self.log.append(self.m.command('del all'))
+        return self.stop(pc)
+
+    def physical_disk(self, busy):
+        info = self.m.command('info')
+        self.log.append(info)
+        disk = next(line for line in info.splitlines() if line.startswith('disk0'))
+        require((' busy' in disk) == busy, 'physical BUSY precondition differs: ' + disk)
+
+    def buffer_pin(self, bounce):
+        refs = self.m.words(self.s['memory__pageReferences'], 1)[0] + (bounce // 4096) * 4
+        owners = self.m.words(self.s['memory__pageOwners'], 1)[0] + (bounce // 4096) * 4
+        require(self.m.words(refs, 1) == [1] and self.m.words(owners, 1) == [0xFFFFFFFE],
+                'DMA buffer is not exclusively owned and pinned')
+        return refs, owners
+
+    def quiescence_canaries(self, bounce):
+        refs, owners = self.buffer_pin(bounce)
+        release = self.only(self.s['service_devices__deviceReleaseBuffer'])
+        self.physical_disk(False)
+        require(self.m.words(bounce + 512, 1) == [0xC0FFEE] and self.m.words(bounce + 4092, 1) == [0xC0FFEE],
+                'late DMA crossed reservation')
+        self.only(release['r31'])
+        require(self.m.words(refs, 1) == [0] and self.m.words(owners, 1) == [0], 'DMA release leaked references')
+        # Mark the freed page after quiescence, then cross two real timer IRQs.
+        self.log.append(self.m.command(f'wp 0x{bounce:X} 0xDEADC0DE'))
+        for _ in range(2):
+            regs = self.only(self.s['taskTick'])
+            require(regs['cause'] == 0, 'post-quiescence progress lacks hardware timer')
+        require(self.m.words(bounce, 1) == [0xDEADC0DE] and
+                self.m.words(bounce + 512, 1) == [0xC0FFEE] and self.m.words(bounce + 4092, 1) == [0xC0FFEE],
+                'DMA wrote after quiescence')
+
     def fault_inflight(self):
-        self.stop(self.s['deviceSubmit'])
+        self.only(self.s['deviceSubmit'])
         require(self.field(3, 'waitReason') == 6 and self.field(4, 'waitReason') == 6, 'clients not awaiting replies')
-        regs = self.stop(self.s['trap__deviceResult'])
-        require(self.m.words(self.s['service_devices__deviceBounce'], 1)[0] != 0, 'DMA reservation missing')
+        regs = self.only(self.s['trap__deviceResult'])
+        bounce = self.m.words(self.s['service_devices__deviceBounce'], 1)[0]
+        require(bounce != 0, 'DMA reservation missing')
+        self.buffer_pin(bounce)
         frame = regs['r1']
-        self.log.append(self.m.command(f'wp 0x{frame + C["TF_EPC"]:X} 0'))
-        self.finish(4)
-        require(self.field(2, 'faulted') == 1 and self.field(2, 'exitCode') == 8, 'disk did not fault')
-        require(self.field(2, 'reaped') == 1 and self.field(3, 'state') == 3, 'failure cleanup incomplete')
-        require(self.m.words(self.s['service_devices__deviceBounce'], 1)[0] == 0, 'late DMA buffer not released')
+        self.log.append(self.m.commands([f'wp 0x{frame + C["TF_EPC"]:X} 0',
+            f'wp 0x{bounce + 512:X} 0xC0FFEE', f'wp 0x{bounce + 4092:X} 0xC0FFEE']))
+        fault = self.only(self.s['trapEntry'])
+        require(fault['cause'] == 8 and fault['epc'] == 0 and fault['status'] & 8,
+                'owner did not execute the real faulting fetch')
+        self.physical_disk(True)
+        death = self.only(self.s['taskFinish'])
+        require(death['r2'] == 8 and death['r3'] == 1, 'wrong owner death instruction')
+        self.physical_disk(True)
+        self.log.append(self.m.command('del all'))
+        self.log.append(self.m.command(f'watch 0x{self.address(2, "state"):X} 4 w'))
+        self.log.append(self.m.command('c'))
+        stopped = self.m.command('r')
+        self.log.append(stopped)
+        require(self.field(2, 'state') == 3, 'death watchpoint did not observe the DEAD store')
+        self.physical_disk(True)
+        self.only(self.s['deviceReap'])
+        self.physical_disk(True)
+        self.buffer_pin(bounce)
+        self.quiescence_canaries(bounce)
+        self.only(self.s['taskKernelResume.idle'])
+        require(self.field(4, 'state') == 3 and self.field(4, 'exitCode') == 4, 'failure chain did not complete')
+        require(self.field(2, 'faulted') == 1 and self.field(2, 'reaped') == 1 and self.field(3, 'state') == 3,
+                'faulted owner/clients not reclaimed after quiescence')
+        return dict(busy_at_fault=True, busy_at_death=True, busy_at_dead_store=True, held_pin=True,
+                    late_completion=True, post_quiescence_timer_irqs=2, canaries=True)
+
+    def timeout_canary(self):
+        from device_snapshot import edit_snapshot, delay_disk
+        self.only(self.s['deviceSubmit'])
+        self.only(self.s['trap__deviceResult'])
+        bounce = self.m.words(self.s['service_devices__deviceBounce'], 1)[0]
+        self.physical_disk(True)
+        self.buffer_pin(bounce)
+        self.log.append(self.m.commands([f'wp 0x{bounce + 512:X} 0xC0FFEE', f'wp 0x{bounce + 4092:X} 0xC0FFEE']))
+        # Hold one physical word until after the service's five-second wait.
+        edit_snapshot(self.m, self.log, lambda data: delay_disk(data, 128000000 * 6))
+        cancellation = self.only(self.s['deviceCancel'])
+        require(cancellation['r1'] == 2, 'timeout cancelled the wrong owner')
+        self.physical_disk(True)
+        self.buffer_pin(bounce)
+        self.quiescence_canaries(bounce)
+        self.only(self.s['taskKernelResume.idle'])
+        require(self.field(2, 'state') == 3 and self.field(2, 'reaped') == 1 and self.field(4, 'exitCode') == 4,
+                'timeout did not propagate and reclaim the owner')
+        return dict(physical_delay_ticks=768000000, timeout_seconds=5,
+                    busy_at_timeout=True, late_completion=True, post_quiescence_canaries=True)
 
     def cancelled_canary(self):
         from probe_screen_cpu import user_instructions
@@ -150,21 +228,21 @@ def main():
     parser.add_argument('--rom', type=Path, default=ROOT / 'bin/firmware.rom')
     parser.add_argument('--log-dir', type=Path, default=ROOT / 'laix/build/acceptance/simple-services')
     parser.add_argument('--timeout', type=float, default=30)
-    parser.add_argument('--case', action='append', choices=['natural', 'input-fault', 'disk-fault', 'file-fault', 'disk-inflight-fault', 'disk-cancel-canary', 'input-denied', 'disk-info-denied', 'disk-begin-denied', 'disk-finish-denied', 'disk-cancel-denied'])
+    parser.add_argument('--case', action='append', choices=['natural', 'input-fault', 'disk-fault', 'file-fault', 'disk-inflight-fault', 'disk-cancel-canary', 'disk-timeout-canary', 'input-denied', 'disk-info-denied', 'disk-begin-denied', 'disk-finish-denied', 'disk-cancel-denied'])
     args = parser.parse_args()
-    cases = args.case or ['natural', 'input-fault', 'disk-fault', 'file-fault', 'disk-inflight-fault', 'disk-cancel-canary', 'input-denied', 'disk-info-denied', 'disk-begin-denied', 'disk-finish-denied', 'disk-cancel-denied']
+    cases = args.case or ['natural', 'input-fault', 'disk-fault', 'file-fault', 'disk-inflight-fault', 'disk-cancel-canary', 'disk-timeout-canary', 'input-denied', 'disk-info-denied', 'disk-begin-denied', 'disk-finish-denied', 'disk-cancel-denied']
     args.log_dir.mkdir(parents=True, exist_ok=True)
     paths = {'image': args.image, 'map': args.map, 'emulator': args.emulator, 'rom': args.rom}
     for name in ('input', 'disk', 'files', 'simple-application'):
         paths[name] = args.services / (name + '.elf')
     hashes = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in paths.items()}
     symbols = symbols_from_map(args.map)
-    report = {'complete': False, 'cases': [], 'sha256': hashes, 'ram': '2M'}
+    report = {'complete': False, 'cases': [], 'evidence': {}, 'sha256': hashes, 'ram': '2M'}
     try:
         for case in cases:
             with ready_monitor(args.image.read_bytes(), args.emulator.resolve(), args.rom.resolve(), args.timeout,
-                               full_image=True, extra_args=('--ram', '2M') +
-                               (('--clock', '128M') if case == 'disk-cancel-canary' else ())) as opened:
+                               full_image=True, extra_args=('--ram', '2M', '--deterministic') +
+                               (('--clock', '128M') if case in ('disk-cancel-canary', 'disk-inflight-fault', 'disk-timeout-canary') else ())) as opened:
                 monitor, process, stdout, stderr = opened
                 probe = SimpleProbe(monitor, symbols, args.services)
                 probe.prepare()
@@ -176,7 +254,9 @@ def main():
                 elif case == 'disk-cancel-canary':
                     probe.cancelled_canary()
                 elif case == 'disk-inflight-fault':
-                    probe.fault_inflight()
+                    report['evidence'][case] = probe.fault_inflight()
+                elif case == 'disk-timeout-canary':
+                    report['evidence'][case] = probe.timeout_canary()
                 else:
                     probe.fault_service({'input-fault': 1, 'disk-fault': 2, 'file-fault': 3}[case])
                 uart = uart_text(stdout)

@@ -11,7 +11,9 @@ items below: separate user components, exclusive NX grants, notification-based
 wait/rearm and a narrow trusted physical-DMA broker. The
 [screen/IRQ/DMA contract](SCREEN_IRQ_DMA.md) describes the implementation;
 [acceptance](../tests/SCREEN_IRQ_DMA_ACCEPTANCE.md) records 17 dedicated source
-checks, 14 screen CPU cases and the 11-case UART regression. Runtime restart remains disabled. The subsequent [simple-service milestone](SIMPLE_SERVICES.md)
+checks, 14 screen CPU cases and the 11-case UART regression. Fixed UART/Screen automatic restart remains disabled. Explicit runtime
+Disk/Files recovery is accepted in [A5](../tests/SERVICE_RECOVERY_ACCEPTANCE.md).
+The subsequent [simple-service milestone](SIMPLE_SERVICES.md)
 adds input, a read-only disk extent and an immutable file endpoint, with
 quiescent DMA-owner destruction and independent failure acceptance.
 
@@ -85,8 +87,9 @@ and the [acceptance record](../tests/SIMPLE_SERVICES_ACCEPTANCE.md).
 - [x] Exit/fault terminates the server task, closes/revokes objects according
   to policy and returns `-EPIPE` to queued and accepted clients.
 - [x] Preserve handle/object/IRQ generations and reject stale capabilities.
-  Runtime restart is unavailable: task slots are terminal and bootstrap is
-  sealed. Future restart must issue fresh capabilities explicitly.
+  The original fixed bootstrap has no replacement policy. The runtime graph
+  now issues fresh capabilities explicitly; [A5](../tests/SERVICE_RECOVERY_ACCEPTANCE.md)
+  accepts supervised Disk/Files replacement and reconnection.
 - [x] Disable further DMA commands on owner death and wait for device BUSY
   to clear before releasing the pin/buffer or destroying owner resources.
   WRM has no disk abort except machine reset; a stuck device is quarantined.
@@ -101,15 +104,16 @@ and the [acceptance record](../tests/SIMPLE_SERVICES_ACCEPTANCE.md).
 - [x] Application output uses its endpoint; direct UART and MMIO access fail on CPU.
 - [x] Server blocks in accept and wakes for application calls on CPU.
 - [x] Multiple clients get distinct responses and FIFO complete-message output
-  under timer rotations in source execution checks; dedicated CPU ordering
-  acceptance remains open.
+  under timer rotations in source execution checks; [A9](../tests/ACCEPTANCE_CI.md)
+  adds dedicated CPU ordering and 128-round compiled-application stress.
 - [x] Invalid version, type, size and text yield bounded errors; source and CPU checks.
 - [x] Inject CPU page faults into Input, Disk and Files; the kernel and
   unrelated services continue, and the application receives an error.
 - [x] Queued and accepted clients receive `-EPIPE` on server death; source
   checks cover both states, CPU checks cover a chained in-flight disk call.
 - [x] Stale handles are rejected and generations never wrap. Runtime restart
-  is excluded by sealed construction/grants; no replacement is implicit.
+  is explicit in the runtime graph; fixed bootstrap replacement is excluded
+  by sealed construction/grants, and no replacement is implicit.
 - [x] Kernel panic emits a complete UART dump with a blocked or dead output
   server; both CPU cases check all 32 GPRs and exit 254.
 - [x] Added IRQs retain wakeups at block/rearm boundaries, coalesce each

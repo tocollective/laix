@@ -145,7 +145,10 @@ class BootProbe:
 
     def negative(self, case):
         if case in ("uart-denied", "task-api-denied"):
-            changes = dict(EPC=self.instructions["syscall"], R9=0 if case == "uart-denied" else 63, R1=33)
+            # A valid image still requires factory authority on the current API.
+            changes = dict(EPC=self.instructions["syscall"],
+                           R9=0 if case == "uart-denied" else C["SYS_TASK_CREATE"],
+                           R1=33 if case == "uart-denied" else 1)
         elif case == "mmio-denied":
             changes = dict(EPC=self.instructions["load"], R8=C["UART_BASE"])
         else:
@@ -154,7 +157,7 @@ class BootProbe:
         self.m.commands([f"wp 0x{frame + C['TF_' + name]:X} 0x{value:X}" for name, value in changes.items()])
         if case in ("uart-denied", "task-api-denied"):
             regs = self.stop(self.instructions["syscall"] + 4)
-            require(regs["status"] & 21 == 5 and regs["r1"] == (0xFFFFFFFF if case == "uart-denied" else 0xFFFFFFDA),
+            require(regs["status"] & 21 == 5 and regs["r1"] == 0xFFFFFFFF,
                     "unprivileged syscall did not return the expected error")
         else:
             self.stop(self.s["taskKernelResume.idle"])

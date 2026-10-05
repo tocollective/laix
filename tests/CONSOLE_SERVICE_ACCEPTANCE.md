@@ -79,9 +79,12 @@ this image. Logs are in `build/acceptance/bootstrap/` and
 
 ## Remaining acceptance
 
-Dedicated multi-client console CPU ordering/stress, console server death with
-another application continuing, service restart and panic output after a
-console-specific failure remain open. Existing request/reply acceptance
+The original run left dedicated multi-client CPU ordering/stress open.
+[A9](ACCEPTANCE_CI.md) now supplies a separate identified four-application,
+128-round UART campaign. General service-fault containment, explicit runtime
+Disk/Files recovery and independent emergency UART have later evidence in
+[the readiness matrix](../docs/READINESS_MATRIX.md). A console-specific
+replacement policy remains unsupported by the fixed UART bootstrap. Existing request/reply acceptance
 covers general service-fault cancellation and continued scheduling; it is
 not evidence for a new console-specific failure probe. Screen/font migration,
 IRQ delivery and DMA policy are separate milestones and are not claimed here.

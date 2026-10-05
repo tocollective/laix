@@ -103,6 +103,25 @@ if [ "${LAIX_CONSOLE:-uart}" = supervisor ]; then
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/kernel/supervisor_bootstrap.m" -o "$obj_dir/supervisor_bootstrap.o"
     set -- "$@" "$obj_dir/supervisor_bootstrap.o"
 fi
+# Dedicated acceptance mains include Screen bootstrap and clone real clients.
+case "$(basename -- "$main_source")" in
+    input_stress.m)
+        for module in kernel/service_policy kernel/simple_bootstrap; do
+            object="$obj_dir/acceptance-$(basename -- "$module").o"
+            python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/$module.m" -o "$object"
+            set -- "$@" "$object"
+        done
+        ;;
+    uart_stress.m|screen_stress.m)
+        for module in tests/programs/console/multiclient kernel/service_policy kernel/service_bootstrap; do
+            source_module=$module
+            case "$module" in kernel/*) source_module=src/$module ;; esac
+            object="$obj_dir/acceptance-$(basename -- "$module").o"
+            python3 "$repo_dir/mc/mc.py" -c "$laix_dir/$source_module.m" -o "$object"
+            set -- "$@" "$object"
+        done
+        ;;
+esac
 python3 "$repo_dir/mc/asm.py" -c "$repo_dir/mc/runtime/mem.asm" -o "$obj_dir/mem.o"
 image_name=laix
 if [ "${LAIX_CONSOLE:-uart}" != uart ]; then image_name=$LAIX_CONSOLE; fi

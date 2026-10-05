@@ -1,5 +1,10 @@
 # Bootstrap acceptance
 
+This is a historical bootstrap run. Later Screen/device containment, compiled
+M helper execution and explicit runtime recovery are tracked in
+[the readiness matrix](../docs/READINESS_MATRIX.md) and [A9](ACCEPTANCE_CI.md).
+The original image hashes and exclusions below are unchanged.
+
 This is the historical protocol-1 smoke record. Current normal boot and the
 text-console protocol are covered by [console acceptance](CONSOLE_SERVICE_ACCEPTANCE.md).
 

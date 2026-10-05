@@ -118,19 +118,20 @@ actual CPU panic cases with blocked/dead output services and eight boundary,
 ownership and lifetime source checks. The updated screen image passed all
 14 screen CPU cases again; its current hashes are recorded with that run.
 
-The completed implementation must not be confused with completion of all
-stage-6 service/restart work. The following dedicated CPU stress checks remain
-open; their source evidence is recorded above where applicable:
+The original run did not include dedicated multi-client or forced timing
+campaigns. [A9](ACCEPTANCE_CI.md) supplies separately identified evidence for:
 
-- Multiple screen clients under extended timer preemption and FIFO ordering.
-- Forced IRQ assertions at block/rearm boundaries, held levels and concurrent
-  shared-line causes; repeated incomplete completion while clients progress.
-- Forced disk timeout/late DMA, service death during an active transfer and
-  physical-memory canaries after quiescence.
-- Floppy hot removal/replacement during DMA, between bitmap halves and before
-  cache-hit validation; terminal medium invalidation.
-- Automatic restart with new endpoint/IRQ/font generations and stale-handle
-  rejection; restart is not implemented in this milestone.
+- Four compiled Screen applications, repeated FIFO writes and timer preemption.
+- Forced shared DONE/VBLANK assertions at wait and rearm boundaries, held-level
+  masking and subsequent natural application/framebuffer progress.
+- Physical disk BUSY at owner death, timeout/cancellation, late completion and
+  post-quiescence canaries in the Services profile.
+- Real removable-medium replacement/removal during DMA in the Media profile.
+
+Those results belong to A9's bundles, rather than the original hashes above.
+Screen replacement between bitmap halves, before cache-hit validation, and
+fixed Screen automatic restart remain separate extensions. Explicit runtime
+Disk/Files replacement has its own [recovery record](SERVICE_RECOVERY_ACCEPTANCE.md).
 
 The failure CPU cases use an untrusted screen task without unrestricted DMA
 MMIO. They prove actual mapping faults and continued kernel/peer execution,

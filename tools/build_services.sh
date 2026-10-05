@@ -17,7 +17,10 @@ for image in $images; do
         input) modules='services/input' ;;
         disk) modules='services/disk' ;;
         files) modules='services/files' ;;
-        simple-application) modules='services/application services/client' ;;
+        simple-application)
+            modules='services/application services/client'
+            if [ "${LAIX_ACCEPTANCE_INPUT:-0}" = 1 ]; then modules='../tests/programs/console/input_client services/client'; fi
+            ;;
         screen) modules='screen/server screen/unicode screen/font screen/cache screen/video' ;;
         storage) modules='screen/storage' ;;
         application) modules='screen/application screen/client' ;;

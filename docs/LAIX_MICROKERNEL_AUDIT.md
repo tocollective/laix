@@ -1,6 +1,12 @@
 # LA/IX microkernel completeness audit
 
-Date: 2026-10-04.
+Date: 2026-10-04 (original audit baseline).
+
+The narrative and 285-test result below describe that dated review. Subsequent
+runtime implementation and acceptance are tracked in the
+[current readiness matrix](READINESS_MATRIX.md) and individual completion records.
+[A9](AUDIT_09_ACCEPTANCE_AND_CI.md) supplies maintained source/CPU workflows,
+identified inputs and bounded stress; its record states the remote CI prerequisite.
 
 LA/IX already has the essential mechanisms of a small, statically configured
 microkernel: isolated user tasks, preemption, protected IPC and user services.
@@ -38,15 +44,15 @@ is correct or a comprehensive vulnerability assessment.
 
 | Area | Current implementation | Evidence |
 | --- | --- | --- |
-| Privilege boundary | User trap entry switches to a trusted guarded kernel stack; context includes GPRs, FCSR and PTBR; IRET restores the selected task | [trap entry](../laix/src/trap/trap.asm), [user acceptance](../laix/tests/USER_ACCEPTANCE.md) |
-| Address spaces | Separate directories, allocator ownership/reference tracking, private user pages, protected kernel mappings, NX stacks and W^X across aliases | [MMU](../laix/src/mm/mmu.m), [allocator](../laix/src/mm/memory.m), [MMU acceptance](../laix/tests/MMU_ACCEPTANCE.md) |
-| User copying | Entire ranges checked before copying; translation uses the target task's directory and supervisor aliases; no partial writes on invalid ranges | [copy helpers](../laix/src/mm/mmu.m), [buffer acceptance](../laix/tests/USER_BUFFERS_ACCEPTANCE.md) |
-| Scheduling | Eight user task slots, one execution context per task, FIFO round-robin, timer preemption, yield, guarded idle and deferred reaping | [tasks](../laix/src/task/task.m), [scheduler acceptance](../laix/tests/SCHEDULER_ACCEPTANCE.md) |
-| Endpoint capabilities | Per-task tables, attenuated send/receive/manage rights, object/handle generations, bounded references, close/destroy and owner-death revocation | [objects](../laix/src/ipc/objects.m), [capability contract](../laix/docs/05_IPC_RIGHTS.md) |
-| IPC | Raw send/receive and atomic Service call/accept/reply, 32-byte snapshots, FIFO admission, owner-bound one-use reply rights and cancellation on death/revocation | [IPC](../laix/src/ipc/ipc.m), [request/reply acceptance](../laix/tests/IPC_REQUEST_REPLY_ACCEPTANCE.md) |
-| User services | UART server/application; optional screen/bitmap profile; separate input/disk/files/application profile with limited ELF boot loading | [stage 6](../laix/docs/06_USER_SERVICES.md), [simple services](../laix/docs/SIMPLE_SERVICES.md) |
-| IRQ and DMA isolation | Generation-bearing IRQ grants, masked level notifications, atomic wait/rearm, timed IRQ waits, checked physical bounce-buffer DMA and quarantine until quiescence | [IRQ](../laix/src/drivers/irq.m), [broker](../laix/src/drivers/service_devices.m), [safety acceptance](../laix/tests/DEVICE_SAFETY_ACCEPTANCE.md) |
-| Failure containment | User faults terminate the task; queued and accepted service callers get EPIPE; unrelated tasks keep running; emergency kernel UART does not depend on user services | [termination](../laix/src/task/task.m), [simple-service acceptance](../laix/tests/SIMPLE_SERVICES_ACCEPTANCE.md), [panic acceptance](../laix/tests/DEVICE_SAFETY_ACCEPTANCE.md) |
+| Privilege boundary | User trap entry switches to a trusted guarded kernel stack; context includes GPRs, FCSR and PTBR; IRET restores the selected task | [trap entry](../src/trap/trap.asm), [user acceptance](../tests/USER_ACCEPTANCE.md) |
+| Address spaces | Separate directories, allocator ownership/reference tracking, private user pages, protected kernel mappings, NX stacks and W^X across aliases | [MMU](../src/mm/mmu.m), [allocator](../src/mm/memory.m), [MMU acceptance](../tests/MMU_ACCEPTANCE.md) |
+| User copying | Entire ranges checked before copying; translation uses the target task's directory and supervisor aliases; no partial writes on invalid ranges | [copy helpers](../src/mm/mmu.m), [buffer acceptance](../tests/USER_BUFFERS_ACCEPTANCE.md) |
+| Scheduling | Eight user task slots, one execution context per task, FIFO round-robin, timer preemption, yield, guarded idle and deferred reaping | [tasks](../src/task/task.m), [scheduler acceptance](../tests/SCHEDULER_ACCEPTANCE.md) |
+| Endpoint capabilities | Per-task tables, attenuated send/receive/manage rights, object/handle generations, bounded references, close/destroy and owner-death revocation | [objects](../src/ipc/objects.m), [capability contract](../docs/05_IPC_RIGHTS.md) |
+| IPC | Raw send/receive and atomic Service call/accept/reply, 32-byte snapshots, FIFO admission, owner-bound one-use reply rights and cancellation on death/revocation | [IPC](../src/ipc/ipc.m), [request/reply acceptance](../tests/IPC_REQUEST_REPLY_ACCEPTANCE.md) |
+| User services | UART server/application; optional screen/bitmap profile; separate input/disk/files/application profile with limited ELF boot loading | [stage 6](../docs/06_USER_SERVICES.md), [simple services](../docs/SIMPLE_SERVICES.md) |
+| IRQ and DMA isolation | Generation-bearing IRQ grants, masked level notifications, atomic wait/rearm, timed IRQ waits, checked physical bounce-buffer DMA and quarantine until quiescence | [IRQ](../src/drivers/irq.m), [broker](../src/drivers/service_devices.m), [safety acceptance](../tests/DEVICE_SAFETY_ACCEPTANCE.md) |
+| Failure containment | User faults terminate the task; queued and accepted service callers get EPIPE; unrelated tasks keep running; emergency kernel UART does not depend on user services | [termination](../src/task/task.m), [simple-service acceptance](../tests/SIMPLE_SERVICES_ACCEPTANCE.md), [panic acceptance](../tests/DEVICE_SAFETY_ACCEPTANCE.md) |
 
 In particular, IPC, user-mode drivers and DMA pinning are not missing outright.
 Their current restrictions and unfinished validation should be extended from
@@ -70,7 +76,7 @@ These priorities describe completeness, not CVE severity:
 | A6 | Receiver-controlled capability transfer and resource quotas | P2 |
 | A7 | A general device interface with less service policy in the kernel | P2 |
 | A8 | [Accepted](../tests/LIMITS_LATENCY_ACCEPTANCE.md): resource/lifetime budgets, reply retirement/replacement and measured CPU latency | P2 |
-| A9 | CPU stress coverage, CI and consistent acceptance tracking | P2 |
+| A9 | [Accepted locally; CI configured](AUDIT_09_ACCEPTANCE_AND_CI.md): maintained artifact-based CPU/stress profiles, source CI and current readiness/provenance | P2 |
 | A10 | Optional shared memory, threads, pager and scheduler extensions | P3 |
 
 ## Detailed work items
@@ -79,16 +85,16 @@ Each item has its own implementation and acceptance checklists in `laix/docs/`.
 All unchecked entries describe proposed work; the current baseline is listed
 above. A10 is an optional feature-selection checklist.
 
-- [A1: Runtime task lifecycle and supervision](../laix/docs/AUDIT_01_TASK_LIFECYCLE.md)
-- [A2: Runtime memory authority](../laix/docs/AUDIT_02_RUNTIME_MEMORY.md)
-- [A3: Runtime object and resource creation](../laix/docs/AUDIT_03_RUNTIME_CAPABILITIES.md)
-- [A4: IPC liveness and deadlines](../laix/docs/AUDIT_04_IPC_LIVENESS.md)
-- [A5: Service restart and discovery](../laix/docs/AUDIT_05_SERVICE_RECOVERY.md)
-- [A6: Capability transfer can exhaust a foreign table](../laix/docs/AUDIT_06_CAPABILITY_TRANSFER_QUOTAS.md)
-- [A7: Device mechanisms still contain service policy](../laix/docs/AUDIT_07_DEVICE_BOUNDARY.md)
-- [A8: Limits and execution latency](../laix/docs/AUDIT_08_LIMITS_AND_LATENCY.md)
-- [A9: Acceptance and CI need to follow the current architecture](../laix/docs/AUDIT_09_ACCEPTANCE_AND_CI.md)
-- [A10: Extensions after the lifecycle baseline](../laix/docs/AUDIT_10_OPTIONAL_EXTENSIONS.md)
+- [A1: Runtime task lifecycle and supervision](../docs/AUDIT_01_TASK_LIFECYCLE.md)
+- [A2: Runtime memory authority](../docs/AUDIT_02_RUNTIME_MEMORY.md)
+- [A3: Runtime object and resource creation](../docs/AUDIT_03_RUNTIME_CAPABILITIES.md)
+- [A4: IPC liveness and deadlines](../docs/AUDIT_04_IPC_LIVENESS.md)
+- [A5: Service restart and discovery](../docs/AUDIT_05_SERVICE_RECOVERY.md)
+- [A6: Capability transfer can exhaust a foreign table](../docs/AUDIT_06_CAPABILITY_TRANSFER_QUOTAS.md)
+- [A7: Device mechanisms still contain service policy](../docs/AUDIT_07_DEVICE_BOUNDARY.md)
+- [A8: Limits and execution latency](../docs/AUDIT_08_LIMITS_AND_LATENCY.md)
+- [A9: Acceptance and CI need to follow the current architecture](../docs/AUDIT_09_ACCEPTANCE_AND_CI.md)
+- [A10: Extensions after the lifecycle baseline](../docs/AUDIT_10_OPTIONAL_EXTENSIONS.md)
 
 ## Recommended implementation order
 
