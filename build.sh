@@ -27,6 +27,14 @@ case "${LAIX_CONSOLE:-uart}" in
         main_source="$laix_dir/tests/programs/mm/runtime_memory.m"
         if [ "$LAIX_CONSOLE" = sharing ]; then main_source="$laix_dir/tests/programs/mm/memory_sharing.m"; fi
         ;;
+    recovery)
+        if [ -n "${LAIX_MAIN:-}" ]; then
+            printf '%s\n' 'LAIX_CONSOLE=recovery cannot be combined with LAIX_MAIN' >&2
+            exit 1
+        fi
+        sh "$laix_dir/tools/build_recovery.sh"
+        main_source="$laix_dir/src/kernel/recovery_main.m"
+        ;;
     objects)
         if [ -n "${LAIX_MAIN:-}" ]; then
             printf '%s\n' 'LAIX_CONSOLE=objects cannot be combined with LAIX_MAIN' >&2
@@ -54,7 +62,7 @@ case "${LAIX_CONSOLE:-uart}" in
         fi
         sh "$laix_dir/tools/build_services.sh" "$LAIX_CONSOLE"
         ;;
-    *) printf '%s\n' 'LAIX_CONSOLE must be uart, screen, services, supervisor, memory, sharing or objects' >&2; exit 1 ;;
+    *) printf '%s\n' 'LAIX_CONSOLE must be uart, screen, services, supervisor, memory, sharing, objects or recovery' >&2; exit 1 ;;
 esac
 python3 "$repo_dir/mc/mc.py" -c "$main_source" -o "$obj_dir/main.o"
 set -- "$@" "$obj_dir/main.o"
@@ -65,7 +73,7 @@ case "$(basename -- "$main_source")" in
         set -- "$@" "$obj_dir/mmu_probe.o"
         ;;
 esac
-for module in arch/wrm081632/defs kernel/boot kernel/bootstrap mm/memory mm/mmu mm/runtime mm/sharing trap/trap_frame ipc/objects task/start task/service_start task/runtime_start task/control task/task ipc/ipc trap/trap kernel/panic drivers/debug_uart drivers/timer drivers/irq drivers/service_devices drivers/input_device drivers/videocard console/console drivers/rnd console/font/font console/font/glyph_cache console/font/data; do
+for module in arch/wrm081632/defs kernel/boot kernel/bootstrap mm/memory mm/mmu mm/runtime mm/sharing trap/trap_frame ipc/objects task/start task/service_start task/runtime_start task/recovery_start task/control task/program task/recovery task/task ipc/ipc trap/trap kernel/panic drivers/debug_uart drivers/timer drivers/irq drivers/service_devices drivers/input_device drivers/videocard console/console drivers/rnd console/font/font console/font/glyph_cache console/font/data; do
     mkdir -p "$(dirname -- "$obj_dir/$module.o")"
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/$module.m" -o "$obj_dir/$module.o"
     set -- "$@" "$obj_dir/$module.o"
@@ -73,14 +81,13 @@ done
 if [ "${LAIX_CONSOLE:-uart}" = screen ] || [ "${LAIX_CONSOLE:-uart}" = services ]; then
     bootstrap_module=kernel/service_bootstrap
     if [ "$LAIX_CONSOLE" = services ]; then bootstrap_module=kernel/simple_bootstrap; fi
-    for module in task/program kernel/service_policy "$bootstrap_module"; do
+    for module in kernel/service_policy "$bootstrap_module"; do
         python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/$module.m" -o "$obj_dir/$module.o"
         set -- "$@" "$obj_dir/$module.o"
     done
 fi
 if [ "${LAIX_CONSOLE:-uart}" = memory ] || [ "${LAIX_CONSOLE:-uart}" = sharing ] || [ "${LAIX_CONSOLE:-uart}" = objects ]; then
-    python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/task/program.m" -o "$obj_dir/program.o"
-    set -- "$@" "$obj_dir/program.o"
+    : # task/program is linked by every runtime-enabled kernel
 fi
 if [ "${LAIX_CONSOLE:-uart}" = supervisor ]; then
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/kernel/supervisor_bootstrap.m" -o "$obj_dir/supervisor_bootstrap.o"
@@ -94,5 +101,9 @@ python3 "$repo_dir/mc/ld.py" --layout boot "$@" "$obj_dir/mem.o" \
 
 python3 "$laix_dir/tools/append_font.py" \
     "$laix_dir/build/$image_name.img" "$laix_dir/fonts/unifont-console.laf"
+
+if [ "${LAIX_CONSOLE:-uart}" = recovery ]; then
+    python3 "$laix_dir/tools/recovery_provenance.py"
+fi
 
 printf 'Boot image: %s\n' "$laix_dir/build/$image_name.img"

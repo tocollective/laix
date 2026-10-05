@@ -4,13 +4,16 @@
 
 Date: 2026-10-04. Priority: **P1**.
 
-These checklists describe proposed work, not completed implementation.
+Status: implemented and accepted at the evidence levels in the
+[recovery contract](SERVICE_RECOVERY.md) and
+[source/CPU acceptance record](../tests/SERVICE_RECOVERY_ACCEPTANCE.md).
+The original gap analysis below is retained as the audit baseline.
 
 ## Dependencies
 
 Requires runtime tasks/memory/factories from A1–A3, bounded failure handling from A4 and safe transfer from A6. Device regrant must respect A7 DMA quiescence.
 
-## Current state and gap
+## Original state and gap (2026-10-04)
 
 **Evidence:** boot policy is embedded in
 [bootstrap.m](../src/kernel/bootstrap.m),
@@ -55,33 +58,36 @@ handover may need to wait or remain unavailable until machine reset.
 
 ## Implementation checklist
 
-- [ ] Define a user supervisor policy for launch order, required dependencies, failure events and recovery limits.
-- [ ] Define service instance identity separately from protocol version, resource generation and human-readable service name.
-- [ ] Construct each replacement with a fresh task identity, endpoint, startup record and scoped resource grants.
-- [ ] Publish replacements only after all fallible image, mapping and authority work succeeds.
-- [ ] Implement an authorized resolver or supervisor exchange that installs fresh send handles in consenting clients.
-- [ ] Keep old handles revoked; do not silently rebind them to the replacement instance.
-- [ ] Define client reconnect behavior and how blocked clients learn that a new instance is available.
-- [ ] Define dependency recovery for Files/Disk and other service chains, including downstream restart ordering.
-- [ ] Specify which state is restored, lost or reconstructed; handle duplicate/non-idempotent requests explicitly.
-- [ ] Add bounded restart attempts and backoff so repeated crashes cannot exhaust memory or monopolize scheduling.
-- [ ] Regrant IRQ/device authority only after old operations are quiescent; report permanent quarantine when a device cannot safely recover.
-- [ ] Update fixed wire generation conventions to describe replacement resource instances without accepting stale requests.
+- [x] Define a user supervisor policy for launch order, required dependencies, failure events and recovery limits. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#implementation-evidence))
+- [x] Define service instance identity separately from protocol version, resource generation and human-readable service name. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#implementation-evidence))
+- [x] Construct each replacement with a fresh task identity, endpoint, startup record and scoped resource grants. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#implementation-evidence))
+- [x] Publish replacements only after all fallible image, mapping and authority work succeeds. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#implementation-evidence))
+- [x] Implement an authorized resolver or supervisor exchange that installs fresh send handles in consenting clients. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#implementation-evidence))
+- [x] Keep old handles revoked; do not silently rebind them to the replacement instance. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#implementation-evidence))
+- [x] Define client reconnect behavior and how blocked clients learn that a new instance is available. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#implementation-evidence))
+- [x] Define dependency recovery for Files/Disk and other service chains, including downstream restart ordering. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#implementation-evidence))
+- [x] Specify which state is restored, lost or reconstructed; handle duplicate/non-idempotent requests explicitly. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#implementation-evidence))
+- [x] Add bounded restart attempts and backoff so repeated crashes cannot exhaust memory or monopolize scheduling. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#implementation-evidence))
+- [x] Regrant IRQ/device authority only after old operations are quiescent; report permanent quarantine when a device cannot safely recover. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#implementation-evidence))
+- [x] Update fixed wire generation conventions to describe replacement resource instances without accepting stale requests. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#implementation-evidence))
 
 ## Acceptance checklist
 
-- [ ] Crash and restart a non-DMA server repeatedly during normal scheduling with no growth in live resource usage.
-- [ ] Keep old task/endpoint/IRQ/reply references and verify that none can access the replacement.
-- [ ] Reconnect consenting clients explicitly and complete subsequent requests through their new handles.
-- [ ] Fail Disk during a Files call; cancel the chain, recover dependencies in order and perform a later successful read.
-- [ ] Hold device BUSY during owner death and deny replacement submission/regrant until physical quiescence.
-- [ ] Hold BUSY indefinitely and report unavailable/quarantined state while unrelated tasks continue.
-- [ ] Inject failure at every replacement construction/publication step and keep the resolver from advertising a partial instance.
-- [ ] Run a CPU recovery scenario across multiple failure cycles with matching source/image provenance.
+- [x] Crash and restart a non-DMA server repeatedly during normal scheduling with no growth in live resource usage. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#acceptance-evidence))
+- [x] Keep old task/endpoint/IRQ/reply references and verify that none can access the replacement. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#acceptance-evidence))
+- [x] Reconnect consenting clients explicitly and complete subsequent requests through their new handles. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#acceptance-evidence))
+- [x] Fail Disk during a Files call; cancel the chain, recover dependencies in order and perform a later successful read. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#acceptance-evidence))
+- [x] Hold device BUSY during owner death and deny replacement submission/regrant until physical quiescence. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#acceptance-evidence))
+- [x] Hold BUSY indefinitely and report unavailable/quarantined state while unrelated tasks continue. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#acceptance-evidence))
+- [x] Inject failure at every replacement construction/publication step and keep the resolver from advertising a partial instance. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#acceptance-evidence))
+- [x] Run a CPU recovery scenario across multiple failure cycles with matching source/image provenance. ([Evidence](../tests/SERVICE_RECOVERY_ACCEPTANCE.md#acceptance-evidence))
 
 ## Completion record
 
-When work is accepted, link each completed requirement to its tests and record
-the source and image provenance, remaining limitations and CPU acceptance
-results. A checked box must not imply a stronger evidence level than the linked
-record establishes.
+Accepted on 2026-10-05. The [acceptance record](../tests/SERVICE_RECOVERY_ACCEPTANCE.md)
+maps each item to checked-source, user-policy fixture and CPU evidence, states
+physical DMA and persistent-state limitations, and links the
+[source/image provenance](../tests/SERVICE_RECOVERY_PROVENANCE.json).
+Repeated recovery runs on actual user images across five service generations;
+physical indefinite BUSY remains intentionally unavailable and is verified in
+source/hardware fixtures, not claimed as successful CPU device recovery.

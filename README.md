@@ -30,6 +30,13 @@ carry generations; scoped control capabilities, completion storage, rollback
 and DMA quarantine are specified in [the runtime task contract](docs/RUNTIME_TASKS.md)
 and [acceptance record](tests/RUNTIME_TASKS_ACCEPTANCE.md).
 
+The `LAIX_CONSOLE=recovery` profile runs a user watchdog for stateless Echo and
+read-only Files/Disk. Replacements have fresh identities and scoped grants;
+consenting clients explicitly resolve new handles. Publication is transactional,
+restart attempts/backoff are bounded and BUSY DMA remains quarantined. See the
+[recovery contract](docs/SERVICE_RECOVERY.md) and
+[source/CPU acceptance](tests/SERVICE_RECOVERY_ACCEPTANCE.md).
+
 Scoped eager memory is implemented with private region tokens, explicit
 address-space rights, per-task frame budgets and a kernel progress reserve.
 The minimal [user heap](user/heap.m) grows and releases complete page-backed

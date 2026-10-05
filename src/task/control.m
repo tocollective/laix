@@ -1,6 +1,10 @@
+import { taskConstructProgram } from "program.m"
+import { serviceReleaseSupervisor, serviceDependencyLive } from "recovery.m"
 import { irqIssue, irqReleaseTask } from "../drivers/irq.m"
+import { diskDevicesCheck, diskDevicesRegrant, serviceDiskIrq } from "../drivers/service_devices.m"
+import { kernelBootInfo } from "../kernel/boot.m"
 import { inputDevicesInit } from "../drivers/input_device.m"
-import { DEVICE_UART_TX, DEVICE_INPUT, KEYBOARD_IRQ } from "../arch/wrm081632/defs.m"
+import { DEVICE_UART_TX, DEVICE_INPUT, DEVICE_DISK, KEYBOARD_IRQ } from "../arch/wrm081632/defs.m"
 // Bounded, nontransferable task capabilities and completion mailboxes.
 // References select records; only the kernel-recorded owner grants authority.
 import { Task, currentTask, taskGet, taskConstructImage, taskPublishChecked,
@@ -40,6 +44,18 @@ let mut taskHistoryCount: UWord
 
 extern let runtimeApprovedStart: UByte
 extern let runtimeApprovedEnd: UByte
+
+// Immutable boot catalog: registration closes with task-control sealing.
+let mut runtimeImageStart: UWord[5]
+let mut runtimeImageEnd: UWord[5]
+let taskRegisterImage(image: UWord, start: UWord, end: UWord): Bool {
+    objectAssertAtomic()
+    if taskControlsSealed || image < 2 || image > 5 || start == 0 || end <= start ||
+        runtimeImageStart[image - 1] != 0 return false
+    runtimeImageStart[image - 1] = start
+    runtimeImageEnd[image - 1] = end
+    return true
+}
 
 let taskControlLookup(reference: UWord, rights: UWord): *mut TaskControl {
     objectAssertAtomic()
@@ -82,13 +98,16 @@ let taskControlBootstrapSelf(reference: UWord): Bool {
     return taskControlBootstrap(reference, reference, TASK_RIGHT_INSPECT | TASK_RIGHT_TERMINATE)
 }
 
+let taskControlLookupBootOpen(): Bool { return !taskControlsSealed }
 let taskControlSeal(): Void { taskControlsSealed = true }
 
 // Image IDs are catalog choices, never addresses. Creation authority is an
 // image mask on the caller; the new per-object capability controls only child.
 let taskRuntimeCreate(image: UWord): Word {
     objectAssertAtomic()
-    if currentTask == null || image != 1 || currentTask.createImages & 1 == 0 return -ERRNO_EPERM
+    if currentTask == null || image == 0 || image > 5 ||
+        currentTask.createImages & (1 << (image - 1)) == 0 ||
+        (image != 1 && runtimeImageStart[image - 1] == 0) return -ERRNO_EPERM
     let control: *mut TaskControl = taskControlFree()
     if control == null return -ERRNO_ENFILE
     // Reserve a mailbox before any fallible resource allocation. No task can
@@ -96,7 +115,9 @@ let taskRuntimeCreate(image: UWord): Word {
     control.owner = currentTask.id
     control.rights = TASK_RIGHT_ALL
     control.done = false
-    let reference: UWord = taskConstructImage(&runtimeApprovedStart as UWord, &runtimeApprovedEnd as UWord, 0)
+    let mut reference: UWord = 0
+    if image == 1 reference = taskConstructImage(&runtimeApprovedStart as UWord, &runtimeApprovedEnd as UWord, 0)
+    else reference = taskConstructProgram(runtimeImageStart[image - 1], runtimeImageEnd[image - 1])
     if reference == 0 {
         control.owner = 0
         control.rights = 0
@@ -105,6 +126,7 @@ let taskRuntimeCreate(image: UWord): Word {
     control.reference = reference
     let task: *mut Task = taskGet(reference)
     task.reusable = true
+    task.resolverOwner = currentTask.id
     return reference as Word
 }
 
@@ -163,12 +185,13 @@ let taskInstallRuntimeStart(reference: UWord, token: UWord, rights: UWord, argum
     return true
 }
 
-// First runtime brokers: UART TX and exclusive keyboard events. Screen/font
-// and disk DMA retain their boot policy until their A7 restart contract exists.
+// Scoped brokers: UART TX, keyboard events and quiescent read-only boot Disk.
+// Screen/font retain their separate boot-only policy.
 let taskRuntimeDevices(reference: UWord, devices: UWord): Word {
     objectAssertAtomic()
     if currentTask == null || devices == 0 ||
-        devices & ~(DEVICE_UART_TX | DEVICE_INPUT) != 0 ||
+        devices & ~(DEVICE_UART_TX | DEVICE_INPUT | DEVICE_DISK) != 0 ||
+        (devices & DEVICE_DISK != 0 && devices != DEVICE_DISK) ||
         currentTask.deviceFactory & devices != devices return -ERRNO_EPERM
     if taskControlLookup(reference, TASK_RIGHT_CONFIGURE) == null return -ERRNO_EPERM
     let child: *mut Task = taskGet(reference)
@@ -183,6 +206,17 @@ let taskRuntimeDevices(reference: UWord, devices: UWord): Word {
             return -ERRNO_EBUSY
         }
     }
+    if devices == DEVICE_DISK {
+        let available: Word = diskDevicesCheck(kernelBootInfo.disk)
+        if available != 0 return available
+        token = irqIssue(reference, serviceDiskIrq(kernelBootInfo.disk))
+        if token == 0 return -ERRNO_EBUSY
+        let result: Word = diskDevicesRegrant(reference, kernelBootInfo.disk, kernelBootInfo.imageSize)
+        if result != 0 {
+            irqReleaseTask(reference)
+            return result
+        }
+    }
     child.deviceRights = devices
     return token as Word
 }
@@ -194,6 +228,7 @@ let taskRuntimePublish(reference: UWord): Word {
     if task == null || task.state != TASK_CREATED || !task.configured return -ERRNO_EBUSY
     let block: *RuntimeStart = task.bootPage as *RuntimeStart
     if block.endpoint != 0 && handleLookup(&mut task.handles, block.endpoint, block.rights) == null return -ERRNO_EPERM
+    if !serviceDependencyLive(task) return -ERRNO_EPERM
     if !taskPublishChecked(reference) return -ERRNO_EINVAL
     return 0
 }
@@ -252,6 +287,7 @@ let taskRecordReaped(reference: UWord): Void {
 // A dead supervisor cannot leave private construction or uncollectable
 // mailboxes behind. Published children continue independently (user policy).
 let taskReleaseSupervisor(owner: UWord): Void {
+    serviceReleaseSupervisor(owner)
     for i: UWord in 0..MAX_TASK_CONTROLS {
         let control: *mut TaskControl = &mut taskControls[i]
         if control.owner != owner || control.reference == 0 continue
@@ -318,5 +354,5 @@ let taskRuntimeTerminate(frame: *mut TrapFrame, reference: UWord, code: Word): *
 
 export { taskControlLookup, TaskControl, taskControls, taskHistory, taskHistoryHead, taskHistoryCount,
     MAX_TASK_CONTROLS, TASK_HISTORY_SIZE, taskControlBootstrapSelf, taskControlBootstrap, taskControlSeal, taskInstallRuntimeStart,
-    taskRuntimeDevices, taskRuntimeCreate, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
+    taskControlLookupBootOpen, taskRegisterImage, taskRuntimeDiscard, taskRuntimeDevices, taskRuntimeCreate, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
     taskRuntimeTerminate, taskRecordCompletion, taskRecordReaped, taskReleaseSupervisor }

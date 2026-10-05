@@ -161,3 +161,19 @@ let tryAccept(handle: UWord, buffer: *mut UByte, capacity: UWord, result: *mut A
 let cancelTaskWait(reference: UWord): Word { return syscall(SYS_TASK_CANCEL_WAIT, reference) }
 let sleep(seconds: UWord): Word { return syscall(SYS_SLEEP, seconds) }
 export { callTimed, trySend, tryRecv, tryAccept, cancelTaskWait, sleep }
+
+import { SYS_SERVICE_PUBLISH, SYS_SERVICE_RESOLVE, SYS_SERVICE_ALLOW,
+    SYS_SERVICE_WITHDRAW, SYS_SERVICE_CONFIGURE } from "../src/arch/wrm081632/defs.m"
+import { ServiceResolution } from "../src/task/recovery_start.m"
+let publishService(name: UWord, reference: UWord, root: UWord, generation: UWord): Word {
+    return syscall(SYS_SERVICE_PUBLISH, name, reference, root, generation)
+}
+let resolveService(name: UWord, result: *mut ServiceResolution): Word {
+    return syscall(SYS_SERVICE_RESOLVE, name, result)
+}
+let allowServices(reference: UWord, mask: UWord): Word { return syscall(SYS_SERVICE_ALLOW, reference, mask) }
+let withdrawService(name: UWord, status: Word): Word { return syscall(SYS_SERVICE_WITHDRAW, name, status) }
+let configureService(reference: UWord, root: UWord, dependency: UWord, generation: UWord, irq: UWord): Word {
+    return syscall(SYS_SERVICE_CONFIGURE, reference, root, dependency, generation, irq)
+}
+export { publishService, resolveService, allowServices, withdrawService, configureService }

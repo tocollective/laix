@@ -55,7 +55,8 @@ unrelated tasks. Endpoint configuration attenuates an existing caller handle
 through `handleCopy`. Service receive rights stay with the immutable receiver, while management
 rights stay with the creator; [runtime endpoint factories](RUNTIME_OBJECTS.md)
 can bind a fresh Service endpoint to an owned Created child. No IRQ, MMIO, DMA, UART or task-creation rights
-are inferred from startup arguments. Bootstrap device/resource root grants stay sealed; syscall 54 separately
+are inferred from startup arguments. A5 additionally provides a sealed catalog
+of trusted ELF images and [atomic private service publication/resolution](SERVICE_RECOVERY.md). Bootstrap device/resource root grants stay sealed; syscall 54 separately
 checks a bounded supervisor factory before issuing UART/input broker rights.
 User wrappers are in `user/syscalls.m`; ABI types are imported directly from
 `src/task/runtime_start.m`.

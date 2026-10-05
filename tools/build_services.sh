@@ -28,6 +28,10 @@ for image in $images; do
         python3 "$repo_dir/mc/mc.py" -c "$laix_dir/user/$module.m" -o "$object"
         set -- "$@" "$object"
     done
+    if [ "$image" = disk ] || [ "$image" = files ]; then
+        python3 "$repo_dir/mc/asm.py" -c "$laix_dir/user/services/${image}_entry.asm" -o "$service_dir/$image-entry.o"
+        set -- "$@" "$service_dir/$image-entry.o"
+    fi
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/task/service_start.m" -o "$service_dir/$image-start.o"
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/task/runtime_start.m" -o "$service_dir/$image-task-abi.o"
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/arch/wrm081632/defs.m" -o "$service_dir/$image-defs.o"

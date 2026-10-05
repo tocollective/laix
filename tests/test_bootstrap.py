@@ -249,7 +249,7 @@ class BootstrapTests(unittest.TestCase):
         self.assertFalse(vm.call("bootstrapInit"))
         self.assertEqual(vm.free_pages(), before)
         # Unknown syscall numbers remain denied; runtime creation requires a capability.
-        vm.invoke(63, 2, 7, 0xDEADBEEF)
+        vm.invoke(66, 2, 7, 0xDEADBEEF)
         self.assertEqual(vm.result(1)[0], error(38))
 
 

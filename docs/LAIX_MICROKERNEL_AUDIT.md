@@ -66,7 +66,7 @@ These priorities describe completeness, not CVE severity:
 | A2 | Authorized memory management beyond fixed startup mappings | P1 |
 | A3 | Runtime object/resource creation under scoped capabilities | P1 |
 | A4 | [Accepted](../tests/IPC_LIVENESS_ACCEPTANCE.md): timed calls, try IPC, scoped cancellation and watchdog sleep | P1 |
-| A5 | Restart with fresh service identity, discovery and resource regrant | P1 |
+| A5 | [Accepted](../tests/SERVICE_RECOVERY_ACCEPTANCE.md): private supervision, atomic publication, explicit resolution and quiescent Disk handover | P1 |
 | A6 | Receiver-controlled capability transfer and resource quotas | P2 |
 | A7 | A general device interface with less service policy in the kernel | P2 |
 | A8 | Sustainable limits and bounded execution latency | P2 |

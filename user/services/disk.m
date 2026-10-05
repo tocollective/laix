@@ -7,15 +7,16 @@ import { AcceptResult, accept, reply, exit, irqWait, irqComplete,
     diskInfo, diskBegin, diskFinish, diskCancel } from "../syscalls.m"
 let mut diskRequest: UWord[8]
 let mut diskResponse: UWord[8]
+let mut diskGeneration: UWord = DATA_GENERATION
 let mut diskFailed: Bool
 
 let diskHandle(request: *UWord, size: UWord, response: *mut UWord, irq: UWord): Void {
     for i: UWord in 0..8 response[i] = 0
     response[0] = DISK_RESPONSE_HEADER
     response[1] = (-ERRNO_EINVAL) as UWord
-    response[2] = DATA_GENERATION
+    response[2] = diskGeneration
     if size != 16 || (request[0] != DISK_REQUEST_HEADER && request[0] != DISK_STAT_HEADER) return
-    if request[1] != DATA_GENERATION {
+    if request[1] != diskGeneration {
         response[1] = (-ERRNO_EPIPE) as UWord
         return
     }
@@ -67,4 +68,6 @@ let diskMain(start: *ServiceStart, bytes: UWord): Void {
         if diskFailed exit(1)
     }
 }
-export { diskHandle, diskMain }
+let diskSetGeneration(generation: UWord): Void { diskGeneration = generation }
+let diskDependencyFailed(): Bool { return diskFailed }
+export { diskDependencyFailed, diskSetGeneration, diskHandle, diskMain }

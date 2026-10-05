@@ -28,10 +28,11 @@ continues sealing endpoint root issuance, task-control root grants, MMU device
 resource grants and bootstrap IRQ issuance. Runtime creation reaches separate
 authorized mechanisms; it does not reopen these roots.
 
-Screen/font mappings and disk DMA issuance remain boot-only in this milestone.
-Their existing device brokers, cancellation and quarantine remain applicable;
-general resource reassignment and restart policy belong to A5/A7. The first
-runtime deliberately chooses UART and keyboard as its bounded device types.
+The original A3 profile delegates UART and keyboard only. A5 adds a separate
+[recovery profile](SERVICE_RECOVERY.md) with private supervisor roots, an
+immutable ELF catalog and an explicit read-only Disk factory bit. Disk handover
+requires physical quiescence; screen/font mappings and arbitrary MMIO/DMA
+issuance remain under their boot policy. General device interfaces belong to A7.
 
 ## Runtime ABI
 
@@ -51,8 +52,10 @@ ledger, rather than knowing a reference, authorizes the selection.
 Device grants also require a Created, unconfigured child with no previous
 device grant. INPUT first reserves the masked keyboard IRQ, then initializes
 the exclusive event broker. Failure releases the reservation and returns
-`-EBUSY`, without adding device rights. Timer, disk, screen/font and arbitrary
-IRQ lines cannot be requested through syscall 54. Pass its IRQ result to the
+`-EBUSY`, without adding device rights. Timer, screen/font and arbitrary IRQ lines cannot be requested through syscall
+54. The A5 supervisor may additionally request exclusive DEVICE_DISK, with
+quiescence preflight, a fresh disk IRQ and the immutable boot-medium broker;
+the A3 supervisor and ordinary callers have no such factory right. Pass its IRQ result to the
 child through `configureTask`'s argument if the user protocol needs it; startup
 arguments themselves never authorize device access. Configuration failure,
 Created cancellation and task death release the broker and mask/revoke IRQs.

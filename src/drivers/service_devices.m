@@ -8,7 +8,7 @@ import { DISK0_BASE, DISK1_BASE, FLOPPY_BASE, DISK_PRESENT, DISK_CHANGED,
 import { PAGE_NONE, PAGE_KERNEL, allocPage, freePage, retainPage, releasePage,
     physicalPageOwned } from "../mm/memory.m"
 import { copyToUser } from "../mm/mmu.m"
-import { taskGet, Task, TASK_CREATED } from "../task/task.m"
+import { taskGet, Task, TASK_CREATED, TASK_DEAD } from "../task/task.m"
 import { fontData, fontDataEnd } from "../console/font/data.m"
 import { objectAssertAtomic } from "../ipc/objects.m"
 import { panic } from "../kernel/panic.m"
@@ -29,6 +29,7 @@ let mut fontStorageOwner: UWord
 let mut screenOwner: UWord
 let mut fontFirstSector: UWord
 let mut fontGlyphCount: UWord
+let mut fontMediumInvalid: Bool
 let mut fontDisabled: Bool
 let mut fontBounce: UWord
 let mut fontOperationOwner: UWord
@@ -89,6 +90,7 @@ let fontMediumLive(): Bool {
     if fontDisabled || fontDisk == null return false
     if fontDisk.status & (DISK_PRESENT | DISK_CHANGED) != DISK_PRESENT {
         fontDisabled = true
+        fontMediumInvalid = true
         return false
     }
     return true
@@ -115,6 +117,43 @@ let fontReleaseBuffer(): Void {
 
 let diskDevicesInit(owner: UWord, disk: UWord, imageBytes: UWord): Bool {
     return serviceDevicesInit(0, owner, disk, imageBytes)
+}
+
+// Scoped runtime handover never acknowledges CHANGED or releases a BUSY pin.
+// The runtime factory checks authority and reserves a fresh IRQ before entry.
+let diskDevicesRegrant(owner: UWord, disk: UWord, imageBytes: UWord): Word {
+    objectAssertAtomic()
+    let child: *mut Task = taskGet(owner)
+    if child == null || child.state != TASK_CREATED return -ERRNO_EPERM
+    let checked: Word = diskDevicesCheck(disk)
+    if checked != 0 return checked
+    if !devicesInitialized {
+        if !diskDevicesInit(owner, disk, imageBytes) return -ERRNO_EPIPE
+        return 0
+    }
+    fontDisk.status = DISK_DONE
+    fence()
+    fontStorageOwner = owner
+    fontDisabled = false
+    return 0
+}
+
+// Preflight before allocating an IRQ generation or changing any owner.
+let diskDevicesCheck(disk: UWord): Word {
+    objectAssertAtomic()
+    if !devicesInitialized {
+        let drive: *volatile DiskRegisters = disk as *volatile DiskRegisters
+        if serviceDiskIrq(disk) == 32 return -ERRNO_EPERM
+        if drive.status & DISK_BUSY != 0 return -ERRNO_EBUSY
+        return 0
+    }
+    let old: *mut Task = taskGet(fontStorageOwner)
+    if screenOwner != 0 || (old != null && old.state != TASK_DEAD) return -ERRNO_EBUSY
+    fontReap()
+    if fontBounce != PAGE_NONE || fontDisk == null || fontDisk.status & DISK_BUSY != 0 return -ERRNO_EBUSY
+    if fontMediumInvalid || fontDisk.status & (DISK_PRESENT | DISK_CHANGED) != DISK_PRESENT return -ERRNO_EPIPE
+    if fontDisk != disk as *volatile mut DiskRegisters return -ERRNO_EPERM
+    return 0
 }
 
 let diskInfo(owner: UWord): Word {
@@ -260,6 +299,6 @@ let screenReleaseOwner(owner: UWord): Void {
 }
 
 export { serviceDiskIrq, serviceDevicesInit, serviceDevicesRollback,
-    diskDevicesInit, diskInfo, diskBegin, serviceDevicesQuiescent,
+    diskDevicesCheck, diskDevicesRegrant, diskDevicesInit, diskInfo, diskBegin, serviceDevicesQuiescent,
     fontValidate, fontBegin, fontFinish, fontCancelOwner, fontReap,
     screenControl, screenReleaseOwner }

@@ -1,3 +1,6 @@
+import { servicePublish, serviceResolve, serviceAllow, serviceWithdraw, serviceConfigure } from "../task/recovery.m"
+import { SYS_SERVICE_PUBLISH, SYS_SERVICE_RESOLVE, SYS_SERVICE_ALLOW,
+    SYS_SERVICE_WITHDRAW, SYS_SERVICE_CONFIGURE } from "../arch/wrm081632/defs.m"
 import { SYS_IPC_CALL_TIMED, SYS_IPC_TRY_SEND, SYS_IPC_TRY_RECEIVE,
     SYS_IPC_TRY_ACCEPT, SYS_TASK_CANCEL_WAIT, SYS_SLEEP } from "../arch/wrm081632/defs.m"
 import { ipcCallTimed, ipcSendMode, ipcReceiveMode, ipcAcceptMode,
@@ -141,6 +144,16 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
             return deviceResult(frame, memoryEdit(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4], true))
         case SYS_MEM_POPULATE:
             return deviceResult(frame, memoryPopulate(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4], frame.regs[5]))
+        case SYS_SERVICE_PUBLISH:
+            return deviceResult(frame, servicePublish(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4]))
+        case SYS_SERVICE_RESOLVE:
+            return deviceResult(frame, serviceResolve(frame.regs[1], frame.regs[2]))
+        case SYS_SERVICE_ALLOW:
+            return deviceResult(frame, serviceAllow(frame.regs[1], frame.regs[2]))
+        case SYS_SERVICE_WITHDRAW:
+            return deviceResult(frame, serviceWithdraw(frame.regs[1], frame.regs[2] as Word))
+        case SYS_SERVICE_CONFIGURE:
+            return deviceResult(frame, serviceConfigure(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4], frame.regs[5]))
         case SYS_TASK_CREATE:
             return deviceResult(frame, taskRuntimeCreate(frame.regs[1]))
         case SYS_TASK_CONFIGURE:

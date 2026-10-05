@@ -97,6 +97,8 @@ type Task {
     ipcReplyCapacity: UWord,
     waitTimed: UWord, // authoritative deadline flag; cleared before Ready/death
     waitDeadline: TimerCount,
+    resolverOwner: UWord, // authorized private supervisor, full reference
+    resolverMask: UWord, // service IDs explicitly permitted before publication
     waitPadding: UWord, // keep the array stride aligned to eight bytes
     ipcPadding: UWord, // keep every TCB's TrapFrame aligned to eight bytes
 }
@@ -178,6 +180,8 @@ let taskRollback(task: *mut Task): Void {
     task.deviceRights = 0
     task.deviceFactory = 0
     task.createImages = 0
+    task.resolverOwner = 0
+    task.resolverMask = 0
     for i: UWord in 0..TASK_PAGE_COUNT {
         if physicalPageOwned(task.pages[i], task.id, taskPurposes[i]) &&
             !freePage(task.pages[i], task.id, taskPurposes[i]) {
@@ -224,6 +228,8 @@ let taskConstructImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord)
     task.configured = false
     task.deviceFactory = 0
     task.createImages = 0
+    task.resolverOwner = 0
+    task.resolverMask = 0
     task.exitCode = 0
     task.faulted = false
     task.waitReason = WAIT_NONE
@@ -426,6 +432,8 @@ let taskDiscardCreated(id: UWord): Bool {
     if schedulerStarted return false
     return taskDiscardChecked(id)
 }
+
+let taskBootConstructionOpen(): Bool { return !schedulerStarted }
 
 let taskInitAvailable(): Bool {
     if !taskIrqsDisabled() || schedulerStarted || readyCount != 0 return false
@@ -670,6 +678,8 @@ let taskStop(task: *mut Task, code: Word, faulted: Bool, terminated: Bool): Void
     task.state = TASK_DEAD
     task.deviceFactory = 0
     task.createImages = 0
+    task.resolverOwner = 0
+    task.resolverMask = 0
     memoryRevokeTask(task.id)
     handlesReleaseTask(&mut task.handles, task.id)
     irqReleaseTask(task.id)
@@ -759,7 +769,7 @@ export { Task, tasks, idleTask, currentTask, MAX_TASKS, TASK_EMPTY, TASK_READY, 
     WAIT_IPC_CALL, WAIT_IPC_ACCEPT, WAIT_IPC_REPLY, WAIT_IRQ, WAIT_SLEEP,
     USER_CODE, USER_DATA, USER_STACK_BOTTOM, USER_STACK_TOP, USER_STACK_GUARD,
     taskPrepare, taskCreate, taskGet, taskStart, taskBootstrapEndpoints, taskIdlePoll, taskTransitionAllowed,
-    taskCreateImage, taskInstallStart, taskPublish, taskDiscardCreated, taskInitAvailable,
+    taskCreateImage, taskInstallStart, taskPublish, taskDiscardCreated, taskInitAvailable, taskBootConstructionOpen,
     taskInstallServiceStart, taskIrqReturn, taskSlot, TASK_SLOT_MASK, TASK_GENERATION_MAX,
     taskConstructImage, taskPublishChecked, taskDiscardChecked, taskTerminateChecked,
     taskSaveContext, taskOwnsTrap, taskYield, taskTick, taskBlock, taskWake, taskFinish, taskAbortBlocked, taskReap }

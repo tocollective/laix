@@ -359,7 +359,7 @@ class UserComponentTests(unittest.TestCase):
             for module in modules:
                 path = Path(module.path)
                 self.assertTrue(path.is_relative_to(LAIX / 'user') or path == LAIX / 'src/task/service_start.m' or
-                                path in (LAIX / 'src/arch/wrm081632/defs.m', LAIX / 'src/task/runtime_start.m'), str(path))
+                                path in (LAIX / 'src/arch/wrm081632/defs.m', LAIX / 'src/task/runtime_start.m', LAIX / 'src/task/recovery_start.m'), str(path))
             parser = parse_asm(root.with_suffix('.asm'))
             self.assertFalse(any(st.op in ('mtcr', 'iret', 'wfi') for st in parser.stmts))
 

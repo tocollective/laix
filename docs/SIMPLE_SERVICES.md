@@ -158,17 +158,18 @@ A destroyed endpoint remains pinned while stale peer references exist. Calls
 through those handles return `-EPIPE`; closing/reusing a handle slot advances
 its generation and the old token becomes `-EBADF`. Object and IRQ generations
 also advance on allocation, and exhausted generations retire rather than wrap.
-Terminal task slots are not reused. Runtime restart is deliberately unavailable:
-bootstrap, grants and constructors are sealed, so neither a client nor a dead
-server can silently acquire a replacement instance. The fixed wire generation
-1 applies only to this boot's immutable resource. A future restart policy must
-issue fresh tasks/endpoints/device grants and explicitly distribute new send
-capabilities; it cannot rebind old handles.
+This static profile retains terminal task snapshots and does not automatically
+restart services. Bootstrap grants remain sealed; clients and dead services
+cannot acquire replacement authority by guessing an identity. Generation 1
+applies to this profile's single immutable resource incarnation. The separate
+[recovery profile](SERVICE_RECOVERY.md) constructs fresh task/endpoint/IRQ/startup
+identities under scoped user supervision, publishes them transactionally and
+requires explicit client resolution; it never rebinds old handles.
 
 ## DMA service destruction
 
 Logical death and IPC cancellation happen immediately. The disk broker then
-permanently disables command submission and abandons the dead owner's current
+disables the dead owner's command submission and abandons its current
 operation. IRQ masking, a timeout or owner death does not stop DMA. WRM's disk
 has no per-device stop command: only a whole-machine reset can abort a transfer.
 Therefore cleanup waits for physical quiescence instead of inventing an abort.

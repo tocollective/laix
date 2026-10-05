@@ -1,6 +1,6 @@
 // Only trusted boot embeds can use this limited PT_LOAD constructor. It is
 // neither a user ELF loader nor a syscall: no relocations, TLS or dynamic link.
-import { taskConstructImage, taskDiscardChecked, taskInitAvailable, taskGet, Task } from "task.m"
+import { taskConstructImage, taskDiscardChecked, taskBootConstructionOpen, taskGet, Task } from "task.m"
 import { mapPage, unmapPage } from "../mm/mmu.m"
 import { PAGE_NONE, PAGE_USER, allocPage, freePage } from "../mm/memory.m"
 import { PAGE_SIZE, PAGE_MASK, PTE_U, PTE_RO, PTE_RW, PTE_RX,
@@ -100,7 +100,7 @@ let taskConstructProgram(start: UWord, end: UWord): UWord {
 }
 
 let taskCreateProgram(start: UWord, end: UWord): UWord {
-    if !taskInitAvailable() return 0
+    if !taskBootConstructionOpen() return 0
     return taskConstructProgram(start, end)
 }
 export { taskCreateProgram, taskConstructProgram }

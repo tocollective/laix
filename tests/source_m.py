@@ -65,6 +65,12 @@ class SourceM(BootstrapM):
         self.controls = {0: 0, 6: 0}
         self.output = []
         self.local_storage = 0x0D000000
+        # Mutable scalar .data initializers have the same startup value as on CPU.
+        # BootstrapM initializes only compile-time constants and zero BSS.
+        for name, decl in self.decls.items():
+            if (isinstance(decl, s.VarDecl) and decl.mut and not decl.extern and decl.init is not None
+                    and decl.sym.type.kind not in ("struct", "array")):
+                self.globals[name] = self.expr(decl.init, {})
 
     def address(self, node, local):
         if isinstance(node, s.Name) and node.name in local and node.type.kind in ("struct", "array"):
