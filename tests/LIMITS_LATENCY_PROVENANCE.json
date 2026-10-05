@@ -1,0 +1,1743 @@
+{
+  "artifacts": [
+    {
+      "bytes": 510456,
+      "path": "bin/wrm081632",
+      "sha256": "3425ae5ec6000cdfcb9356374658a790435663765c6159d9f1c7caba89e1c90d"
+    },
+    {
+      "bytes": 2441216,
+      "path": "laix/build/acceptance/limits-latency/artifacts/latency.img",
+      "sha256": "3dc9b3e32ff1490dc806196456e652df3fcf7cd09a4cac0a4f4ba8ec8af544c0"
+    },
+    {
+      "bytes": 108386,
+      "path": "laix/build/acceptance/limits-latency/artifacts/latency.map",
+      "sha256": "dc1435786028f3199d74fe4756a87dfde472ec8dafb0257a90537d48affa6412"
+    },
+    {
+      "bytes": 2600960,
+      "path": "laix/build/acceptance/limits-latency/artifacts/services.img",
+      "sha256": "29ce8c01ea3716d003e677109ceb6c3f7e3f3e0157fa601a7cfb1c468202a69c"
+    },
+    {
+      "bytes": 109070,
+      "path": "laix/build/acceptance/limits-latency/artifacts/services.map",
+      "sha256": "4fdf5bf2939175ad3ce351feeb76424b616d840aec0c11ab307a80f5d47504cf"
+    },
+    {
+      "bytes": 3141724,
+      "path": "laix/build/acceptance/limits-latency/cpu.monitor.txt",
+      "sha256": "c0a34cc10816353fa4bf10d7a1bee832cb328dda9f2fb867f9a5acdfdd283a57"
+    },
+    {
+      "bytes": 551,
+      "path": "laix/build/acceptance/limits-latency/cpu.uart.txt",
+      "sha256": "9ee6416c216cedc7619ad31ef58990a989e8fb70cdf89310cf1f2a94dcb9e605"
+    },
+    {
+      "bytes": 3000,
+      "path": "laix/build/acceptance/limits-latency/results.json",
+      "sha256": "de007a6a9bf865d04b96ea7e9b348d176e1e798f788409561fc200f945acbe31"
+    },
+    {
+      "bytes": 106,
+      "path": "laix/build/acceptance/limits-latency/source-a8.txt",
+      "sha256": "8fc326b89073376f97a5241ef496a65e6ace97d5ec91f93a87431bb93970d8b7"
+    },
+    {
+      "bytes": 491,
+      "path": "laix/build/acceptance/limits-latency/source-suite.txt",
+      "sha256": "9ee098e9ca20002c2bb9093f079b0954e9581275db6bbeee65c79baa60499421"
+    },
+    {
+      "bytes": 43436,
+      "path": "laix/build/acceptance/limits-latency-device/device.monitor.txt",
+      "sha256": "6cbd5f84581e4440cd7703ebfb0300d479aeba34e1177178da8a2ee5a049ef80"
+    },
+    {
+      "bytes": 125,
+      "path": "laix/build/acceptance/limits-latency-device/device.uart.txt",
+      "sha256": "e5366e4dca8e717fc0941c226cedc072d7afedf7da1c4233365f7bf619ea2631"
+    },
+    {
+      "bytes": 2483,
+      "path": "laix/build/acceptance/limits-latency-device/results.json",
+      "sha256": "982875652500dc73745f6229986c2d1f8e613b9a2f5e47e961cc39ed9f454ed3"
+    },
+    {
+      "bytes": 440967,
+      "path": "laix/build/acceptance/limits-latency-ipc/buffers.monitor.txt",
+      "sha256": "c16b92259832c4dac4d3b847d350b74985fbe27ba6303b431ff553621ee21a1b"
+    },
+    {
+      "bytes": 78,
+      "path": "laix/build/acceptance/limits-latency-ipc/buffers.uart.txt",
+      "sha256": "87777cd4452c0f05d835b2e61c104233403c2988d6d6e1a1134cf0bbdab6d8a2"
+    },
+    {
+      "bytes": 472831,
+      "path": "laix/build/acceptance/limits-latency-ipc/exchange.monitor.txt",
+      "sha256": "1742f8b8541d72ac0439de878ecbe506c995400b3d86ee60ad70e8fd375c184f"
+    },
+    {
+      "bytes": 78,
+      "path": "laix/build/acceptance/limits-latency-ipc/exchange.uart.txt",
+      "sha256": "87777cd4452c0f05d835b2e61c104233403c2988d6d6e1a1134cf0bbdab6d8a2"
+    },
+    {
+      "bytes": 2076,
+      "path": "laix/build/acceptance/limits-latency-ipc/results.json",
+      "sha256": "d652bcd0ea45f0d7245cf28453c1113d7f2be96500bf10000f50063e4e928966"
+    },
+    {
+      "bytes": 410478,
+      "path": "laix/build/acceptance/limits-latency-liveness/boundary.monitor.txt",
+      "sha256": "1c0c72df07af1f128662964d740ca212ef62619b75abb90e460e20eebdb26103"
+    },
+    {
+      "bytes": 78,
+      "path": "laix/build/acceptance/limits-latency-liveness/boundary.uart.txt",
+      "sha256": "87777cd4452c0f05d835b2e61c104233403c2988d6d6e1a1134cf0bbdab6d8a2"
+    },
+    {
+      "bytes": 458291,
+      "path": "laix/build/acceptance/limits-latency-liveness/cancel.monitor.txt",
+      "sha256": "b3f6f326f53e643758b73fe266e08767ac8a8b871561ad41ae14971094da6033"
+    },
+    {
+      "bytes": 78,
+      "path": "laix/build/acceptance/limits-latency-liveness/cancel.uart.txt",
+      "sha256": "87777cd4452c0f05d835b2e61c104233403c2988d6d6e1a1134cf0bbdab6d8a2"
+    },
+    {
+      "bytes": 428473,
+      "path": "laix/build/acceptance/limits-latency-liveness/fifo.monitor.txt",
+      "sha256": "42d5b7576349f159f6dd7d89e406b963042f95aa28d27ed7fd64c0a158bdfa7b"
+    },
+    {
+      "bytes": 78,
+      "path": "laix/build/acceptance/limits-latency-liveness/fifo.uart.txt",
+      "sha256": "87777cd4452c0f05d835b2e61c104233403c2988d6d6e1a1134cf0bbdab6d8a2"
+    },
+    {
+      "bytes": 1887,
+      "path": "laix/build/acceptance/limits-latency-liveness/results.json",
+      "sha256": "f0a459365f54d67b7c4045358cd8e23e06200664cf52c4cd0397b366912d7b51"
+    },
+    {
+      "bytes": 16772,
+      "path": "laix/build/acceptance/screen-firmware.rom",
+      "sha256": "cab72f0aa602b35f746555c05289be61cd8271bba11ee4d773c7a625230c9965"
+    },
+    {
+      "bytes": 2441216,
+      "path": "laix/build/laix.img",
+      "sha256": "a6927d2ee024ff81378f8c8b0394d3fa449677737821d54d501bade90ced2644"
+    },
+    {
+      "bytes": 107195,
+      "path": "laix/build/laix.map",
+      "sha256": "185a43652165ff00483ea20fea97095365576cd44c6afd85f315e65b30cbf365"
+    },
+    {
+      "bytes": 35992,
+      "path": "laix/build/services/application.elf",
+      "sha256": "07526475d76bc1acf60edbeb7cbdaf367883ad5046b04248ef712a243a476aec"
+    },
+    {
+      "bytes": 41056,
+      "path": "laix/build/services/disk.elf",
+      "sha256": "4d68cde83ef630a8f25ac92cf6858db107ca0506a9b83ac4c3f4f1d85228f99f"
+    },
+    {
+      "bytes": 41580,
+      "path": "laix/build/services/files.elf",
+      "sha256": "8cafd1c8873c09a206e01c9db8f47bda0760fa1140895e154cf60a40d7f6a1f2"
+    },
+    {
+      "bytes": 36628,
+      "path": "laix/build/services/input.elf",
+      "sha256": "8d6d2ad2190adbe3a8fe820714d702f99899b44de248258a336bd82d1bbe19f5"
+    },
+    {
+      "bytes": 50568,
+      "path": "laix/build/services/screen.elf",
+      "sha256": "73fa042b8d3e89d8882843ed9ea5066efa39166553bdad93f03a85394f6315dc"
+    },
+    {
+      "bytes": 37472,
+      "path": "laix/build/services/simple-application.elf",
+      "sha256": "53f9658da09b0d46c06cf1a1d2496be8036a1bb275f18318c8b90088dd76957e"
+    },
+    {
+      "bytes": 36472,
+      "path": "laix/build/services/storage.elf",
+      "sha256": "03777d28c040f7b3400342531d11716adbca0217ed201a804ef6b795273b0634"
+    },
+    {
+      "bytes": 4,
+      "path": "laix/fonts/storage-extent.bin",
+      "sha256": "aea66bed1ae976e881b54da0bbb6c86691fbe0f70512014d9542184254691169"
+    },
+    {
+      "bytes": 2283392,
+      "path": "laix/fonts/unifont-console.laf",
+      "sha256": "0cfa0007650ae3afc7b339849f85b685e5b0ab7306b6a980535d354fe29ea4f1"
+    },
+    {
+      "bytes": 456704,
+      "path": "laix/fonts/unifont-index.laf",
+      "sha256": "66951096815c9f446d9a5be96cad169048fefe30b67d4e3d1c117e738600d12c"
+    }
+  ],
+  "cpu_results": {
+    "limits-latency": {
+      "clock_hz": 128000000,
+      "complete": true,
+      "fairness": {
+        "callers": 7,
+        "fifo": true,
+        "held_client_cancelled": true,
+        "rounds": 4
+      },
+      "generation_boundary": true,
+      "maximum_timer_gap_cycles": 12224903,
+      "measurement": "executed CPU counters; trapEntry to IRET, including reaping",
+      "measurements": {
+        "syscall_1": {
+          "maximum_cycles": 12144655,
+          "maximum_ms_at_128MHz": 94.880117,
+          "maximum_retired": 9099472,
+          "samples": 1
+        },
+        "syscall_22": {
+          "maximum_cycles": 15173,
+          "maximum_ms_at_128MHz": 0.118539,
+          "maximum_retired": 11951,
+          "samples": 29
+        },
+        "syscall_23": {
+          "maximum_cycles": 17945,
+          "maximum_ms_at_128MHz": 0.140195,
+          "maximum_retired": 14111,
+          "samples": 30
+        },
+        "syscall_38": {
+          "maximum_cycles": 9537,
+          "maximum_ms_at_128MHz": 0.074508,
+          "maximum_retired": 7351,
+          "samples": 1
+        },
+        "syscall_42": {
+          "maximum_cycles": 3283,
+          "maximum_ms_at_128MHz": 0.025648,
+          "maximum_retired": 2419,
+          "samples": 2
+        },
+        "syscall_43": {
+          "maximum_cycles": 325268,
+          "maximum_ms_at_128MHz": 2.541156,
+          "maximum_retired": 256518,
+          "samples": 2
+        },
+        "syscall_44": {
+          "maximum_cycles": 19322,
+          "maximum_ms_at_128MHz": 0.150953,
+          "maximum_retired": 15307,
+          "samples": 1
+        },
+        "syscall_45": {
+          "maximum_cycles": 101395,
+          "maximum_ms_at_128MHz": 0.792148,
+          "maximum_retired": 80425,
+          "samples": 1
+        },
+        "syscall_46": {
+          "maximum_cycles": 538123,
+          "maximum_ms_at_128MHz": 4.204086,
+          "maximum_retired": 404723,
+          "samples": 1
+        },
+        "syscall_48": {
+          "maximum_cycles": 1753847,
+          "maximum_ms_at_128MHz": 13.70193,
+          "maximum_retired": 1337243,
+          "samples": 2
+        },
+        "syscall_55": {
+          "maximum_cycles": 21650,
+          "maximum_ms_at_128MHz": 0.169141,
+          "maximum_retired": 16586,
+          "samples": 30
+        },
+        "syscall_59": {
+          "maximum_cycles": 3264,
+          "maximum_ms_at_128MHz": 0.0255,
+          "maximum_retired": 2464,
+          "samples": 4
+        },
+        "timer_irq": {
+          "maximum_cycles": 10091,
+          "maximum_ms_at_128MHz": 0.078836,
+          "maximum_retired": 7593,
+          "samples": 400
+        }
+      },
+      "memory": {
+        "allocation_pages": 16,
+        "child_reference": 8,
+        "edited_pages": 16,
+        "populate_bytes": 65536
+      },
+      "per_peer_frames": 96,
+      "per_peer_mappings": 128,
+      "per_peer_tables": 8,
+      "ram_bytes": 33554432,
+      "section_budget_cycles": 64000000,
+      "sha256": {
+        "emulator": "3425ae5ec6000cdfcb9356374658a790435663765c6159d9f1c7caba89e1c90d",
+        "image": "3dc9b3e32ff1490dc806196456e652df3fcf7cd09a4cac0a4f4ba8ec8af544c0",
+        "map": "dc1435786028f3199d74fe4756a87dfde472ec8dafb0257a90537d48affa6412",
+        "rom": "cab72f0aa602b35f746555c05289be61cd8271bba11ee4d773c7a625230c9965"
+      },
+      "simultaneous_reaped_tasks": 8,
+      "timer_progress_after_cleanup": true,
+      "timer_progress_budget_cycles": 65280000
+    },
+    "limits-latency-device": {
+      "canaries_preserved": true,
+      "clock_hz": 128000000,
+      "complete": true,
+      "device_progress_budget_cycles": 704000000,
+      "device_progress_cycles": 48200,
+      "disk_bytes": 512,
+      "dma_pin_released": true,
+      "input_bytes": 136,
+      "irq_entries": 1,
+      "measurements": {
+        "device_or_timer_irq": {
+          "maximum_cycles": 6106,
+          "maximum_ms_at_128MHz": 0.047703,
+          "maximum_retired": 4541,
+          "samples": 1
+        },
+        "syscall_21": {
+          "maximum_cycles": 29826,
+          "maximum_ms_at_128MHz": 0.233016,
+          "maximum_retired": 23299,
+          "samples": 6
+        },
+        "syscall_22": {
+          "maximum_cycles": 10916,
+          "maximum_ms_at_128MHz": 0.085281,
+          "maximum_retired": 8305,
+          "samples": 7
+        },
+        "syscall_23": {
+          "maximum_cycles": 17943,
+          "maximum_ms_at_128MHz": 0.14018,
+          "maximum_retired": 14111,
+          "samples": 4
+        },
+        "syscall_24": {
+          "maximum_cycles": 6573,
+          "maximum_ms_at_128MHz": 0.051352,
+          "maximum_retired": 4836,
+          "samples": 1
+        },
+        "syscall_25": {
+          "maximum_cycles": 1804,
+          "maximum_ms_at_128MHz": 0.014094,
+          "maximum_retired": 1350,
+          "samples": 1
+        },
+        "syscall_31": {
+          "maximum_cycles": 16206,
+          "maximum_ms_at_128MHz": 0.126609,
+          "maximum_retired": 12705,
+          "samples": 1
+        },
+        "syscall_70": {
+          "maximum_cycles": 1894,
+          "maximum_ms_at_128MHz": 0.014797,
+          "maximum_retired": 1413,
+          "samples": 3
+        },
+        "syscall_71": {
+          "maximum_cycles": 5705,
+          "maximum_ms_at_128MHz": 0.04457,
+          "maximum_retired": 4459,
+          "samples": 1
+        },
+        "syscall_72": {
+          "maximum_cycles": 20619,
+          "maximum_ms_at_128MHz": 0.161086,
+          "maximum_retired": 15894,
+          "samples": 1
+        }
+      },
+      "ram_bytes": 2097152,
+      "sha256": {
+        "disk": "4d68cde83ef630a8f25ac92cf6858db107ca0506a9b83ac4c3f4f1d85228f99f",
+        "emulator": "3425ae5ec6000cdfcb9356374658a790435663765c6159d9f1c7caba89e1c90d",
+        "files": "8cafd1c8873c09a206e01c9db8f47bda0760fa1140895e154cf60a40d7f6a1f2",
+        "image": "29ce8c01ea3716d003e677109ceb6c3f7e3f3e0157fa601a7cfb1c468202a69c",
+        "input": "8d6d2ad2190adbe3a8fe820714d702f99899b44de248258a336bd82d1bbe19f5",
+        "map": "4fdf5bf2939175ad3ce351feeb76424b616d840aec0c11ab307a80f5d47504cf",
+        "rom": "cab72f0aa602b35f746555c05289be61cd8271bba11ee4d773c7a625230c9965",
+        "simple-application": "53f9658da09b0d46c06cf1a1d2496be8036a1bb275f18318c8b90088dd76957e"
+      },
+      "timer_entries": 0
+    },
+    "limits-latency-ipc": {
+      "acceptance_complete": false,
+      "artifacts": {
+        "emulator": {
+          "path": "/Users/alepacho/Developer/C/WRM.081632/bin/wrm081632",
+          "sha256": "3425ae5ec6000cdfcb9356374658a790435663765c6159d9f1c7caba89e1c90d"
+        },
+        "image": {
+          "path": "/Users/alepacho/Developer/C/WRM.081632/laix/build/laix.img",
+          "sha256": "a6927d2ee024ff81378f8c8b0394d3fa449677737821d54d501bade90ced2644"
+        },
+        "map": {
+          "path": "/Users/alepacho/Developer/C/WRM.081632/laix/build/laix.map",
+          "sha256": "185a43652165ff00483ea20fea97095365576cd44c6afd85f315e65b30cbf365"
+        },
+        "probe": {
+          "path": "/Users/alepacho/Developer/C/WRM.081632/laix/tests/probe_ipc_request_reply_cpu.py",
+          "sha256": "90dde73ef4912eb0ebbd9515e84cf10ce637ede1b3e56f0ac49a0abbe49a3ff7"
+        },
+        "rom": {
+          "path": "/Users/alepacho/Developer/C/WRM.081632/laix/build/acceptance/screen-firmware.rom",
+          "sha256": "cab72f0aa602b35f746555c05289be61cd8271bba11ee4d773c7a625230c9965"
+        }
+      },
+      "complete": true,
+      "method": "ready CPU image; existing user SYSCALL/IRET; no build",
+      "results": [
+        {
+          "all_preserved_gprs": true,
+          "case": "exchange",
+          "fcsr": true,
+          "foreign_stale_duplicate": true,
+          "generation_exhaustion": true,
+          "ipc_syscalls": 29,
+          "modes": true,
+          "request_snapshot": true,
+          "reverse_replies": true,
+          "self_call": true,
+          "syscall_epc_once": true,
+          "timer_irqs": 81,
+          "two_clients": true,
+          "unique_ready_queue": true,
+          "user_iret": true
+        },
+        {
+          "admission": true,
+          "all_preserved_gprs": true,
+          "blocked_accept_revalidation": true,
+          "case": "buffers",
+          "cross_page_noncontiguous": true,
+          "fcsr": true,
+          "full_response_capacity_revalidated": true,
+          "ipc_syscalls": 22,
+          "no_partial_writes": true,
+          "reply_destination_errors": true,
+          "small_accept_retry": true,
+          "source_retry": true,
+          "syscall_epc_once": true,
+          "timer_irqs": 71,
+          "unique_ready_queue": true,
+          "user_iret": true
+        }
+      ]
+    },
+    "limits-latency-liveness": {
+      "acceptance_complete": false,
+      "artifacts": {
+        "emulator": {
+          "path": "/Users/alepacho/Developer/C/WRM.081632/bin/wrm081632",
+          "sha256": "3425ae5ec6000cdfcb9356374658a790435663765c6159d9f1c7caba89e1c90d"
+        },
+        "image": {
+          "path": "/Users/alepacho/Developer/C/WRM.081632/laix/build/laix.img",
+          "sha256": "a6927d2ee024ff81378f8c8b0394d3fa449677737821d54d501bade90ced2644"
+        },
+        "map": {
+          "path": "/Users/alepacho/Developer/C/WRM.081632/laix/build/laix.map",
+          "sha256": "185a43652165ff00483ea20fea97095365576cd44c6afd85f315e65b30cbf365"
+        },
+        "probe": {
+          "path": "/Users/alepacho/Developer/C/WRM.081632/laix/tests/probe_ipc_liveness_cpu.py",
+          "sha256": "91a2376d8c17f86cef694810841061f07acabeab1671428a27f0f14d6e690e22"
+        },
+        "rom": {
+          "path": "/Users/alepacho/Developer/C/WRM.081632/laix/build/acceptance/screen-firmware.rom",
+          "sha256": "cab72f0aa602b35f746555c05289be61cd8271bba11ee4d773c7a625230c9965"
+        }
+      },
+      "complete": true,
+      "method": "LA/IX image; existing WRM binary; real timer IRQ; context/data fixtures",
+      "results": [
+        {
+          "case": "fifo",
+          "expiries": 2,
+          "observed_timer_switches": 30,
+          "oldest_and_middle": true,
+          "preserved_context": true,
+          "unaffected_fifo": true,
+          "unique_ready_queue": true
+        },
+        {
+          "case": "boundary",
+          "expiries": 1,
+          "expiry_first": true,
+          "no_stale_write": true,
+          "observed_timer_switches": 25,
+          "one_result": true,
+          "preserved_context": true,
+          "reply_first_at_deadline": true,
+          "unique_ready_queue": true
+        },
+        {
+          "case": "cancel",
+          "expiries": 0,
+          "observed_timer_switches": 38,
+          "preserved_context": true,
+          "queued_and_accepted": true,
+          "repeat_rejected": true,
+          "scoped_authority": true,
+          "unique_ready_queue": true
+        }
+      ]
+    }
+  },
+  "date": "2026-10-05",
+  "scope": "Kernel/user/compiler source snapshot; immutable CPU image/map/WRM/ROM bindings. AST fixtures do not measure timing. No cached ASIDs, staged teardown, priorities or nested traps.",
+  "source_evidence": {
+    "final_a8_tests": 8,
+    "full_suite_seconds": 530.308,
+    "full_suite_tests": 389,
+    "note": "Full suite precedes two additional A8 generation-boundary tests; all eight A8 tests pass afterward."
+  },
+  "sources": [
+    {
+      "bytes": 5643,
+      "path": "laix/build.sh",
+      "sha256": "a8b38adc295043a1b9c3f11a2ebccc6e8c841f8037602ea95c40214b546cab1c"
+    },
+    {
+      "bytes": 8846,
+      "path": "laix/src/arch/wrm081632/defs.inc",
+      "sha256": "22132b814ef397ab0407b4cfbc2009ca28a5fafabeb26fcc0b702aaa61005ad2"
+    },
+    {
+      "bytes": 18906,
+      "path": "laix/src/arch/wrm081632/defs.m",
+      "sha256": "5355a99f940ca4ef9796e625899714e1e83a3264971098b1a7ff37b769a59883"
+    },
+    {
+      "bytes": 5053,
+      "path": "laix/src/arch/wrm081632/start.asm",
+      "sha256": "b2867d130ecade36a36ee0789a14beb9c1d46a114b677ccf0846bcc0814a2b13"
+    },
+    {
+      "bytes": 12625,
+      "path": "laix/src/console/console.m",
+      "sha256": "cc81e5060374a3b85db327e03c5369945c217f5334e3b19ccbd9c63815c12a27"
+    },
+    {
+      "bytes": 169,
+      "path": "laix/src/console/font/data.asm",
+      "sha256": "ed1ca98004c1426c774adc7bea8f6e9b3d2b6720a26afeb215a991dbe829f790"
+    },
+    {
+      "bytes": 167,
+      "path": "laix/src/console/font/data.m",
+      "sha256": "701c80c32d0420d1c13495fff7721f03391ed21565de437ae1908d1ad620dd1c"
+    },
+    {
+      "bytes": 2746,
+      "path": "laix/src/console/font/font.m",
+      "sha256": "67c8df00561f670931cd900de861eefec814074dcd1423621410be54dade71bf"
+    },
+    {
+      "bytes": 4760,
+      "path": "laix/src/console/font/glyph_cache.m",
+      "sha256": "3c6aa5ba4d76005c2bc24dfdfc2a0a9d236d83c70f75f78ca79673edf2ba9ca0"
+    },
+    {
+      "bytes": 3797,
+      "path": "laix/src/drivers/debug_uart.m",
+      "sha256": "17952b4e28181a2e14694f2eee38e82abea6bcc01b64ea8d0b9c11b245cc7289"
+    },
+    {
+      "bytes": 3022,
+      "path": "laix/src/drivers/input_device.m",
+      "sha256": "f67a78950cfbfb8cdd761b69ad910e38b6da97060abc6943b1fcaeae407fb096"
+    },
+    {
+      "bytes": 7295,
+      "path": "laix/src/drivers/irq.m",
+      "sha256": "a6de75a53e955d4849ec490d077d8e7ec7631f3e6a9faee3797e908ebeaced58"
+    },
+    {
+      "bytes": 92,
+      "path": "laix/src/drivers/resources.asm",
+      "sha256": "8e1fdca40eedc05ce8437b0f0f0973b930b2f11e7f03598fa363efe5ebe7aa91"
+    },
+    {
+      "bytes": 150,
+      "path": "laix/src/drivers/resources.m",
+      "sha256": "6c8cda0a2c924a96ca319c64afb23d28b7fc9078413cf8d21b3444e8696560cb"
+    },
+    {
+      "bytes": 1438,
+      "path": "laix/src/drivers/rnd.m",
+      "sha256": "92ef228c4c3cf2e835f580484b7cd095170da0d93c0fa6541b37383595229333"
+    },
+    {
+      "bytes": 14816,
+      "path": "laix/src/drivers/service_devices.m",
+      "sha256": "918dd303b906470b5b78f33a134b2869f3923b8a0301b09d07e8f7c5dd94c715"
+    },
+    {
+      "bytes": 5864,
+      "path": "laix/src/drivers/timer.m",
+      "sha256": "27ab9e63e537cf41f725d15e2a2e6d9c7da2b9590cdf05142bfe1942904f7a49"
+    },
+    {
+      "bytes": 5195,
+      "path": "laix/src/drivers/videocard.m",
+      "sha256": "c47a0dfca072847ee408094d857163b22d4eedad4bad4287f75286dc654ff53c"
+    },
+    {
+      "bytes": 24416,
+      "path": "laix/src/ipc/ipc.m",
+      "sha256": "bbe6b86d5d8de8006df2235fb26bcd1f6d83d62a8061286b71bc3965226ce3df"
+    },
+    {
+      "bytes": 13544,
+      "path": "laix/src/ipc/objects.m",
+      "sha256": "2e9f125c5f50fa8dd8190b88af973d6a413ec90368c9aad21067957786029f95"
+    },
+    {
+      "bytes": 6994,
+      "path": "laix/src/ipc/transfer.m",
+      "sha256": "e0f8ada0ce3bc8b9eba96af71ee5584ab389a99683b0c93ff9c9e11bc4bf58f5"
+    },
+    {
+      "bytes": 4462,
+      "path": "laix/src/kernel/boot.m",
+      "sha256": "0f56556c835f0e30f813028093baa7d7e4b332ead7eaad35652b1e236b309dfd"
+    },
+    {
+      "bytes": 5233,
+      "path": "laix/src/kernel/bootstrap.asm",
+      "sha256": "e8abdeae2470e1ac647ba5e5c0a9b576479995f9c33d07b1e1afa5d40cb3281c"
+    },
+    {
+      "bytes": 3718,
+      "path": "laix/src/kernel/bootstrap.m",
+      "sha256": "e9b64a44dbc20097f47a5160c915ef3866b922662ae2a2c63f7d3fe9da1e41a8"
+    },
+    {
+      "bytes": 650,
+      "path": "laix/src/kernel/main.m",
+      "sha256": "9fdc83080b094404748403c13ce61bd93075fbdb12c55c3e7b0f40878b7d2620"
+    },
+    {
+      "bytes": 3093,
+      "path": "laix/src/kernel/panic.m",
+      "sha256": "ce4d6928573a6f930dd41b102822c40b83fe630035c01c6058f7ab3af7f87e23"
+    },
+    {
+      "bytes": 583,
+      "path": "laix/src/kernel/recovery_main.asm",
+      "sha256": "dbfe9c848085f0e8dd11fd9360971f08f40cdd8678cf5be81030b3755b361d9e"
+    },
+    {
+      "bytes": 1959,
+      "path": "laix/src/kernel/recovery_main.m",
+      "sha256": "89f77c47acef19f4b6243e009f367ba78d9f4950dc35a5913d50b6f6fa3cdc04"
+    },
+    {
+      "bytes": 514,
+      "path": "laix/src/kernel/screen_main.m",
+      "sha256": "166d03414c656924692ae081ae14ff628c184b26dcc3d5753694d8761e3d9c90"
+    },
+    {
+      "bytes": 493,
+      "path": "laix/src/kernel/service_bootstrap.asm",
+      "sha256": "f28051c7627ceb23d2b35e3471fc7d54cfa5bacb1302755b56571ad0d0131772"
+    },
+    {
+      "bytes": 5183,
+      "path": "laix/src/kernel/service_bootstrap.m",
+      "sha256": "511e988acfcc6b66c5ee1a427fb0ce1d7922e0ef3c0fb1546d618d1b7e79daf6"
+    },
+    {
+      "bytes": 1059,
+      "path": "laix/src/kernel/service_policy.m",
+      "sha256": "77c174b70db3f6c366c8c1565c2618834006fb3b21d74d7dbeb046c7fa9fdde6"
+    },
+    {
+      "bytes": 594,
+      "path": "laix/src/kernel/simple_bootstrap.asm",
+      "sha256": "9c9f47a179399e5b504b3ac2cf6375644ebc3f8830075f7085804f0a8dcdbac7"
+    },
+    {
+      "bytes": 4484,
+      "path": "laix/src/kernel/simple_bootstrap.m",
+      "sha256": "90607ede7d7b0a555b0cbe5acae2cf50b119795b49d0de256574ee5e57298bc8"
+    },
+    {
+      "bytes": 512,
+      "path": "laix/src/kernel/simple_main.m",
+      "sha256": "daed3a083f31377cb0731326242cd436db02c9f2065f8af79de3f6111f6ddf68"
+    },
+    {
+      "bytes": 1723,
+      "path": "laix/src/kernel/supervisor_bootstrap.m",
+      "sha256": "22ae21b2411ecfe986d44890c9c076426cd39d4d578a6c6cf1a1a906ab4b5ac6"
+    },
+    {
+      "bytes": 525,
+      "path": "laix/src/kernel/supervisor_main.m",
+      "sha256": "a473717532bed33c92c5958153a89976fcaa1ec46e11a6b96fecd490c3677f15"
+    },
+    {
+      "bytes": 15515,
+      "path": "laix/src/mm/memory.m",
+      "sha256": "b1081b6aed7095ee4157b93b4d522d163566999651807d25108fb16dcbbbe569"
+    },
+    {
+      "bytes": 39685,
+      "path": "laix/src/mm/mmu.m",
+      "sha256": "bbd7de4dbaed907da306680991dc45d7d113e9ac7879aa143fb2eae30fcebf8a"
+    },
+    {
+      "bytes": 14007,
+      "path": "laix/src/mm/runtime.m",
+      "sha256": "5fea7d6f9c1b17c62ce294a42c52e0394eb61fb42798c10b3c4bcb538d5e18f4"
+    },
+    {
+      "bytes": 8893,
+      "path": "laix/src/mm/sharing.m",
+      "sha256": "3adec05a8f57a8a06574eb61abcea1da58e97c147e2c438a87d20f3cf4c3cdba"
+    },
+    {
+      "bytes": 1050,
+      "path": "laix/src/task/control.asm",
+      "sha256": "92e34f190c5bdb0d7030b0c88346a7b6341888270cca3927e603fd445a80dfb6"
+    },
+    {
+      "bytes": 17070,
+      "path": "laix/src/task/control.m",
+      "sha256": "2758473229456db494960a4dccbea3f795818bd275b0759ebb5693d57a269d55"
+    },
+    {
+      "bytes": 5051,
+      "path": "laix/src/task/program.m",
+      "sha256": "f4e863669cc6077ebb5f87b842e2070a036b4944c95ab738d2a7ca2e6dc55aa8"
+    },
+    {
+      "bytes": 11070,
+      "path": "laix/src/task/recovery.m",
+      "sha256": "dd78d03ecb95e2efa7cd134f350d2463459411187de6d1f2e83acd204b2b5bf0"
+    },
+    {
+      "bytes": 604,
+      "path": "laix/src/task/recovery_start.m",
+      "sha256": "95756c77a877873f9c391bf430e3a771f52701887ebd5feea96b28aaa40469b7"
+    },
+    {
+      "bytes": 549,
+      "path": "laix/src/task/runtime_start.m",
+      "sha256": "cf873284cabb091e9626212993be04fedcd5876a86848fcf17b4d339b3122bc0"
+    },
+    {
+      "bytes": 2884,
+      "path": "laix/src/task/service_start.m",
+      "sha256": "18cf4205c071f11a7102a6538509cc65cdf7afd009d69e409d2307bdaf34dde8"
+    },
+    {
+      "bytes": 1356,
+      "path": "laix/src/task/start.m",
+      "sha256": "5dc2d924ac5ef172133fad3365a2c4189cec8c4d9d50c1fec0f348677f19f41e"
+    },
+    {
+      "bytes": 1672,
+      "path": "laix/src/task/task.asm",
+      "sha256": "b89985d6bc75efbc6eb096b60635b46489920866c1f15ef2630e875b453742a0"
+    },
+    {
+      "bytes": 34516,
+      "path": "laix/src/task/task.m",
+      "sha256": "5baef5b2641959ab4001d0ee8e5e8d82f21a3fb9c71d19803b49a5a53ffe7dbe"
+    },
+    {
+      "bytes": 6997,
+      "path": "laix/src/trap/trap.asm",
+      "sha256": "f813d00f1252721c1d732b6b788dcf591556bea658e497031a1fca03140676e3"
+    },
+    {
+      "bytes": 14760,
+      "path": "laix/src/trap/trap.m",
+      "sha256": "65a277c14138a792ab28d756510826e70bad802db0c5d428d19d418541292bb3"
+    },
+    {
+      "bytes": 1349,
+      "path": "laix/src/trap/trap_frame.m",
+      "sha256": "9261780cef1d3d4b4140f0af51346fb5defaa122674899c33c487b360e9dd635"
+    },
+    {
+      "bytes": 1525,
+      "path": "laix/src/trap/trap_layout.inc",
+      "sha256": "6a5430b742f3f8ca01022e9f1d2124d5510f36b1039f074b02ff94116ac2029d"
+    },
+    {
+      "bytes": 6490,
+      "path": "laix/src/trap/trap_test.asm",
+      "sha256": "333d1c86a8d72847245b2644f4506dcf78fdcbc9bea7e54dff8cfba87f26d950"
+    },
+    {
+      "bytes": 14524,
+      "path": "laix/tests/probe_boot.py",
+      "sha256": "3fcda53a823d975ebddc8ca04fae6706537527149446d4103027c357a2a919d9"
+    },
+    {
+      "bytes": 12787,
+      "path": "laix/tests/probe_bootstrap_cpu.py",
+      "sha256": "de9d8581a3d8e301be868174cf39e25bd1a0018494145c10a06cf62986072ffe"
+    },
+    {
+      "bytes": 7415,
+      "path": "laix/tests/probe_device_latency_cpu.py",
+      "sha256": "e637cf1f217a7c5adbcd245d6ac7bfea0a8bea0c3de0231bee2b40645f6cd047"
+    },
+    {
+      "bytes": 19036,
+      "path": "laix/tests/probe_ipc_liveness_cpu.py",
+      "sha256": "91a2376d8c17f86cef694810841061f07acabeab1671428a27f0f14d6e690e22"
+    },
+    {
+      "bytes": 30484,
+      "path": "laix/tests/probe_ipc_request_reply_cpu.py",
+      "sha256": "90dde73ef4912eb0ebbd9515e84cf10ce637ede1b3e56f0ac49a0abbe49a3ff7"
+    },
+    {
+      "bytes": 13158,
+      "path": "laix/tests/probe_limits_latency_cpu.py",
+      "sha256": "05558af7ca8a3b0d26174860e480e02156033233463ee3e684f32fc76fa932b6"
+    },
+    {
+      "bytes": 9432,
+      "path": "laix/tests/probe_memory_sharing_cpu.py",
+      "sha256": "94c32677721e903360b5c40f662f03bf49bf82101f2d3a4d734dcd77b2055ef1"
+    },
+    {
+      "bytes": 18381,
+      "path": "laix/tests/probe_mmu_cpu.py",
+      "sha256": "3cc274a2217e325e5b0acae00f9f6d4329726094911461142fcaecae2ab20ad5"
+    },
+    {
+      "bytes": 8883,
+      "path": "laix/tests/probe_null_page.py",
+      "sha256": "8109df7cb7946c81acdbdaf42884bc2e8b4088aebd7feba50251320b94549941"
+    },
+    {
+      "bytes": 6546,
+      "path": "laix/tests/probe_runtime_memory_cpu.py",
+      "sha256": "0401c24acd150de10bb2f8850d4451341e3cb1313950da8586e6c6f1311760cb"
+    },
+    {
+      "bytes": 7591,
+      "path": "laix/tests/probe_runtime_objects_cpu.py",
+      "sha256": "98439bc8fb9c442c972c3beed6e7c4bbf735828ab10b2acd091135213d9ee240"
+    },
+    {
+      "bytes": 4995,
+      "path": "laix/tests/probe_runtime_tasks_cpu.py",
+      "sha256": "a27667a4f290af201a6c165308eff64ec4c38e159e96be9ee7a4aea4f66ef707"
+    },
+    {
+      "bytes": 35126,
+      "path": "laix/tests/probe_scheduler_cpu.py",
+      "sha256": "070fb56bbfb88813d82cf6770a3911a2632d8e937b9ad78be9ab89e21ebb0736"
+    },
+    {
+      "bytes": 12316,
+      "path": "laix/tests/probe_screen_cpu.py",
+      "sha256": "735efac8ef4a7d0b82847ca5110fe594720c28b0a1ca7e68eca7a245554123dc"
+    },
+    {
+      "bytes": 6236,
+      "path": "laix/tests/probe_service_panic_cpu.py",
+      "sha256": "ecc524567aabc2c93b4a2785d5ce407653d84de1e89d95e2c725347bb807e9c4"
+    },
+    {
+      "bytes": 11150,
+      "path": "laix/tests/probe_service_recovery_cpu.py",
+      "sha256": "3c29eaf97607c4f49ba5155a881b810175b96bb45b22f39718871dff4e82b8f8"
+    },
+    {
+      "bytes": 12076,
+      "path": "laix/tests/probe_simple_services_cpu.py",
+      "sha256": "53ead554fe42b87d8a3878a77519fe2ab18571b31223cc6903cb499c1dedee80"
+    },
+    {
+      "bytes": 9627,
+      "path": "laix/tests/probe_stack_overflow.py",
+      "sha256": "447e2c3ca15ed387c3b8f53b5562a2060ee1126526deb36519fad2003e6327f9"
+    },
+    {
+      "bytes": 11108,
+      "path": "laix/tests/probe_unexpected_traps.py",
+      "sha256": "837f03f5529da19d3382970c767d46762fe943053cfd12f0556746eb44836e6e"
+    },
+    {
+      "bytes": 12943,
+      "path": "laix/tests/probe_user_buffers_cpu.py",
+      "sha256": "385ef920df58219118dfbd174eec0745ed4c967ba5c9053d48f623e2a6595322"
+    },
+    {
+      "bytes": 22252,
+      "path": "laix/tests/probe_user_cpu.py",
+      "sha256": "697bf1bc22cd9bcaef9cc2c58ce39a328fe0c9fab83b17cdcd602de52147bcbf"
+    },
+    {
+      "bytes": 2047,
+      "path": "laix/tests/programs/console/cache.m",
+      "sha256": "1cea3ece9a49799bc9d8e6250e856827bb3389755c674b1358db4dd38e89ff0c"
+    },
+    {
+      "bytes": 1069,
+      "path": "laix/tests/programs/console/font.m",
+      "sha256": "7cf3684c7a6a037b41d523f742a58c6fc920fb88874d637ad3e717da86686096"
+    },
+    {
+      "bytes": 892,
+      "path": "laix/tests/programs/drivers/debug.m",
+      "sha256": "1dea10c9adbea5e9ff042e3ac75559f286a28fe8a16fc27d4bbe215bcc1bb93b"
+    },
+    {
+      "bytes": 1643,
+      "path": "laix/tests/programs/drivers/rnd.m",
+      "sha256": "4673413755c14ce08cda77e0472fbe191c37496b51ebe47a79676b384f44d078"
+    },
+    {
+      "bytes": 161,
+      "path": "laix/tests/programs/ipc/runtime_objects.asm",
+      "sha256": "17aad401ec30eb85296ba532ec0e48deedb02be08b4ab30b9d4c72a92f139eb6"
+    },
+    {
+      "bytes": 2111,
+      "path": "laix/tests/programs/ipc/runtime_objects.m",
+      "sha256": "2cc9f46cf3f692700a27aef4dff56017c89f8d9862d5cb77e3c8e005227952ba"
+    },
+    {
+      "bytes": 138,
+      "path": "laix/tests/programs/ipc/runtime_objects_user.asm",
+      "sha256": "4016de8a184e78f9ee326402e1b789c94e6578b5b0cfcbda4e1fc9b435698017"
+    },
+    {
+      "bytes": 8793,
+      "path": "laix/tests/programs/ipc/runtime_objects_user.m",
+      "sha256": "88746c10a5755833ae0e7f291b0506e7a9b773a49c215bbab7e835bd0e4e095f"
+    },
+    {
+      "bytes": 3352,
+      "path": "laix/tests/programs/limits/latency.m",
+      "sha256": "9181a218bed8796bd882d9840d4c339dfe8e244cd7fd2c1f5190b4d7831049e6"
+    },
+    {
+      "bytes": 1661,
+      "path": "laix/tests/programs/mm/asid_reuse.m",
+      "sha256": "8891430e8949c4ea814320cb9071fbcf5a4eb0d84b25ae4c25b8c94c713edd23"
+    },
+    {
+      "bytes": 405,
+      "path": "laix/tests/programs/mm/data_exec.asm",
+      "sha256": "3029b0f5d923ce1200e3ecee4eabaac4d2980c8509e02367afe7f2af1b22c74f"
+    },
+    {
+      "bytes": 605,
+      "path": "laix/tests/programs/mm/data_exec.m",
+      "sha256": "0f8dd754e4cd124b647475a13553d5dfd7824cf7486ebb3f0f14157b1fcce706"
+    },
+    {
+      "bytes": 161,
+      "path": "laix/tests/programs/mm/memory_sharing.asm",
+      "sha256": "6f4ff05750159e7826175aa528c10efac1f83bc338860f15a5a9d878292c5785"
+    },
+    {
+      "bytes": 3163,
+      "path": "laix/tests/programs/mm/memory_sharing.m",
+      "sha256": "c00719236a3292cba4a39f9006f61c75e188f25c512b92b5536c892644759f51"
+    },
+    {
+      "bytes": 284,
+      "path": "laix/tests/programs/mm/memory_sharing_user.asm",
+      "sha256": "eebeb7f0b9eb82ef92f896553e96ef090c80f1aff3682bca59642e83d88ffce8"
+    },
+    {
+      "bytes": 4661,
+      "path": "laix/tests/programs/mm/memory_sharing_user.m",
+      "sha256": "ae6b169306b61dd4bf1c11d829c8f909feda35901cca8cb1c7d1f1a13b020e92"
+    },
+    {
+      "bytes": 382,
+      "path": "laix/tests/programs/mm/mmu_probe.asm",
+      "sha256": "fe7057b07309f52368218c999aad7f53f18a06be917143212b06a4899ba12d95"
+    },
+    {
+      "bytes": 970,
+      "path": "laix/tests/programs/mm/mmu_probe.m",
+      "sha256": "80c2f08aa275c2f64d8ead73b563055fa9fb776c2db0f23e874cb04edefc7d53"
+    },
+    {
+      "bytes": 1164,
+      "path": "laix/tests/programs/mm/mmu_protect.m",
+      "sha256": "df0b525a1c85991be947a536c7ed3f1f099532a3b7dfe368459bad787c0ddf57"
+    },
+    {
+      "bytes": 2349,
+      "path": "laix/tests/programs/mm/mmu_remap.m",
+      "sha256": "ce586f5b28575de24adedee46df2c55f9ef12d55dfdeb4f5120bbde8f38d39bb"
+    },
+    {
+      "bytes": 1057,
+      "path": "laix/tests/programs/mm/mmu_unmap.m",
+      "sha256": "e6f2659d5f0392882f737bd350b6ef1151e0fb2a5cd0de130e560cc3979ba7d8"
+    },
+    {
+      "bytes": 246,
+      "path": "laix/tests/programs/mm/null_call.asm",
+      "sha256": "fc37197b638c1afb51911cf23f8fe1420cac26adbc938d84155756bf9b7c902a"
+    },
+    {
+      "bytes": 585,
+      "path": "laix/tests/programs/mm/null_call.m",
+      "sha256": "c156db809ee7682a90199afc02a2cf4557b8a85f87f3371280fe2bd975d7bf73"
+    },
+    {
+      "bytes": 256,
+      "path": "laix/tests/programs/mm/rodata_write.asm",
+      "sha256": "a4ad84cf9ad96106d8024e3923331a7e43d36e4891f20b6795373bd5a3bb82f8"
+    },
+    {
+      "bytes": 459,
+      "path": "laix/tests/programs/mm/rodata_write.m",
+      "sha256": "66ad554c582d079801cfdc0a10a37b1f0c3612d244d41596812c537783101121"
+    },
+    {
+      "bytes": 155,
+      "path": "laix/tests/programs/mm/runtime_memory.asm",
+      "sha256": "6d02cd40df334cde927cc55dac09d21bf3741f753c0e713d4b23b3f40ca81be8"
+    },
+    {
+      "bytes": 1939,
+      "path": "laix/tests/programs/mm/runtime_memory.m",
+      "sha256": "2c4f3a299f4e88014ef43e85a5a7717a20d02eae9baf82fd02c411c1411f8e62"
+    },
+    {
+      "bytes": 378,
+      "path": "laix/tests/programs/mm/runtime_memory_user.asm",
+      "sha256": "2e88c0c35f2ca15b5e266ae4ccc3aa6080ad8431a7dac0f5ebbb7f2cf9d7b928"
+    },
+    {
+      "bytes": 5669,
+      "path": "laix/tests/programs/mm/runtime_memory_user.m",
+      "sha256": "a05c9e7cc1424bd6892b91f2e66b7d9a7f6cd84c75b2de0887a87380b99cb344"
+    },
+    {
+      "bytes": 177,
+      "path": "laix/tests/programs/mm/stack_guard.asm",
+      "sha256": "d9942b116accdacaac96db2e86d837ed5dfd9ace35ef3c6fc1dc2f7d2e62090d"
+    },
+    {
+      "bytes": 569,
+      "path": "laix/tests/programs/mm/stack_guard.m",
+      "sha256": "4bf7832f7031bf3767853fa730da722c9695a3fd7121c00a184998a32594fc8d"
+    },
+    {
+      "bytes": 852,
+      "path": "laix/tests/programs/mm/stack_overflow.m",
+      "sha256": "c31ef372ac53189684ba6e83874b3153c387262d8901fcb80df6d61d8226b472"
+    },
+    {
+      "bytes": 153,
+      "path": "laix/tests/programs/mm/text_write.asm",
+      "sha256": "8d7912a606fde9bdd75039006ead4bbee2d59f1b6a670c5d6ec6a9534d70adaf"
+    },
+    {
+      "bytes": 522,
+      "path": "laix/tests/programs/mm/text_write.m",
+      "sha256": "d132fcabf6a28b05520c78716045dc8d57d2379ba024fbace723660a08471127"
+    },
+    {
+      "bytes": 133,
+      "path": "laix/tests/programs/recovery/disk.asm",
+      "sha256": "d8251c8439ff792b2caa9ec489e2fa1d420aa55ad800ac6edda852f4f358f4c8"
+    },
+    {
+      "bytes": 44,
+      "path": "laix/tests/programs/recovery/disk.m",
+      "sha256": "dcf5d9de93c72928c1e77a34d5e0cd644780df5cd707877e920c53471247118d"
+    },
+    {
+      "bytes": 125,
+      "path": "laix/tests/programs/recovery/echo.asm",
+      "sha256": "8b41338085d1ba4dea76ad4a3aa753212e96e8e27143a1d86d697365744647d6"
+    },
+    {
+      "bytes": 36,
+      "path": "laix/tests/programs/recovery/echo.m",
+      "sha256": "5fc8b2f2595fd4e4d4037f5a1e7d3653c25c06a2cdcf9e2711899be763cce8c9"
+    },
+    {
+      "bytes": 134,
+      "path": "laix/tests/programs/recovery/files.asm",
+      "sha256": "93714129c81c69862df2984c0552c6b4f25695bdfeb7c641e35c496f3b019006"
+    },
+    {
+      "bytes": 45,
+      "path": "laix/tests/programs/recovery/files.m",
+      "sha256": "0ff4f24dc2cd0606272e8539da68b2dd0a47ec651ab8a9253afb90c794391a9a"
+    },
+    {
+      "bytes": 182,
+      "path": "laix/tests/programs/recovery/policy.asm",
+      "sha256": "acbb3501659a93b5e59344ecaced1760f8e66f68c2d373f18b5adc97496f2c17"
+    },
+    {
+      "bytes": 6378,
+      "path": "laix/tests/programs/recovery/policy.m",
+      "sha256": "8d3bd4f5b914ebb750797e179ae255bec147095f62a5d74167484c0dbf0c7ff2"
+    },
+    {
+      "bytes": 88,
+      "path": "laix/tests/programs/recovery/server.asm",
+      "sha256": "237f9e81c040cc3833a6ea841100e313b86ae64e90852c86a47774e39058de29"
+    },
+    {
+      "bytes": 2662,
+      "path": "laix/tests/programs/recovery/server.m",
+      "sha256": "3ed9813efcefaf769329186d9563ba1d34c7b073636ff87a223a0ce7a6badf9f"
+    },
+    {
+      "bytes": 528,
+      "path": "laix/tests/programs/trap/trap.m",
+      "sha256": "6ce6e804f8dbca5525a1344d65222431777d24910c05bd3a95a7343673a9a75b"
+    },
+    {
+      "bytes": 212,
+      "path": "laix/tests/programs/trap/trap_fault.asm",
+      "sha256": "ad17423d570873fe30e3dc780a8cae8a9249bc2f8e58c6ae10d63397cac78d4a"
+    },
+    {
+      "bytes": 486,
+      "path": "laix/tests/programs/trap/trap_fault.m",
+      "sha256": "32485639ae3d43ba25846bf0ea9018b73e0c2b85244cb4210bbf8369639bf6ad"
+    },
+    {
+      "bytes": 12218,
+      "path": "laix/tests/run_ready.py",
+      "sha256": "dd016faba9b07819878fbfdece9ef529ed7e6e756d1ad94c008337c82b376d3e"
+    },
+    {
+      "bytes": 11756,
+      "path": "laix/tests/source_m.py",
+      "sha256": "4a6d859f805ff617bdac662f38d835b7b6490bdbea8ee5a847f6194d6acb40ba"
+    },
+    {
+      "bytes": 11946,
+      "path": "laix/tests/test_address_space.py",
+      "sha256": "a27daf8480d917d4580473873c46f8b236486ce41b57de647232596f275cd898"
+    },
+    {
+      "bytes": 7102,
+      "path": "laix/tests/test_boot.py",
+      "sha256": "9c4f382796fdd12992968a794d927ef60062c64975c9b0d1650dc61953497190"
+    },
+    {
+      "bytes": 13346,
+      "path": "laix/tests/test_bootstrap.py",
+      "sha256": "a3825936b36e6c63fe415d8b60926f4e4083612771f7d4969939b87eb8cfe220"
+    },
+    {
+      "bytes": 14442,
+      "path": "laix/tests/test_capability_transfer.py",
+      "sha256": "4ce2b3bac32a64102098b5f137f89f015c47f5173795997c58b4ae2527920947"
+    },
+    {
+      "bytes": 7379,
+      "path": "laix/tests/test_console.py",
+      "sha256": "a78b69dc24ec204a465c8ded7a1e2226a725d1df4f8edb3420c81f0829f17e21"
+    },
+    {
+      "bytes": 10179,
+      "path": "laix/tests/test_console_service.py",
+      "sha256": "efaf96cda271dfd0c0e8914f83ed1b90f24cf4fa527ea29ed14a2c8d231ce328"
+    },
+    {
+      "bytes": 12686,
+      "path": "laix/tests/test_device_boundary.py",
+      "sha256": "c34ca327530436e8463a5ddc6e55d4a3c8c57a20b9bd4615f86564c1c6c35e35"
+    },
+    {
+      "bytes": 8747,
+      "path": "laix/tests/test_device_safety.py",
+      "sha256": "4206afffef7910cac65f532b4a31376f06cd08449105da120d903f4b698434dd"
+    },
+    {
+      "bytes": 11210,
+      "path": "laix/tests/test_device_waits.py",
+      "sha256": "490bb100c3e33ae654e5b8dcd2f8d15816fad9b39e29c5805e4a4bb68823746a"
+    },
+    {
+      "bytes": 11157,
+      "path": "laix/tests/test_idle.py",
+      "sha256": "8c2228e138a5080f5a799144faeec4fd91e8c9faeb710d79662aad1454639dce"
+    },
+    {
+      "bytes": 16125,
+      "path": "laix/tests/test_ipc_handles.py",
+      "sha256": "8bd6d86ab7368ae146f1191f6f2180d806eb7a584def7a324d31fabf52f548c9"
+    },
+    {
+      "bytes": 17135,
+      "path": "laix/tests/test_ipc_liveness.py",
+      "sha256": "cfb0e52986b7a233779304c4fbac65fdf69dfaebbcc7f7d9834e9250083506a8"
+    },
+    {
+      "bytes": 17412,
+      "path": "laix/tests/test_ipc_request_reply.py",
+      "sha256": "9e10a42cf2f01abb1da0f85766569a1e748c1f9799d6619aba027e126eb5748f"
+    },
+    {
+      "bytes": 5393,
+      "path": "laix/tests/test_ipc_request_reply_cpu_probe.py",
+      "sha256": "238e935f4214c756a357b24b11658e743b0477655fd04f4e20673a2908ce9938"
+    },
+    {
+      "bytes": 3036,
+      "path": "laix/tests/test_ipc_service_helper.py",
+      "sha256": "198e48de2c8db7dbe3614718684c08425ea74362ef98dd2cc3d184ee076b55bb"
+    },
+    {
+      "bytes": 20761,
+      "path": "laix/tests/test_ipc_transport.py",
+      "sha256": "9fd094bd49018ede039465cea27a13e8d0e4440d9bce266bfdc6478eff529e5e"
+    },
+    {
+      "bytes": 15175,
+      "path": "laix/tests/test_kernel.py",
+      "sha256": "d1d75ff33ef5f98220e623266413202c6742631691cd33cb873429a4ab122621"
+    },
+    {
+      "bytes": 10492,
+      "path": "laix/tests/test_limits_latency.py",
+      "sha256": "abc607d78285e9578016ccfada287bbdc96f843c2ac308ca3988dd3a40f5385a"
+    },
+    {
+      "bytes": 16342,
+      "path": "laix/tests/test_memory.py",
+      "sha256": "54dd07b24198d84ac971ea058e9d1a612305af747f1f4a8e9b382d7a2fa8f3da"
+    },
+    {
+      "bytes": 11350,
+      "path": "laix/tests/test_memory_sharing.py",
+      "sha256": "6de9b03cd77a229f443f0ed487b4f0311a787b617ac4e3a7b84ffa0d63c0f00e"
+    },
+    {
+      "bytes": 2514,
+      "path": "laix/tests/test_mmu_cpu_probe.py",
+      "sha256": "366350c2c5cb24a344f05af35fa1b9fdc7b9519ee8ba1e0d37b4100912cebcfa"
+    },
+    {
+      "bytes": 2229,
+      "path": "laix/tests/test_null_page_probe.py",
+      "sha256": "b382c9c4e8d2298e0da93d80345bded4d8538da726eefe0dc81ad659d7559396"
+    },
+    {
+      "bytes": 15018,
+      "path": "laix/tests/test_page_allocator.py",
+      "sha256": "60d16b0c38133e827374ffe1705d12711ee969eda894dd9449d612740d354db9"
+    },
+    {
+      "bytes": 12717,
+      "path": "laix/tests/test_ready_runner.py",
+      "sha256": "a80e86753e7f2ff73cf86aaa52e193b82998338f07d0c400593bc754f7a1806e"
+    },
+    {
+      "bytes": 4269,
+      "path": "laix/tests/test_recovery_policy.py",
+      "sha256": "5dbe462ac03c8ec944a28840af27cadcce4b56dca6436f94862657383d0082a3"
+    },
+    {
+      "bytes": 13412,
+      "path": "laix/tests/test_runtime_memory.py",
+      "sha256": "1e55f4a2bc056998b3b36012f4e289f679d5221d69ade074e7da9c9af2b64492"
+    },
+    {
+      "bytes": 14639,
+      "path": "laix/tests/test_runtime_objects.py",
+      "sha256": "0cbc2c30a7fa97271ba91d4fb76dcfd4406a64d7c0651c2826c6d6585b7bb48a"
+    },
+    {
+      "bytes": 16116,
+      "path": "laix/tests/test_runtime_task_acceptance.py",
+      "sha256": "eae286fd37788999e8dcf1ae6d93d35c02254d0566252ddb5011a6029152b213"
+    },
+    {
+      "bytes": 21426,
+      "path": "laix/tests/test_runtime_tasks.py",
+      "sha256": "df5e2e69d813cc9d84d79638ed62611a7c9d94e659b09485cabdf3cacec7b273"
+    },
+    {
+      "bytes": 12631,
+      "path": "laix/tests/test_scheduler.py",
+      "sha256": "2ef3abf2dd5768d754b2cc201346cdadf1d397c328120aebdaf8b6a6eb644007"
+    },
+    {
+      "bytes": 8004,
+      "path": "laix/tests/test_scheduler_cpu_probe.py",
+      "sha256": "419a8b99f0f2eb6edc0770ac8588c89a89e75666a71ec6efffd5da186cb043f6"
+    },
+    {
+      "bytes": 25358,
+      "path": "laix/tests/test_screen_services.py",
+      "sha256": "cf8cc6754b3480d629a09002f760061975e3e9388046f1d7ded70f2971cdda47"
+    },
+    {
+      "bytes": 16292,
+      "path": "laix/tests/test_service_recovery.py",
+      "sha256": "00406be99c7fe44352fb8fad977ff137754e6a531d107f40afe27e0c35951e56"
+    },
+    {
+      "bytes": 19554,
+      "path": "laix/tests/test_simple_services.py",
+      "sha256": "a5193262f07908218f466895b5ee5928dafa61e2896ba2b6eea43bd5e3feac0b"
+    },
+    {
+      "bytes": 1432,
+      "path": "laix/tests/test_stack_overflow_probe.py",
+      "sha256": "2ec31887050d1b514662e640baf4d7cf7d97c5cfa2b55854698abe98fc2c985f"
+    },
+    {
+      "bytes": 18906,
+      "path": "laix/tests/test_task.py",
+      "sha256": "6c4b20a6a33de7bf1fde628a5b852cf4d283c31204c02dba1885a6784a288abb"
+    },
+    {
+      "bytes": 10151,
+      "path": "laix/tests/test_timer_irq.py",
+      "sha256": "19c55ff5bcd617c1042a9e68c13963fdeb2abfe0fa0ff8579f781d9102d2bcfd"
+    },
+    {
+      "bytes": 19917,
+      "path": "laix/tests/test_trap_entry.py",
+      "sha256": "beeff27d462665fadff1320b3d91393162c67ac67b6cf9e6b49428aeece1b61b"
+    },
+    {
+      "bytes": 2708,
+      "path": "laix/tests/test_unexpected_trap_probe.py",
+      "sha256": "160096d3f707f5f0319007fd0eed010bf584e9fd4736dce7688d506d4ef3a119"
+    },
+    {
+      "bytes": 5498,
+      "path": "laix/tests/test_unifont.py",
+      "sha256": "6cc6c3014a43fcff497db237996d810fdfff067ba69a14107d6cdc4989cbd3be"
+    },
+    {
+      "bytes": 2577,
+      "path": "laix/tests/test_user_buffers_cpu_probe.py",
+      "sha256": "c7a6cce94969b36903542320dae5872fcada3116b884760e57d39cd0867e7c6c"
+    },
+    {
+      "bytes": 3108,
+      "path": "laix/tests/test_user_cpu_probe.py",
+      "sha256": "f83ad53d5690be12c99e8a04467638b4c076a6cb61aae2adaacda988d46a53e3"
+    },
+    {
+      "bytes": 11479,
+      "path": "laix/tests/test_user_memory.py",
+      "sha256": "5fc37edddc65e98e8de4b83ae2f7bc68b8b74c58f0ea82b870ccd2af52859f29"
+    },
+    {
+      "bytes": 2739,
+      "path": "laix/tests/test_user_syscalls.py",
+      "sha256": "5fe8c7ef1dd8371fb833249896b665257ceb229a02c7ba1755c41301d2e08b8f"
+    },
+    {
+      "bytes": 3843,
+      "path": "laix/tests/test_videocard.py",
+      "sha256": "0bf835f80f28e60d21c5cd4bb2a1dafbb6d538b72d7943c826163da6d88d1c07"
+    },
+    {
+      "bytes": 9432,
+      "path": "laix/tests/test_wx_aliases.py",
+      "sha256": "eb6095f4e21a97ae530d01e61d9b4db9e2eb31aa1378177578be99c276ebda7e"
+    },
+    {
+      "bytes": 2184,
+      "path": "laix/tools/build_services.sh",
+      "sha256": "2e05fafbcb975cd555c41685a6b4361d8f1889bc2c1924d165b6dcd098291a82"
+    },
+    {
+      "bytes": 4872,
+      "path": "laix/tools/limits_latency_provenance.py",
+      "sha256": "186eadaacea78afe500a8680d0a08916c262236432899fe1600b432351e58dc8"
+    },
+    {
+      "bytes": 191,
+      "path": "laix/user/console.asm",
+      "sha256": "c5abb7760c72132ef661931f43a4583e35b07d395637bf6dbe34d0853693ff48"
+    },
+    {
+      "bytes": 488,
+      "path": "laix/user/console.m",
+      "sha256": "31c0de2c8ac4ff9055194f964f18a83e70c4b4db52260db52e4dd267a7f476f4"
+    },
+    {
+      "bytes": 1634,
+      "path": "laix/user/console_write.inc",
+      "sha256": "c6a8e9326cb02f8e1195d24b5097a3e99e0e2f63523d37bba6b71217c723b0db"
+    },
+    {
+      "bytes": 3117,
+      "path": "laix/user/heap.m",
+      "sha256": "89967bab63d96b88a859edbdeb25f4df9adec265d1e1af93e4da4e8feab7a35f"
+    },
+    {
+      "bytes": 133,
+      "path": "laix/user/recovery/disk.asm",
+      "sha256": "d8251c8439ff792b2caa9ec489e2fa1d420aa55ad800ac6edda852f4f358f4c8"
+    },
+    {
+      "bytes": 44,
+      "path": "laix/user/recovery/disk.m",
+      "sha256": "dcf5d9de93c72928c1e77a34d5e0cd644780df5cd707877e920c53471247118d"
+    },
+    {
+      "bytes": 125,
+      "path": "laix/user/recovery/echo.asm",
+      "sha256": "8b41338085d1ba4dea76ad4a3aa753212e96e8e27143a1d86d697365744647d6"
+    },
+    {
+      "bytes": 36,
+      "path": "laix/user/recovery/echo.m",
+      "sha256": "5fc8b2f2595fd4e4d4037f5a1e7d3653c25c06a2cdcf9e2711899be763cce8c9"
+    },
+    {
+      "bytes": 134,
+      "path": "laix/user/recovery/files.asm",
+      "sha256": "93714129c81c69862df2984c0552c6b4f25695bdfeb7c641e35c496f3b019006"
+    },
+    {
+      "bytes": 45,
+      "path": "laix/user/recovery/files.m",
+      "sha256": "0ff4f24dc2cd0606272e8539da68b2dd0a47ec651ab8a9253afb90c794391a9a"
+    },
+    {
+      "bytes": 7217,
+      "path": "laix/user/recovery/policy.m",
+      "sha256": "471bb51c9db12c7a35d024e5da47d72d61f899600c1e11e148a4ee378d0c9701"
+    },
+    {
+      "bytes": 2330,
+      "path": "laix/user/recovery/server.m",
+      "sha256": "980224f0e3dacfaee48c2112da847b18020fcacf3e3db70e3994e176d032abe8"
+    },
+    {
+      "bytes": 139,
+      "path": "laix/user/recovery/supervisor.asm",
+      "sha256": "c9d2ba15c7cb15ed998f4937bd69e5054809605acfe1a8ce83218a2a10b4ee1c"
+    },
+    {
+      "bytes": 4943,
+      "path": "laix/user/recovery/supervisor.m",
+      "sha256": "088a0ced624fc8a36a0dddefaebe22f8a3a9feaed5af558a22a7d6627221e6ef"
+    },
+    {
+      "bytes": 202,
+      "path": "laix/user/screen/application.asm",
+      "sha256": "35a74c67ee0e31e608a4bfe3eb8b51acf363434129cc9fd05e14541f58571947"
+    },
+    {
+      "bytes": 838,
+      "path": "laix/user/screen/application.m",
+      "sha256": "be1caad61aab63a1db9b90ebca3f84730b12646bb643d98e5050f9966769bca1"
+    },
+    {
+      "bytes": 2380,
+      "path": "laix/user/screen/cache.m",
+      "sha256": "6e8c39efe095180df11d48d1fb1a5303dc4c0679acceef715bbdfcb1c20de070"
+    },
+    {
+      "bytes": 1109,
+      "path": "laix/user/screen/client.m",
+      "sha256": "8dc5b6c0f7972e2576d9b34ad35e889de5ec3b0262930c0a16c6098e66dd7f01"
+    },
+    {
+      "bytes": 2750,
+      "path": "laix/user/screen/font.m",
+      "sha256": "290945fc8b0048d7dc105fa35fdbb9b23f9220952d480f8a1aa3ed2aee2cf3f9"
+    },
+    {
+      "bytes": 197,
+      "path": "laix/user/screen/server.asm",
+      "sha256": "c973f7db34ed362e3ad39afa4062ea36ed8c54864cb52d9ff4e58ffa871c0b66"
+    },
+    {
+      "bytes": 3553,
+      "path": "laix/user/screen/server.m",
+      "sha256": "b569d5dbd571f5b1105750857e9938ba949fe179b9e96c385eb84621beab07f7"
+    },
+    {
+      "bytes": 198,
+      "path": "laix/user/screen/storage.asm",
+      "sha256": "20b2199511ab580e910eb70bbc5c4cdb39659554e3ccd2047ce0ad3732418cad"
+    },
+    {
+      "bytes": 2908,
+      "path": "laix/user/screen/storage.m",
+      "sha256": "54963ad31974f3b625d5b59d62c989dfce829f8bf10627873d7a6789d7b3bd8d"
+    },
+    {
+      "bytes": 1941,
+      "path": "laix/user/screen/unicode.m",
+      "sha256": "aa4279342aeec4db46a358b25c59a6bcce71f849e5e98c27120b86c4b8c2220a"
+    },
+    {
+      "bytes": 3529,
+      "path": "laix/user/screen/video.m",
+      "sha256": "bc192273b144db872ae0de03ed9c116072db5a400a95bbe3480686951d1ef657"
+    },
+    {
+      "bytes": 195,
+      "path": "laix/user/services/application.asm",
+      "sha256": "264c3d828324f888c694a58cde2cbf1773438a80c5a3e6b948ba697a3adcd207"
+    },
+    {
+      "bytes": 1023,
+      "path": "laix/user/services/application.m",
+      "sha256": "62f8a919dccf98dc7aeef7ca70a4e91adab68f3fee73cf46234e566cf3a69b6d"
+    },
+    {
+      "bytes": 3319,
+      "path": "laix/user/services/client.m",
+      "sha256": "c5caa3668bb096ed86b97b6462a5045572ded67a7f88e58cf4a9e019c041b226"
+    },
+    {
+      "bytes": 207,
+      "path": "laix/user/services/disk.asm",
+      "sha256": "71ab11dbb32c6a3646c5ed17b856fbeaecd20818665ca93b2dff3fb07372be6a"
+    },
+    {
+      "bytes": 3199,
+      "path": "laix/user/services/disk.m",
+      "sha256": "1b113c772dc0d13ab81820fd40781b47248baee11ade030299e6bf371e925346"
+    },
+    {
+      "bytes": 69,
+      "path": "laix/user/services/disk_entry.asm",
+      "sha256": "887c67951d19df1d7c90c892af64172b45253f9bbdf598ca9485520a74ec3e8f"
+    },
+    {
+      "bytes": 210,
+      "path": "laix/user/services/files.asm",
+      "sha256": "a78c3a8e5189335f395cb09efa710eb4010050b04b1ffc4a6ff571114aa9d736"
+    },
+    {
+      "bytes": 4667,
+      "path": "laix/user/services/files.m",
+      "sha256": "529fc8ac2bcacb53c3f11d047d154d48c6804d37b76734581bca2ac1c4072e36"
+    },
+    {
+      "bytes": 70,
+      "path": "laix/user/services/files_entry.asm",
+      "sha256": "422e5502ea30633d9a62227e379138c13f0e6735964e5dcac6e0077d04acc04f"
+    },
+    {
+      "bytes": 194,
+      "path": "laix/user/services/input.asm",
+      "sha256": "a57160910bba99f43ce42fd8ae8f66dd8531fefefc1802eb67076c1b1afcc966"
+    },
+    {
+      "bytes": 2560,
+      "path": "laix/user/services/input.m",
+      "sha256": "3f499fe8b29aa808ee1dd6e1a4b68f3f46ae40f6378662a3d1695077357bf838"
+    },
+    {
+      "bytes": 1631,
+      "path": "laix/user/supervisor.inc",
+      "sha256": "afecaf16e03cad97f31e40c5ce6748b601b884f76ec8bea6c4775ab9c4f6c6fd"
+    },
+    {
+      "bytes": 997,
+      "path": "laix/user/syscalls.asm",
+      "sha256": "ea7615b21e98d8bf7c8155d6b19be6b7177160136ab659b515d742f2f00aa198"
+    },
+    {
+      "bytes": 11704,
+      "path": "laix/user/syscalls.m",
+      "sha256": "3a80289231b890dbf541aaac615aa1368e7cbfaa791a7237eeaf7b843a310f9b"
+    },
+    {
+      "bytes": 50089,
+      "path": "mc/asm.py",
+      "sha256": "fd6b29f6b510e5560067f63fae6be43f91b0633dc246c67fcdf4609840c76e4a"
+    },
+    {
+      "bytes": 5711,
+      "path": "mc/disasm.py",
+      "sha256": "321a22d62dd2333e9c34bc76ce24edc7a0c5d3170bdbebddbdcc87f25b91f25f"
+    },
+    {
+      "bytes": 10126,
+      "path": "mc/elf.py",
+      "sha256": "04fb178d6353442882e0a4c89073ff829622491763b4b096b8fc9470684cc211"
+    },
+    {
+      "bytes": 22966,
+      "path": "mc/ld.py",
+      "sha256": "ca92634169ec6bf174429c08618c21a3de60029cadc4c14955fb24e631f827a8"
+    },
+    {
+      "bytes": 9928,
+      "path": "mc/mc.py",
+      "sha256": "84e4b99e040ca2f8eed9c4b09443857243970a27cf06a970a3e67b1862b537bf"
+    },
+    {
+      "bytes": 69,
+      "path": "mc/mlang/__init__.py",
+      "sha256": "c3612658d8af1a56ee234d57d50fcd2e0d114ae7d0355648e45e6d5b80ab66ef"
+    },
+    {
+      "bytes": 58126,
+      "path": "mc/mlang/check.py",
+      "sha256": "c9b9e5f8c63519876177e45aa40fa2729c8d03a31bc91d58f3116fa1f65c3043"
+    },
+    {
+      "bytes": 39016,
+      "path": "mc/mlang/codegen.py",
+      "sha256": "1e2d1b1beeed9b9a57bcb85bf32c72c4e5df32ae5502daa31c601c785a5f9702"
+    },
+    {
+      "bytes": 958,
+      "path": "mc/mlang/diag.py",
+      "sha256": "7c8a36d96be7f0ef9e6f45850fb9ad797d9c088dc44055e93a5dca6c4563690a"
+    },
+    {
+      "bytes": 2073,
+      "path": "mc/mlang/image.py",
+      "sha256": "cfc0c7fbcc29505d1e3f0f1f92aae52b377742e840eab97d30d06296e39889c0"
+    },
+    {
+      "bytes": 8940,
+      "path": "mc/mlang/lexer.py",
+      "sha256": "02556e899fcb88a68c5910fe8159baf7558c77a9ec59fddb444ce1480f554041"
+    },
+    {
+      "bytes": 2050,
+      "path": "mc/mlang/modules.py",
+      "sha256": "d9f138a0f012565e5d9a4a9226f5844a3c29889719ac3f648d6f639a6f040ef4"
+    },
+    {
+      "bytes": 23760,
+      "path": "mc/mlang/parser.py",
+      "sha256": "d9e7e19d43eb54962348ee6858e0738b707d29b81086178713b17478c5ef7751"
+    },
+    {
+      "bytes": 3389,
+      "path": "mc/mlang/syntax.py",
+      "sha256": "8fdd820cd7c64f9583a3731c412a5ed5c6ecc9207dcd1e7ab67cb76da47f603f"
+    },
+    {
+      "bytes": 7255,
+      "path": "mc/mlang/typesys.py",
+      "sha256": "e90aef0bdaca7a2e1c20226a3b05b2cb0201459855804ed32b1e866158052cfb"
+    },
+    {
+      "bytes": 1426,
+      "path": "mc/runtime/crt0.asm",
+      "sha256": "47c871fbfea7e8888e5be54feae2837160aaf8a6c906a3e3b6ec63585a7e3ffa"
+    },
+    {
+      "bytes": 1676,
+      "path": "mc/runtime/mem.asm",
+      "sha256": "c55209e61c85a96cd2493995e3e46a69d61f22b37512157098088970c505613c"
+    },
+    {
+      "bytes": 1663,
+      "path": "mc/runtime/rom0.asm",
+      "sha256": "d294ff3a69f1b8f71edebe8b8bc479d65e9d68b71af89cd6491b7f8fa6a0137d"
+    },
+    {
+      "bytes": 458,
+      "path": "mc/runtime/rt.m",
+      "sha256": "e941e357111971cffe4037123c6346516012891ae4706bf2bb38b4c92ed1ecb6"
+    },
+    {
+      "bytes": 1956,
+      "path": "mc/runtime/trap.asm",
+      "sha256": "f97b0034ff09de56d39d87bfe7ad7eece5cab5e105b46520483891944fff09d9"
+    },
+    {
+      "bytes": 10869,
+      "path": "mc/tests/run.py",
+      "sha256": "3d59b8b3bb9903bd931eec9a95cdc4432c9194905c7cb56dd1e8f82699f8a1f9"
+    },
+    {
+      "bytes": 6025,
+      "path": "mc/tests/test_utf8.py",
+      "sha256": "5d22fa4d8f071a2f309ec6253fdc9311b618224e90f8530d9e2d2e3f228566d9"
+    },
+    {
+      "bytes": 9102,
+      "path": "mc/tests/test_variadic.py",
+      "sha256": "e9276056965fa6b0b124683ea33e6c2e9b83c6833f6122e39ed196cc5f355e10"
+    },
+    {
+      "bytes": 7137,
+      "path": "mc/wcc/build_rom.py",
+      "sha256": "3c3d7f98d3815f5d7e59177db2de11419e07bf86ea39f8c0e3983f4dcf3b1c91"
+    },
+    {
+      "bytes": 4322,
+      "path": "mc/wcc/native_link.py",
+      "sha256": "9eb6fb1c17ab98190af897ad5f3820b7f998c968dcc4a5e3967124846f8bba4e"
+    },
+    {
+      "bytes": 15836,
+      "path": "mc/wcc/native_objects.py",
+      "sha256": "0be38251f51ef06ce118b3bcd2f1126ff24ddb806fcef37db686bc2253fb8fa3"
+    },
+    {
+      "bytes": 4045,
+      "path": "mc/wcc/tests/test_build_rom.py",
+      "sha256": "499cf299af18396d6787abcbf9f28e2ee39da7df2dbd9e627e55f12bd651ce6b"
+    },
+    {
+      "bytes": 8698,
+      "path": "mc/wcc/tests/test_native_objects.py",
+      "sha256": "8d0cf9e97682760e756793ad72b9c94769ddfbe122b3318b2dbececab879cfa7"
+    },
+    {
+      "bytes": 17784,
+      "path": "mc/wcc/tests/test_wcc.py",
+      "sha256": "f9851d2160c3976676e79047949cbef69150bd1afee628816d11a1926d0ec957"
+    },
+    {
+      "bytes": 13961,
+      "path": "mc/wcc/wcc.py",
+      "sha256": "81eb5f8b47bf797b4c1d3de679ad61ead78a39cc6f2856ef62ff3e751dc8f1b1"
+    }
+  ],
+  "wrm_built": false
+}

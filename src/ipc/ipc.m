@@ -257,6 +257,7 @@ let ipcReceiveMode(frame: *mut TrapFrame, token: UWord, buffer: UWord, capacity:
     let access: Word = ipcAccess(token, RIGHT_RECEIVE)
     if access != 0 return ipcResult(frame, access, 0)
     if ipcResolve(token, RIGHT_RECEIVE).mode != ENDPOINT_RAW return ipcResult(frame, -ERRNO_EINVAL, 0)
+    if capacity > IPC_MESSAGE_MAX return ipcResult(frame, -ERRNO_EMSGSIZE, 0)
     if !mmuUserBufferValid(currentTask.directory, currentTask.id, buffer, capacity, PTE_W) {
         return ipcResult(frame, -ERRNO_EFAULT, 0)
     }
@@ -308,7 +309,7 @@ let ipcCallMode(frame: *mut TrapFrame, token: UWord, buffer: UWord, size: UWord,
     if service == null || (service.state != TASK_READY && service.state != TASK_RUNNING &&
         service.state != TASK_BLOCKED) return ipcResult(frame, -ERRNO_EPIPE, 0)
     if service == currentTask return ipcResult(frame, -ERRNO_EDEADLK, 0)
-    if size > IPC_MESSAGE_MAX return ipcResult(frame, -ERRNO_EMSGSIZE, 0)
+    if size > IPC_MESSAGE_MAX || capacity > IPC_MESSAGE_MAX return ipcResult(frame, -ERRNO_EMSGSIZE, 0)
     if !mmuUserBufferValid(currentTask.directory, currentTask.id, buffer, size, PTE_R) ||
         !mmuUserBufferValid(currentTask.directory, currentTask.id, response, capacity, PTE_W) {
         return ipcResult(frame, -ERRNO_EFAULT, 0)
@@ -353,6 +354,7 @@ let ipcAcceptMode(frame: *mut TrapFrame, token: UWord, buffer: UWord, capacity: 
     let object: *mut Endpoint = ipcResolve(token, RIGHT_RECEIVE)
     if object.mode != ENDPOINT_SERVICE return ipcResult(frame, -ERRNO_EINVAL, 0)
     if object.manager != currentTask.id return ipcResult(frame, -ERRNO_EPERM, 0)
+    if capacity > IPC_MESSAGE_MAX return ipcResult(frame, -ERRNO_EMSGSIZE, 0)
     if !mmuUserBufferValid(currentTask.directory, currentTask.id, buffer, capacity, PTE_W) {
         return ipcResult(frame, -ERRNO_EFAULT, 0)
     }

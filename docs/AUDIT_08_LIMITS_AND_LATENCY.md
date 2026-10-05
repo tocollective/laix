@@ -4,13 +4,17 @@
 
 Date: 2026-10-04. Priority: **P2**.
 
-These checklists describe proposed work, not completed implementation.
+Implemented and accepted on 2026-10-05 for the scoped
+[limits contract](LIMITS_AND_LATENCY.md) and
+[source/CPU acceptance record](../tests/LIMITS_LATENCY_ACCEPTANCE.md).
+Conditional staging and cached-ASID requirements are closed as not applicable;
+no such mechanisms were introduced.
 
 ## Dependencies
 
 Applies now; revisit budgets and worst-case sections when A1–A4 add runtime work. Threads, priorities and ASID optimization in A10 are optional follow-ups.
 
-## Current state and gap
+## Original audit state and gap (2026-10-04)
 
 **Evidence:** eight tasks, sixteen endpoints, sixteen handles per task,
 eight waits per queue and a 32-byte IPC limit are explicit bounds. A call's
@@ -55,32 +59,37 @@ microkernel does not automatically need a real-time scheduler.
 
 ## Implementation checklist
 
-- [ ] Publish concurrent, lifetime and per-domain limits separately, including generation retirement behavior.
-- [ ] Define a sustainable reply-token policy: wider identity, safe retirement/replacement or another nonrepeating scheme.
-- [ ] Keep old token values from regaining authority when changing counters or recycling task slots.
-- [ ] Instrument or measure maximum IRQ-disabled kernel work for copying, validation, queue operations, allocation and reaping.
-- [ ] State the supported image/memory sizes and workload used for latency measurements.
-- [ ] Bound work admitted by every syscall; examine capacity validation beyond the actual transferred bytes.
-- [ ] Split large future allocation/teardown work into safe bounded stages if measurements require it.
-- [ ] Define CPU and shared-server admission budgets where untrusted workloads can consume service capacity.
-- [ ] Keep round-robin as the documented baseline; add priority/donation only with a stated latency requirement.
-- [ ] Measure context-switch/IPC cost before replacing full TLB flushing with cached ASIDs.
-- [ ] If ASID caching is added, specify lease reuse, invalidation and stale-translation prevention before optimizing.
-- [ ] Preserve the nonnested trap assumption or implement a complete nesting-safe entry/context protocol before enabling kernel preemption.
+- [x] Publish concurrent, lifetime and per-domain limits separately, including generation retirement behavior.
+- [x] Define a sustainable reply-token policy: wider identity, safe retirement/replacement or another nonrepeating scheme.
+- [x] Keep old token values from regaining authority when changing counters or recycling task slots.
+- [x] Instrument or measure maximum IRQ-disabled kernel work for copying, validation, queue operations, allocation and reaping.
+- [x] State the supported image/memory sizes and workload used for latency measurements.
+- [x] Bound work admitted by every syscall; examine capacity validation beyond the actual transferred bytes.
+- [x] Split large future allocation/teardown work into safe bounded stages if measurements require it.
+- [x] Define CPU and shared-server admission budgets where untrusted workloads can consume service capacity.
+- [x] Keep round-robin as the documented baseline; add priority/donation only with a stated latency requirement.
+- [x] Measure context-switch/IPC cost before replacing full TLB flushing with cached ASIDs.
+- [x] If ASID caching is added, specify lease reuse, invalidation and stale-translation prevention before optimizing.
+- [x] Preserve the nonnested trap assumption or implement a complete nesting-safe entry/context protocol before enabling kernel preemption.
 
 ## Acceptance checklist
 
-- [ ] Test last-valid and first-invalid generation values and verify documented error/retirement with no wrap.
-- [ ] Demonstrate the chosen long-lived client policy without reusing stale reply rights.
-- [ ] Measure timer/device progress under the largest supported syscall and cleanup workloads.
-- [ ] Stress shared servers with multiple callers and verify bounded admission/fairness under the stated policy.
-- [ ] If work is split, inject interruption/cancellation between stages without exposing partial mappings or reclaimed resources.
-- [ ] If ASID caching changes, recycle leases and run stale-translation CPU probes across mapping changes.
-- [ ] Record latency measurements separately from logical source-test results; passing mocked timers does not measure timing.
+- [x] Test last-valid and first-invalid generation values and verify documented error/retirement with no wrap.
+- [x] Demonstrate the chosen long-lived client policy without reusing stale reply rights.
+- [x] Measure timer/device progress under the largest supported syscall and cleanup workloads.
+- [x] Stress shared servers with multiple callers and verify bounded admission/fairness under the stated policy.
+- [x] If work is split, inject interruption/cancellation between stages without exposing partial mappings or reclaimed resources.
+- [x] If ASID caching changes, recycle leases and run stale-translation CPU probes across mapping changes.
+- [x] Record latency measurements separately from logical source-test results; passing mocked timers does not measure timing.
 
 ## Completion record
 
-When work is accepted, link each completed requirement to its tests and record
-the source and image provenance, remaining limitations and CPU acceptance
-results. A checked box must not imply a stronger evidence level than the linked
-record establishes.
+All twelve implementation and seven acceptance requirements are mapped to
+source, tests, measurements and explicit conditional scope in
+[LIMITS_LATENCY_ACCEPTANCE.md](../tests/LIMITS_LATENCY_ACCEPTANCE.md).
+[LIMITS_LATENCY_PROVENANCE.json](../tests/LIMITS_LATENCY_PROVENANCE.json) records
+source/compiler and image hashes, unchanged WRM/ROM, logical source results and
+separate executed CPU measurements. The largest measured section is 94.880117 ms
+at 128 MHz for EXIT plus all eight maximally charged tasks' cleanup. The record
+retains finite reply lifetime, explicit replacement, 2/32 MiB workload scope and
+the distinction between measured regression budgets and universal WCET.

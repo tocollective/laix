@@ -35,6 +35,29 @@ let mut kernelPageDirectory: *mut UWord
 // per physical frame is needed here, not another full-size owner array.
 let mut spaceInitialized: UWord[MAX_PAGES / WORD_BITS]
 
+// Frame quotas alone do not bound teardown: aliases need no new data frames.
+// Charge ordinary leaves and private user tables independently. Bootstrap
+// resources have three fixed descriptors; their tables still spend this quota.
+let MAX_SPACE_BUDGETS: UWord = 32
+let MMU_MAPPING_LIMIT: UWord = 128
+let MMU_TABLE_LIMIT: UWord = 8
+type SpaceBudget { directory: UWord, owner: UWord, mappings: UWord, tables: UWord }
+let mut spaceBudgets: SpaceBudget[MAX_SPACE_BUDGETS]
+
+let mmuBudget(directory: *mut UWord, owner: UWord): *mut SpaceBudget {
+    for i: UWord in 0..MAX_SPACE_BUDGETS {
+        if spaceBudgets[i].directory == (directory as UWord) && spaceBudgets[i].owner == owner {
+            return &mut spaceBudgets[i]
+        }
+    }
+    return null
+}
+
+let mmuMappingAllows(directory: *mut UWord, owner: UWord, count: UWord): Bool {
+    let budget: *SpaceBudget = mmuBudget(directory, owner)
+    return budget != null && count <= MMU_MAPPING_LIMIT - budget.mappings
+}
+
 // Immutable bootstrap grants, separate from allocator-backed RAM aliases.
 // No syscall exposes this constructor. Only the three fixed screen resources
 // can be installed; a directory cannot impersonate a different owner.
@@ -88,7 +111,9 @@ let mmuGrantResource(directory: *mut UWord, owner: UWord, virtual: UWord,
         }
         if resourceGrants[i].directory == 0 slot = i
     }
-    if slot == MAX_RESOURCE_GRANTS || directory[virtual / SUPERPAGE_SIZE] != 0 {
+    let budget: *mut SpaceBudget = mmuBudget(directory, owner)
+    if slot == MAX_RESOURCE_GRANTS || directory[virtual / SUPERPAGE_SIZE] != 0 ||
+        budget == null || budget.tables == MMU_TABLE_LIMIT {
         memoryUnlock(status)
         return false
     }
@@ -107,6 +132,7 @@ let mmuGrantResource(directory: *mut UWord, owner: UWord, virtual: UWord,
     resourceGrants[slot].permissions = permissions
     fence()
     directory[virtual / SUPERPAGE_SIZE] = tableAddress | PTE_V
+    budget.tables += 1
     mmuInvalidate()
     memoryUnlock(status)
     return true
@@ -259,7 +285,19 @@ let mmuInitAddressSpace(directory: *mut UWord, owner: UWord): Bool {
         memoryUnlock(status)
         return false
     }
+    let mut budget: *mut SpaceBudget = null
+    for i: UWord in 0..MAX_SPACE_BUDGETS {
+        if budget == null && spaceBudgets[i].directory == 0 budget = &mut spaceBudgets[i]
+    }
+    if budget == null {
+        memoryUnlock(status)
+        return false
+    }
     for i: UWord in 0..PAGE_TABLE_ENTRIES directory[i] = kernelPageDirectory[i]
+    budget.directory = address
+    budget.owner = owner
+    budget.mappings = 0
+    budget.tables = 0
     mmuRequire(retainPage(address, owner, PAGE_DIRECTORY))
     spaceInitialized[page / WORD_BITS] |= 1 as UWord << (page % WORD_BITS)
     memoryUnlock(status)
@@ -356,7 +394,9 @@ let mmuChangeAccess(physical: UWord, permissions: UWord, previous: UWord): Bool 
 let mmuMapRegion(directory: *mut UWord, owner: UWord, virtual: UWord,
     pages: *UWord, count: UWord, permissions: UWord): Bool {
     if count == 0 || count > 16 || !mmuSpaceOwned(directory, owner) ||
-        !mmuUserRangeValid(virtual, count * PAGE_SIZE) || !mmuPermissionsValid(permissions) return false
+        !mmuUserRangeValid(virtual, count * PAGE_SIZE) || !mmuPermissionsValid(permissions) ||
+        !mmuMappingAllows(directory, owner, count) return false
+    let budget: *mut SpaceBudget = mmuBudget(directory, owner)
     let first: UWord = virtual / SUPERPAGE_SIZE
     let last: UWord = (virtual + (count - 1) * PAGE_SIZE) / SUPERPAGE_SIZE
     // Sixteen pages can touch at most two directory slots.
@@ -377,6 +417,9 @@ let mmuMapRegion(directory: *mut UWord, owner: UWord, virtual: UWord,
             if table[address / PAGE_SIZE % PAGE_TABLE_ENTRIES] != 0 return false
         }
     }
+    let mut needed: UWord = 0
+    for slot: UWord in first..(last + 1) { if directory[slot] == 0 needed += 1 }
+    if needed > MMU_TABLE_LIMIT - budget.tables return false
     for slot: UWord in first..(last + 1) {
         if directory[slot] != 0 continue
         staged[slot - first] = mmuAllocTable(owner)
@@ -406,6 +449,8 @@ let mmuMapRegion(directory: *mut UWord, owner: UWord, virtual: UWord,
     for slot: UWord in first..(last + 1) {
         if staged[slot - first] != 0 directory[slot] = staged[slot - first] | PTE_V
     }
+    budget.tables += needed
+    budget.mappings += count
     mmuInvalidate()
     return true
 }
@@ -414,13 +459,19 @@ let mapPage(directory: *mut UWord, owner: UWord, virtual: UWord,
     physical: UWord, permissions: UWord): Bool {
     let status: UWord = memoryLock()
     if !mmuSpaceOwned(directory, owner) || !mmuUserRangeValid(virtual, PAGE_SIZE) ||
-        !mmuPermissionsValid(permissions) || mmuUserPurpose(physical, owner) == PAGE_NONE {
+        !mmuPermissionsValid(permissions) || mmuUserPurpose(physical, owner) == PAGE_NONE ||
+        !mmuMappingAllows(directory, owner, 1) {
         memoryUnlock(status)
         return false
     }
     let slot: UWord = virtual / SUPERPAGE_SIZE
     let index: UWord = virtual / PAGE_SIZE % PAGE_TABLE_ENTRIES
     let entry: UWord = directory[slot]
+    let budget: *mut SpaceBudget = mmuBudget(directory, owner)
+    if entry == 0 && budget.tables == MMU_TABLE_LIMIT {
+        memoryUnlock(status)
+        return false
+    }
     if entry != 0 && !mmuPrivateTable(entry, owner) {
         memoryUnlock(status)
         return false
@@ -453,10 +504,12 @@ let mapPage(directory: *mut UWord, owner: UWord, virtual: UWord,
         table[index] = physical | permissions
         fence() // initialize the entire table before publishing the parent
         directory[slot] = address | PTE_V
+        budget.tables += 1
     } else {
         if mmuChangeAccess(physical, permissions, 0) mmuInvalidate()
         table[index] = physical | permissions
     }
+    budget.mappings += 1
     mmuInvalidate()
     memoryUnlock(status)
     return true
@@ -594,7 +647,14 @@ let unmapPage(directory: *mut UWord, owner: UWord, virtual: UWord): Bool {
     if mmuChangeAccess(physical, 0, leaf) mmuInvalidate()
     mmuRequire(releasePage(physical, frameOwner, mmuUserPurpose(physical, frameOwner)))
     memoryGrantUnmapped(owner, virtual, physical)
-    if empty mmuFreeTable(address, owner)
+    let budget: *mut SpaceBudget = mmuBudget(directory, owner)
+    mmuRequire(budget != null && budget.mappings != 0)
+    budget.mappings -= 1
+    if empty {
+        mmuFreeTable(address, owner)
+        mmuRequire(budget.tables != 0)
+        budget.tables -= 1
+    }
     // The leaf remains owned: the caller may remap it or freePage it now.
     memoryUnlock(status)
     return true
@@ -811,6 +871,12 @@ let mmuDestroyAddressSpace(directory: *mut UWord, owner: UWord): Bool {
     }
     let page: UWord = root / PAGE_SIZE
     spaceInitialized[page / WORD_BITS] &= ~(1 as UWord << (page % WORD_BITS))
+    let budget: *mut SpaceBudget = mmuBudget(directory, owner)
+    mmuRequire(budget != null)
+    budget.directory = 0
+    budget.owner = 0
+    budget.mappings = 0
+    budget.tables = 0
     mmuRequire(releasePage(root, owner, PAGE_DIRECTORY))
     mmuRequire(freePage(root, owner, PAGE_DIRECTORY))
     memoryUnlock(status)
@@ -827,3 +893,5 @@ export { USER_VA_START, USER_VA_END, mmuUserRangeValid, mmuInit, mmuUserLeaf,
 export { mmuMapRegion, mmuAccessValid, mmuPermissionsValid, mmuSpaceOwned }
 
 export { mmuUserFrameOwner }
+
+export { SpaceBudget, spaceBudgets, MMU_MAPPING_LIMIT, MMU_TABLE_LIMIT, mmuMappingAllows }

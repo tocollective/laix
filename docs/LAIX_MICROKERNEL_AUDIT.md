@@ -69,7 +69,7 @@ These priorities describe completeness, not CVE severity:
 | A5 | [Accepted](../tests/SERVICE_RECOVERY_ACCEPTANCE.md): private supervision, atomic publication, explicit resolution and quiescent Disk handover | P1 |
 | A6 | Receiver-controlled capability transfer and resource quotas | P2 |
 | A7 | A general device interface with less service policy in the kernel | P2 |
-| A8 | Sustainable limits and bounded execution latency | P2 |
+| A8 | [Accepted](../tests/LIMITS_LATENCY_ACCEPTANCE.md): resource/lifetime budgets, reply retirement/replacement and measured CPU latency | P2 |
 | A9 | CPU stress coverage, CI and consistent acceptance tracking | P2 |
 | A10 | Optional shared memory, threads, pager and scheduler extensions | P3 |
 

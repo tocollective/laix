@@ -157,7 +157,7 @@ class BootstrapM:
             value = self.expr(node.value, local)
             if node.op != "=":
                 value = self.binary[node.op[:-1]](self.expr(node.target, local), value) & 0xFFFFFFFF
-            if isinstance(node.target, s.Index):
+            if isinstance(node.target, (s.Index, s.Member)):
                 self.memory[self.address(node.target, local)] = value
             else:
                 target = local if node.target.name in local else self.globals

@@ -549,3 +549,7 @@ networking, a general user ELF loader and a full filesystem remain deferred.
 Runtime endpoint factories and bounded UART/input broker grants are described
 in [Runtime objects](docs/RUNTIME_OBJECTS.md), with
 [checked-source and CPU acceptance](tests/RUNTIME_OBJECTS_ACCEPTANCE.md).
+
+Resource, identity lifetime and scheduling admission limits are published in
+[Limits and latency](docs/LIMITS_AND_LATENCY.md), with separate
+[logical and CPU timing evidence](tests/LIMITS_LATENCY_ACCEPTANCE.md).

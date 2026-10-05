@@ -151,7 +151,7 @@ class RequestReplyTests(unittest.TestCase):
                 (tokens[2], 0xFFFFFFFE, 4, USER_DATA, 32, 14),
                 (tokens[2], USER_DATA + PAGE - 1, 2, USER_DATA, 32, 14),
                 (tokens[2], USER_DATA, 1, USER_CODE, 32, 14),
-                (tokens[2], USER_DATA, 1, USER_DATA, PAGE + 1, 14)):
+                (tokens[2], USER_DATA, 1, USER_DATA, PAGE + 1, 90)):
             vm.invoke(CALL, token, source, size, dest, capacity)
             self.assertEqual(vm.result(2), (error(errno), 0))
             self.assertEqual(vm.queue(endpoint), [])

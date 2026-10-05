@@ -23,8 +23,8 @@ CASES = ('timeouts', 'boundary', 'death', 'fifo', 'cancel', 'cycle', 'watchdog',
 
 
 class LivenessProbe(RequestReplyProbe):
-    def start_service(self):
-        self.count = 6
+    def start_service(self, count=6, deferred=0):
+        self.count = count
         for slot in range(1, self.count + 1):
             require(self.call('taskCreateImage', self.s['userCodeStart'], self.s['userCodeEnd'], 0) == slot,
                     'could not construct fixture task')
@@ -42,26 +42,17 @@ class LivenessProbe(RequestReplyProbe):
         for slot in range(1, self.count + 1):
             require(self.call('taskControlBootstrap', 6, slot, 63) == 1, 'scoped control grant failed')
             require(self.call('taskInstallRuntimeStart', slot, 0, 0, 0) == 1, 'startup install failed')
-            require(self.call('taskPublish', slot) == 1, 'fixture publication failed')
-            self.seed(slot, self.busy)
+        for slot in range(1, self.count + 1):
+            if slot != deferred:
+                require(self.call('taskPublish', slot) == 1, 'fixture publication failed')
+                self.seed(slot, self.busy)
         self.endpoint = self.m.words(self.address(1, 'handles') + ((root & 255) - 1) * 16, 1)[0]
-        require(self.endpoint_field('references') == 6, 'incorrect initial reference count')
+        require(self.endpoint_field('references') == self.count, 'incorrect initial reference count')
         self.bridge()
         self.prepare(self.s['taskStart'], (1000000,))
         self.stop(self.busy)
         self.check_queue(1)
         self.expiries = 0
-
-    def inject_call(self, selected, regs, name, args, pointer_result=False):
-        original = self.context(selected)
-        super().inject_call(selected, regs, name, args, pointer_result)
-        if selected and not pointer_result:
-            # The return frame must survive trap-entry taskReap before the
-            # injected API starts. Keep it below that temporary call stack.
-            stack = self.field(selected, 'kernelStackTop') - 1024
-            self.m.commands([f"wp 0x{stack + i * 4:X} 0x{word:X}"
-                             for i, word in enumerate(original)])
-            self.set_frame(regs['r1'], dict(R30=stack))
 
     def kernel_api(self, name, *args):
         returned = self.tick_return()

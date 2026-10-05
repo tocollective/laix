@@ -212,7 +212,10 @@ let taskConstructImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord)
     for i: UWord in 0..MAX_TASKS {
         // Bootstrap and the sealed recovery policy may use the final two slots.
         if currentTask != null && !currentTask.handles.factoryRecovery && i >= MAX_TASKS - TASK_RECOVERY_RESERVE continue
-        if tasks[i].state == TASK_EMPTY && tasks[i].id >> 8 < TASK_GENERATION_MAX {
+        // Retired reply namespaces require replacement in a different slot.
+        // Construction and collection must never reset the reply counter.
+        if tasks[i].state == TASK_EMPTY && tasks[i].id >> 8 < TASK_GENERATION_MAX &&
+            tasks[i].ipcCallGeneration < TASK_GENERATION_MAX {
             task = &mut tasks[i]
             break
         }

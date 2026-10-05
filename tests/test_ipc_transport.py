@@ -208,7 +208,7 @@ class TransportTests(unittest.TestCase):
                 (19, USER_DATA + PAGE - 1, 2, 14),
                 (19, USER_DATA, 33, 90), (19, USER_DATA, 0xFFFFFFFF, 90),
                 (20, USER_CODE, 32, 14), (20, USER_DATA + PAGE - 1, 2, 14),
-                (20, USER_DATA, 0xFFFFFFFF, 14)):
+                (20, USER_DATA, 0xFFFFFFFF, 90)):
             with self.subTest(number=number, address=address, count=count):
                 before = vm.read_bytes(vm.pages(1)[1], 32)
                 vm.syscall(number, tokens[1], address, count)
@@ -353,13 +353,13 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(vm.object_value(object, "state"), 0)
         self.assertEqual(vm.queue(object), [])
 
-    def test_full_receiver_range_failure_preserves_oldest_pending_sender(self):
+    def test_excess_receiver_capacity_preserves_oldest_pending_sender(self):
         vm, tokens, object = self.fixture()
         vm.seed(vm.pages(1)[1], b"abc")
         vm.syscall(19, tokens[1], USER_DATA, 3)
-        # The message would fit in the first page; the declared capacity would not.
+        # Oversized capacity is rejected before walking any user pages.
         vm.syscall(20, tokens[2], USER_DATA, PAGE + 1)
-        self.assertEqual(vm.result(2), (error(14), 0))
+        self.assertEqual(vm.result(2), (error(90), 0))
         self.assertEqual(vm.queue(object), [1])
         self.assertEqual(vm.read_bytes(vm.pages(2)[1], 3), b"\0\0\0")
         self.assertEqual(vm.wakes, Counter())

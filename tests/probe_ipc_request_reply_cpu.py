@@ -14,7 +14,8 @@ from pathlib import Path
 import socket
 import subprocess
 
-from probe_boot import ready_monitor, require
+from probe_boot import ready_monitor, require, disassemble
+from probe_unexpected_traps import instruction
 from probe_mmu_cpu import symbols_from_map
 from probe_scheduler_cpu import SchedulerProbe, preflight as scheduler_preflight, uart_text, CODE, DATA, PAGE, C
 from test_kernel import LAIX, check_m
@@ -53,6 +54,8 @@ class RequestReplyProbe(SchedulerProbe):
         self.timer_switches = 0
         self.additional_pages = {}
         self.pending_contexts = {}
+        self.iret = next(pc for pc in range(symbols['trapEntry.restore'], symbols['trapEntry.bad_stack'], 4)
+                         if disassemble(instruction(data, pc), pc) == 'iret')
 
     def running(self):
         pointer = self.m.words(self.s["currentTask"], 1)[0]
@@ -208,6 +211,17 @@ class RequestReplyProbe(SchedulerProbe):
         self.resume_busy()
         return self.result(id)
 
+    def inject_call(self, selected, regs, name, args, pointer_result=False):
+        original = self.context(selected)
+        super().inject_call(selected, regs, name, args, pointer_result)
+        if selected and not pointer_result:
+            # Selected-stack reaping must not overwrite the borrowed return
+            # frame before the injected helper starts executing.
+            stack = self.field(selected, 'kernelStackTop') - 1024
+            self.m.commands([f"wp 0x{stack + i * 4:X} 0x{word:X}"
+                             for i, word in enumerate(original)])
+            self.set_frame(regs['r1'], dict(R30=stack))
+
     def kernel_api(self, name, *args):
         returned = self.tick_return()
         id = self.running()
@@ -215,11 +229,14 @@ class RequestReplyProbe(SchedulerProbe):
         self.inject_call(id, returned, name, args)
         self.stop(self.s[name])
         result = self.stop(self.s["trapEntry.restore"])["r1"]
-        regs = self.stop(self.busy)
-        # This controlled supervisor invocation borrowed a TCB return frame.
+        # Verify restoration before IRET: a long helper may leave the timer
+        # pending, so a different task can legitimately reach the user loop.
         self.m.commands([f"wp 0x{self.address(id, 'context') + i * 4:X} 0x{word:X}"
                          for i, word in enumerate(original)])
-        require([regs[f"r{i}"] for i in range(32)] == original[:32], "kernel fixture corrupted user context")
+        regs = self.stop(self.iret)
+        require([regs[f"r{i}"] for i in range(32)] == original[:32] and
+                regs['fcsr'] == original[C['TF_FCSR'] // 4], "kernel fixture corrupted restored context")
+        self.stop(self.busy)
         self.check_queue(self.running())
         self.check_pending_contexts()
         return result
@@ -250,7 +267,7 @@ class RequestReplyProbe(SchedulerProbe):
                 "queued request pins are wrong")
         self.put_bytes(2, 0, b"changed")
         require(self.syscall(1, ACCEPT, self.tokens[1], DATA, 1) == (negative(90), 7), "small accept consumed request")
-        require(self.syscall(1, ACCEPT, self.tokens[1], DATA, PAGE + 1) == (negative(14), 0), "accept skipped full-range checks")
+        require(self.syscall(1, ACCEPT, self.tokens[1], DATA, PAGE + 1) == (negative(90), 0), "accept admitted excessive capacity")
         a = self.accept()
         require(a == 0x102 and self.bytes(1, 0, 7) == b"client2", "FIFO/snapshot identity is wrong")
         b = self.accept()
@@ -297,7 +314,7 @@ class RequestReplyProbe(SchedulerProbe):
     def buffers(self):
         for source, length, response, capacity, errno in ((0, 1, DATA + 128, 32, 14),
                 (DATA, 33, DATA + 128, 32, 90), (DATA + PAGE - 1, 2, DATA + 128, 32, 14),
-                (DATA, 1, CODE, 32, 14), (DATA, 1, DATA, PAGE + 1, 14)):
+                (DATA, 1, CODE, 32, 14), (DATA, 1, DATA, PAGE + 1, 90)):
             require(self.syscall(2, CALL, self.tokens[2], source, length, response, capacity) == (negative(errno), 0),
                     "invalid call buffer was admitted")
             self.cleared(2)
@@ -345,12 +362,12 @@ class RequestReplyProbe(SchedulerProbe):
         self.put_bytes(1, PAGE - 16, message[::-1])
         require(self.syscall(1, REPLY, token, DATA + PAGE - 16, 32) == (32, 32) and
                 self.bytes(2, PAGE - 16, 32) == message[::-1], "cross-page overlapping response copy failed")
-        self.request(2, b"x", capacity=PAGE + 32, response=DATA)
+        self.request(2, b"x", capacity=32, response=DATA + PAGE - 16)
         token = self.accept()
         require(self.kernel_api("setPagePermissions", self.field(2, "directory"), 2, DATA + PAGE, 19) == 1,
                 "could not revoke unused response capacity page")
-        before = self.bytes(2, 0, 32)
-        require(self.reply(token, b"z") == (negative(14), 0) and self.bytes(2, 0, 32) == before,
+        before = self.bytes(2, PAGE - 16, 32)
+        require(self.reply(token, b"z") == (negative(14), 0) and self.bytes(2, PAGE - 16, 32) == before,
                 "reply did not revalidate capacity beyond the bytes copied")
         self.cleared(2)
         require(self.endpoint_field("references") == 4, "buffer failures leaked wait pins")

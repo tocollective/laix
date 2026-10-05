@@ -147,8 +147,8 @@ These are source checks, not CPU acceptance of a newly built image.
 | 19 `send` | local token, source VA, byte length | r1=delivered length or -errno; r2=delivered length on success, otherwise 0 |
 | 20 `recv` | local token, destination VA, byte capacity | r1=received length or -errno; r2=length on success or required length on -EMSGSIZE, otherwise 0 |
 
-The maximum message length is `IPC_MESSAGE_MAX=32`. Receive capacity may exceed
-32, but its **entire** range must be writable user memory. Zero-length messages
+The maximum message length is `IPC_MESSAGE_MAX=32`. Receive capacity is also limited to 32; greater capacity returns `EMSGSIZE`
+before walking user pages. Its **entire** admitted range must be writable user memory. Zero-length messages
 still rendezvous, require a live authorized handle and valid address-space
 identity, but never dereference either buffer; their addresses may be arbitrary.
 Only r1/r2 change; r3..r31 and FCSR are preserved. The dispatcher advances EPC

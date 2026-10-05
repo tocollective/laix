@@ -71,7 +71,8 @@ let serve(endpoint: UWord, request: *mut UByte, response: *UByte): Word {
 ```
 
 Requests and responses each have the existing maximum of 32 bytes. Receive
-capacities may exceed 32 but their entire ranges must be writable user memory.
+capacities are limited to 32 bytes; a greater capacity returns `EMSGSIZE` before
+walking user pages. The entire admitted range must be writable user memory.
 Zero-length transfers still validate authority and address-space identity,
 without dereferencing the corresponding buffer. Request and response buffers
 may overlap: `call` snapshots the complete request into kernel storage before
