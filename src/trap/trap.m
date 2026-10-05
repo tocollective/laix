@@ -1,3 +1,9 @@
+import { SYS_MEM_GRANT, SYS_MEM_GRANT_MAP, SYS_MEM_GRANT_CLOSE } from "../arch/wrm081632/defs.m"
+import { memoryCreateGrant, memoryMapGrant, memoryCloseGrant } from "../mm/sharing.m"
+import { SYS_MEM_SPACE, SYS_MEM_ALLOC, SYS_MEM_RELEASE, SYS_MEM_MAP,
+    SYS_MEM_UNMAP, SYS_MEM_PROTECT, SYS_MEM_POPULATE, SYS_MEM_CLOSE } from "../arch/wrm081632/defs.m"
+import { memoryOpenSpace, memoryCloseSpace, memoryAllocate, memoryRelease,
+    memoryMap, memoryEdit, memoryPopulate } from "../mm/runtime.m"
 import { SYS_TASK_CREATE, SYS_TASK_CONFIGURE, SYS_TASK_PUBLISH, SYS_TASK_INSPECT,
     SYS_TASK_TERMINATE, SYS_TASK_COLLECT } from "../arch/wrm081632/defs.m"
 import { taskRuntimeCreate, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
@@ -90,6 +96,28 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
             frame.regs[REG_RESULT] = ipcDestroy(frame.regs[1]) as UWord
             taskSaveContext(frame)
             return frame
+        case SYS_MEM_GRANT:
+            return deviceResult(frame, memoryCreateGrant(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4]))
+        case SYS_MEM_GRANT_MAP:
+            return deviceResult(frame, memoryMapGrant(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4]))
+        case SYS_MEM_GRANT_CLOSE:
+            return deviceResult(frame, memoryCloseGrant(frame.regs[1]))
+        case SYS_MEM_SPACE:
+            return deviceResult(frame, memoryOpenSpace(frame.regs[1], frame.regs[2]))
+        case SYS_MEM_CLOSE:
+            return deviceResult(frame, memoryCloseSpace(frame.regs[1]))
+        case SYS_MEM_ALLOC:
+            return deviceResult(frame, memoryAllocate(frame.regs[1], frame.regs[2]))
+        case SYS_MEM_RELEASE:
+            return deviceResult(frame, memoryRelease(frame.regs[1], frame.regs[2]))
+        case SYS_MEM_MAP:
+            return deviceResult(frame, memoryMap(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4], frame.regs[5], frame.regs[6]))
+        case SYS_MEM_UNMAP:
+            return deviceResult(frame, memoryEdit(frame.regs[1], frame.regs[2], frame.regs[3], 0, false))
+        case SYS_MEM_PROTECT:
+            return deviceResult(frame, memoryEdit(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4], true))
+        case SYS_MEM_POPULATE:
+            return deviceResult(frame, memoryPopulate(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4], frame.regs[5]))
         case SYS_TASK_CREATE:
             return deviceResult(frame, taskRuntimeCreate(frame.regs[1]))
         case SYS_TASK_CONFIGURE:

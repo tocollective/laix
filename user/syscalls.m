@@ -101,3 +101,34 @@ let inspectTask(reference: UWord, event: *mut TaskEvent): Word { return syscall(
 let terminateTask(reference: UWord, code: Word): Word { return syscall(SYS_TASK_TERMINATE, reference, code) }
 let collectTask(reference: UWord, event: *mut TaskEvent): Word { return syscall(SYS_TASK_COLLECT, reference, event) }
 export { createTask, configureTask, publishTask, inspectTask, terminateTask, collectTask }
+
+import { SYS_MEM_SPACE, SYS_MEM_ALLOC, SYS_MEM_RELEASE, SYS_MEM_MAP,
+    SYS_MEM_UNMAP, SYS_MEM_PROTECT, SYS_MEM_POPULATE, SYS_MEM_CLOSE } from "../src/arch/wrm081632/defs.m"
+// Target zero names self; foreign targets require unpublished-task authority.
+let openMemorySpace(target: UWord, rights: UWord): Word { return syscall(SYS_MEM_SPACE, target, rights) }
+let closeMemorySpace(space: UWord): Word { return syscall(SYS_MEM_CLOSE, space) }
+let allocateRegion(space: UWord, pages: UWord): Word { return syscall(SYS_MEM_ALLOC, space, pages) }
+let releaseRegion(space: UWord, region: UWord): Word { return syscall(SYS_MEM_RELEASE, space, region) }
+let mapRegion(space: UWord, region: UWord, virtual: UWord, offset: UWord, pages: UWord, permissions: UWord): Word {
+    return syscall(SYS_MEM_MAP, space, region, virtual, offset, pages, permissions)
+}
+let unmapRegion(space: UWord, virtual: UWord, pages: UWord): Word { return syscall(SYS_MEM_UNMAP, space, virtual, pages) }
+let protectRegion(space: UWord, virtual: UWord, pages: UWord, permissions: UWord): Word {
+    return syscall(SYS_MEM_PROTECT, space, virtual, pages, permissions)
+}
+let populateRegion(space: UWord, region: UWord, offset: UWord, source: *UByte, bytes: UWord): Word {
+    return syscall(SYS_MEM_POPULATE, space, region, offset, source, bytes)
+}
+export { openMemorySpace, closeMemorySpace, allocateRegion, releaseRegion, mapRegion,
+    unmapRegion, protectRegion, populateRegion }
+
+import { SYS_MEM_GRANT, SYS_MEM_GRANT_MAP, SYS_MEM_GRANT_CLOSE } from "../src/arch/wrm081632/defs.m"
+// The owner communicates the returned grant token to the named borrower.
+let grantRegion(space: UWord, region: UWord, borrower: UWord, permissions: UWord): Word {
+    return syscall(SYS_MEM_GRANT, space, region, borrower, permissions)
+}
+let mapGrantedRegion(space: UWord, grant: UWord, virtual: UWord, permissions: UWord): Word {
+    return syscall(SYS_MEM_GRANT_MAP, space, grant, virtual, permissions)
+}
+let closeMemoryGrant(grant: UWord): Word { return syscall(SYS_MEM_GRANT_CLOSE, grant) }
+export { grantRegion, mapGrantedRegion, closeMemoryGrant }

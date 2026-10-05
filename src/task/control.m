@@ -289,7 +289,7 @@ let taskRuntimeTerminate(frame: *mut TrapFrame, reference: UWord, code: Word): *
     return frame
 }
 
-export { TaskControl, taskControls, taskHistory, taskHistoryHead, taskHistoryCount,
+export { taskControlLookup, TaskControl, taskControls, taskHistory, taskHistoryHead, taskHistoryCount,
     MAX_TASK_CONTROLS, TASK_HISTORY_SIZE, taskControlBootstrapSelf, taskControlBootstrap, taskControlSeal, taskInstallRuntimeStart,
     taskRuntimeCreate, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
     taskRuntimeTerminate, taskRecordCompletion, taskRecordReaped, taskReleaseSupervisor }

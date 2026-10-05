@@ -19,7 +19,7 @@ let PAGE_NONE: UWord = 0
 align(PAGE_SIZE) let mut pageBitmap: UWord[BITMAP_WORDS]
 let mut pageOwners: *mut UWord
 let mut pagePurposes: *mut UWord
-// Managed user mappings and directory/table pins. The trusted supervisor
+// Managed mappings, grant leases, DMA and directory/table pins. The trusted supervisor
 // physical window does not own frames. A referenced frame cannot be returned
 // to the allocator, even through a task's creation-time ledger.
 let mut pageReferences: *mut UWord
@@ -29,6 +29,74 @@ let mut pageAccessReferences: *mut UWord
 let mut kernelReservedEnd: UWord
 let mut kernelRamEnd: UWord
 let mut nextFreePage: UWord
+
+// Every task budget includes frames, private directories/tables and guarded
+// kernel stacks. Unregistered owners are reserved trusted kernel/broker owners.
+let MEMORY_TASK_PAGES: UWord = 96
+let MEMORY_RESERVE_PAGES: UWord = 16
+let MAX_MEMORY_BUDGETS: UWord = 8
+type MemoryBudget { owner: UWord, used: UWord, limit: UWord }
+let mut memoryBudgets: MemoryBudget[MAX_MEMORY_BUDGETS]
+let mut memoryFreePages: UWord
+
+// Kernel policy only. A generation gets a fresh budget before its first frame.
+let memoryBudgetOpen(owner: UWord): Bool {
+    let slot: UWord = owner & 255
+    if slot == 0 || slot > MAX_MEMORY_BUDGETS return false
+    let budget: *mut MemoryBudget = &mut memoryBudgets[slot - 1]
+    if budget.owner != 0 return false
+    budget.owner = owner
+    budget.used = 0
+    budget.limit = MEMORY_TASK_PAGES
+    return true
+}
+
+let memoryBudgetFind(owner: UWord): *mut MemoryBudget {
+    let slot: UWord = owner & 255
+    if slot == 0 || slot > MAX_MEMORY_BUDGETS return null
+    let budget: *mut MemoryBudget = &mut memoryBudgets[slot - 1]
+    // The slot is only an index; exact generation-bearing ownership authorizes
+    // charging. Trusted kernel/broker identities cannot alias a task budget.
+    if budget.owner != owner return null
+    return budget
+}
+
+let memoryBudgetAllows(owner: UWord, count: UWord): Bool {
+    let budget: *mut MemoryBudget = memoryBudgetFind(owner)
+    if budget == null return true
+    return count <= budget.limit - budget.used && memoryFreePages >= MEMORY_RESERVE_PAGES &&
+        count <= memoryFreePages - MEMORY_RESERVE_PAGES
+}
+
+let memoryBudgetCharge(owner: UWord, count: UWord): Void {
+    let budget: *mut MemoryBudget = memoryBudgetFind(owner)
+    if budget != null budget.used += count
+    memoryFreePages -= count
+}
+
+let memoryBudgetRefund(owner: UWord, count: UWord): Void {
+    let budget: *mut MemoryBudget = memoryBudgetFind(owner)
+    if budget != null budget.used -= count
+    memoryFreePages += count
+}
+
+// Orphan regions retain their original generation-bearing allocation owner.
+// Detach their charge immediately before the dead task closes its budget;
+// actual free later refunds only physical capacity, never a replacement task.
+let memoryBudgetDetach(owner: UWord, count: UWord): Bool {
+    let budget: *mut MemoryBudget = memoryBudgetFind(owner)
+    if budget == null || count > budget.used return false
+    budget.used -= count
+    return true
+}
+
+let memoryBudgetClose(owner: UWord): Bool {
+    let budget: *mut MemoryBudget = memoryBudgetFind(owner)
+    if budget == null || budget.used != 0 return false
+    budget.owner = 0
+    budget.limit = 0
+    return true
+}
 
 // Single CPU, including preemption: save/restore IE, never unconditionally enable
 // interrupts. Nested calls also work in EXL=1. Fences order metadata and page
@@ -83,6 +151,7 @@ let memoryInit(ramSize: UWord): Bool {
             pagePurposes[page] = PAGE_FREE
         }
     }
+    memoryFreePages = (ramEnd - reservedEnd) / PAGE_SIZE
     kernelReservedEnd = reservedEnd
     nextFreePage = reservedEnd / PAGE_SIZE
     // Publish readiness only after boot/image/BSS/stack/guard and the entire
@@ -163,7 +232,7 @@ let physicalPageReferences(address: UWord): UWord {
 // PAGE_USER_STACK, clear the entire frame before returning it to a new task.
 let allocPage(owner: UWord, purpose: UWord): UWord {
     let status: UWord = memoryLock()
-    if kernelRamEnd == 0 || owner == 0 || !pagePurposeValid(purpose) {
+    if kernelRamEnd == 0 || owner == 0 || !pagePurposeValid(purpose) || !memoryBudgetAllows(owner, 1) {
         memoryUnlock(status)
         return PAGE_NONE
     }
@@ -173,6 +242,7 @@ let allocPage(owner: UWord, purpose: UWord): UWord {
         pageBitmap[page / WORD_BITS] |= bit
         pageOwners[page] = owner
         pagePurposes[page] = purpose
+        memoryBudgetCharge(owner, 1)
         nextFreePage = page + 1
         let address: UWord = page * PAGE_SIZE
         if purpose == PAGE_USER || purpose == PAGE_USER_STACK {
@@ -191,7 +261,7 @@ let allocPage(owner: UWord, purpose: UWord): UWord {
 let allocPageRun(owner: UWord, purpose: UWord, count: UWord): UWord {
     let status: UWord = memoryLock()
     if kernelRamEnd == 0 || owner == 0 || !pagePurposeValid(purpose) ||
-        count == 0 || count > (kernelRamEnd - kernelReservedEnd) / PAGE_SIZE {
+        count == 0 || count > (kernelRamEnd - kernelReservedEnd) / PAGE_SIZE || !memoryBudgetAllows(owner, count) {
         memoryUnlock(status)
         return PAGE_NONE
     }
@@ -206,6 +276,7 @@ let allocPageRun(owner: UWord, purpose: UWord, count: UWord): UWord {
             pageOwners[allocated] = owner
             pagePurposes[allocated] = purpose
         }
+        memoryBudgetCharge(owner, count)
         let data: *mut UWord = (first * PAGE_SIZE) as *mut UWord
         for i: UWord in 0..(count * PAGE_SIZE / WORD_BYTES) data[i] = 0
         memoryUnlock(status)
@@ -226,6 +297,7 @@ let freePage(address: UWord, owner: UWord, purpose: UWord): Bool {
         return false
     }
     let page: UWord = address / PAGE_SIZE
+    memoryBudgetRefund(owner, 1)
     pageOwners[page] = 0
     pagePurposes[page] = PAGE_FREE
     pageBitmap[page / WORD_BITS] &= ~(1 as UWord << (page % WORD_BITS))
@@ -311,3 +383,8 @@ export { kernelReservedEnd, kernelRamEnd, PAGE_NONE, PAGE_KERNEL,
     MAX_PAGES, memoryLock, memoryUnlock, retainPage, releasePage, physicalPageReferences,
     pageAccessReferences,
     allocPage, allocPageRun, freePage, allocTaskPages, freeTaskPages }
+
+export { MemoryBudget, memoryBudgets, memoryFreePages, MEMORY_TASK_PAGES, MEMORY_RESERVE_PAGES,
+    memoryBudgetOpen, memoryBudgetClose, memoryBudgetFind }
+
+export { memoryBudgetDetach }

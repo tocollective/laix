@@ -1,3 +1,4 @@
+import { memoryGrantFrameOwner, memoryGrantMayProtect, memoryGrantUnmapped } from "sharing.m"
 // Single-CPU MMU manager. All mutations hold memoryLock (save/restore IE).
 // Shared supervisor physical window: user code frames become RO here before
 // acquiring X anywhere. Task mappings occupy a separate virtual window.
@@ -287,6 +288,13 @@ let mmuUserPurpose(address: UWord, owner: UWord): UWord {
     return PAGE_NONE
 }
 
+// An address-space owner is not necessarily the allocation owner. Foreign
+// leaves need a matching explicit grant and exact borrower mapping ledger.
+let mmuUserFrameOwner(owner: UWord, virtual: UWord, physical: UWord, permissions: UWord): UWord {
+    if mmuUserPurpose(physical, owner) != PAGE_NONE return owner
+    return memoryGrantFrameOwner(owner, virtual, physical, permissions)
+}
+
 let mmuPermissionsValid(permissions: UWord): Bool {
     // Require V/U/R, forbid caller A/D/G/reserved bits and writable code.
     return permissions & (PTE_V | PTE_U | PTE_R) == (PTE_V | PTE_U | PTE_R) &&
@@ -339,6 +347,66 @@ let mmuChangeAccess(physical: UWord, permissions: UWord, previous: UWord): Bool 
     let leaf: UWord = physical | flags | (table[index] & PTE_AD)
     if table[index] == leaf return false
     table[index] = leaf
+    return true
+}
+
+// Bounded all-or-nothing mapping. Stage missing tables without publishing
+// parents; allocation failure leaves both PTEs and resource charges unchanged.
+// The caller holds memoryLock and supplies a trusted unique frame ledger.
+let mmuMapRegion(directory: *mut UWord, owner: UWord, virtual: UWord,
+    pages: *UWord, count: UWord, permissions: UWord): Bool {
+    if count == 0 || count > 16 || !mmuSpaceOwned(directory, owner) ||
+        !mmuUserRangeValid(virtual, count * PAGE_SIZE) || !mmuPermissionsValid(permissions) return false
+    let first: UWord = virtual / SUPERPAGE_SIZE
+    let last: UWord = (virtual + (count - 1) * PAGE_SIZE) / SUPERPAGE_SIZE
+    // Sixteen pages can touch at most two directory slots.
+    let mut staged: UWord[2]
+    for i: UWord in 0..2 staged[i] = 0
+    for i: UWord in 0..count {
+        let physical: UWord = pages[i]
+        let address: UWord = virtual + i * PAGE_SIZE
+        let frameOwner: UWord = mmuUserFrameOwner(owner, address, physical, permissions)
+        let purpose: UWord = mmuUserPurpose(physical, frameOwner)
+        let entry: UWord = directory[address / SUPERPAGE_SIZE]
+        if purpose == PAGE_NONE || !mmuAccessValid(physical, purpose, permissions, 0) ||
+            physicalPageReferences(physical) == 0xFFFFFFFF return false
+        for j: UWord in 0..i { if pages[j] == physical return false }
+        if entry != 0 {
+            if !mmuPrivateTable(entry, owner) return false
+            let table: *UWord = (entry & ~PAGE_MASK) as *UWord
+            if table[address / PAGE_SIZE % PAGE_TABLE_ENTRIES] != 0 return false
+        }
+    }
+    for slot: UWord in first..(last + 1) {
+        if directory[slot] != 0 continue
+        staged[slot - first] = mmuAllocTable(owner)
+        if staged[slot - first] != PAGE_NONE continue
+        for previous: UWord in first..slot {
+            if staged[previous - first] != PAGE_NONE mmuFreeTable(staged[previous - first], owner)
+        }
+        return false
+    }
+    // No fallible operation remains. Revoke supervisor W before any X leaf.
+    let mut changed: Bool = false
+    for i: UWord in 0..count {
+        let frameOwner: UWord = mmuUserFrameOwner(owner, virtual + i * PAGE_SIZE, pages[i], permissions)
+        mmuRequire(retainPage(pages[i], frameOwner, mmuUserPurpose(pages[i], frameOwner)))
+        if mmuChangeAccess(pages[i], permissions, 0) changed = true
+    }
+    if changed mmuInvalidate()
+    for i: UWord in 0..count {
+        let address: UWord = virtual + i * PAGE_SIZE
+        let slot: UWord = address / SUPERPAGE_SIZE
+        let mut tableAddress: UWord = directory[slot] & ~PAGE_MASK
+        if tableAddress == 0 tableAddress = staged[slot - first]
+        let table: *mut UWord = tableAddress as *mut UWord
+        table[address / PAGE_SIZE % PAGE_TABLE_ENTRIES] = pages[i] | permissions
+    }
+    fence()
+    for slot: UWord in first..(last + 1) {
+        if staged[slot - first] != 0 directory[slot] = staged[slot - first] | PTE_V
+    }
+    mmuInvalidate()
     return true
 }
 
@@ -401,7 +469,7 @@ let mmuUserLeaf(directory: *mut UWord, owner: UWord, virtual: UWord): UWord {
     let table: *UWord = (entry & ~PAGE_MASK) as *UWord
     let leaf: UWord = table[virtual / PAGE_SIZE % PAGE_TABLE_ENTRIES]
     if !mmuPermissionsValid((leaf & PAGE_MASK) & ~PTE_AD) ||
-        mmuUserPurpose(leaf & ~PAGE_MASK, owner) == PAGE_NONE ||
+        mmuUserFrameOwner(owner, virtual, leaf & ~PAGE_MASK, leaf) == 0 ||
         physicalPageReferences(leaf & ~PAGE_MASK) == 0 return 0
     return leaf
 }
@@ -510,6 +578,7 @@ let unmapPage(directory: *mut UWord, owner: UWord, virtual: UWord): Bool {
         memoryUnlock(status)
         return false
     }
+    let frameOwner: UWord = mmuUserFrameOwner(owner, virtual, leaf & ~PAGE_MASK, leaf)
     let slot: UWord = virtual / SUPERPAGE_SIZE
     let address: UWord = directory[slot] & ~PAGE_MASK
     let table: *mut UWord = address as *mut UWord
@@ -523,7 +592,8 @@ let unmapPage(directory: *mut UWord, owner: UWord, virtual: UWord): Bool {
     let physical: UWord = leaf & ~PAGE_MASK
     // The user translation is gone from all ASIDs before restoring kernel W.
     if mmuChangeAccess(physical, 0, leaf) mmuInvalidate()
-    mmuRequire(releasePage(physical, owner, mmuUserPurpose(physical, owner)))
+    mmuRequire(releasePage(physical, frameOwner, mmuUserPurpose(physical, frameOwner)))
+    memoryGrantUnmapped(owner, virtual, physical)
     if empty mmuFreeTable(address, owner)
     // The leaf remains owned: the caller may remap it or freePage it now.
     memoryUnlock(status)
@@ -539,7 +609,9 @@ let setPagePermissions(directory: *mut UWord, owner: UWord, virtual: UWord,
         return false
     }
     let physical: UWord = leaf & ~PAGE_MASK
-    if !mmuAccessValid(physical, mmuUserPurpose(physical, owner), permissions, leaf) {
+    let frameOwner: UWord = mmuUserFrameOwner(owner, virtual, physical, permissions)
+    if frameOwner == 0 || (frameOwner != owner && !memoryGrantMayProtect(owner, virtual, physical, leaf, permissions)) ||
+        !mmuAccessValid(physical, mmuUserPurpose(physical, frameOwner), permissions, leaf) {
         memoryUnlock(status)
         return false
     }
@@ -720,12 +792,15 @@ let mmuDestroyAddressSpace(directory: *mut UWord, owner: UWord): Bool {
                     table[i] = 0
                     continue
                 }
-                let purpose: UWord = mmuUserPurpose(physical, owner)
+                let virtual: UWord = slot * SUPERPAGE_SIZE + i * PAGE_SIZE
+                let frameOwner: UWord = mmuUserFrameOwner(owner, virtual, physical, table[i])
+                let purpose: UWord = mmuUserPurpose(physical, frameOwner)
                 if mmuChangeAccess(physical, 0, table[i]) windowChanged = true
                 table[i] = 0
-                mmuRequire(releasePage(physical, owner, purpose))
+                mmuRequire(releasePage(physical, frameOwner, purpose))
+                memoryGrantUnmapped(owner, virtual, physical)
                 // Multiple aliases/spaces retain the frame until the last one.
-                if physicalPageReferences(physical) == 0 mmuRequire(freePage(physical, owner, purpose))
+                if frameOwner == owner && physicalPageReferences(physical) == 0 mmuRequire(freePage(physical, owner, purpose))
             }
         }
         mmuFreeTable(address, owner)
@@ -748,3 +823,7 @@ export { USER_VA_START, USER_VA_END, mmuUserRangeValid, mmuInit, mmuUserLeaf,
     mmuInitAddressSpace, mmuCreateAddressSpace, mapPage, unmapPage,
     setPagePermissions, mmuSplitSuperpage, mmuSwitchAddressSpace,
     mmuActivateKernel, mmuDestroyAddressSpace, mmuAllocKernelStack, mmuFreeKernelStack }
+
+export { mmuMapRegion, mmuAccessValid, mmuPermissionsValid, mmuSpaceOwned }
+
+export { mmuUserFrameOwner }

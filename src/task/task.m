@@ -1,3 +1,5 @@
+import { memoryRevokeLoader, memoryRevokeTask, memoryReapRegions, memoryReapOrphans } from "../mm/runtime.m"
+import { memoryBudgetOpen, memoryBudgetClose } from "../mm/memory.m"
 // Preemptive round-robin: one CPU, one thread per task, no nested traps.
 import { PAGE_SIZE, WORD_BYTES, GPR_COUNT, REG_SP, STATUS_IE, STATUS_PIE, STATUS_PUM,
     STATUS_EXL, STATUS_UM, CR_STATUS, CR_PTBR, PTBR_ENABLE, PTE_U, PTE_RX, PTE_RW, PTE_RO,
@@ -161,6 +163,7 @@ let taskRollback(task: *mut Task): Void {
         return
     }
     task.directory = null
+    memoryReapRegions(task.id)
     if physicalPageOwned(task.bootPage, task.id, PAGE_USER) &&
         !freePage(task.bootPage, task.id, PAGE_USER) {
         panic("could not roll back start block", null)
@@ -182,6 +185,7 @@ let taskRollback(task: *mut Task): Void {
     }
     task.kernelStackBottom = 0
     task.kernelStackTop = 0
+    if !memoryBudgetClose(task.id) panic("task budget remains charged", null)
 }
 
 // Shared checked mechanism: trusted pointers only, no implicit authority.
@@ -218,8 +222,13 @@ let taskConstructImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord)
     task.ipcKind = WAIT_NONE
     task.bootPage = PAGE_NONE
     for i: UWord in 0..TASK_PAGE_COUNT task.pages[i] = PAGE_NONE
+    if !memoryBudgetOpen(task.id) {
+        task.state = TASK_EMPTY
+        return 0
+    }
     task.directory = mmuCreateAddressSpace(task.id) as *mut UWord
     if task.directory == null {
+        if !memoryBudgetClose(task.id) panic("empty budget remains charged", null)
         task.state = TASK_EMPTY
         return 0
     }
@@ -379,6 +388,7 @@ let taskPublishChecked(id: UWord): Bool {
     if code & (PTE_U | PTE_X | PTE_W) != (PTE_U | PTE_X) ||
         stack & (PTE_U | PTE_W | PTE_X) != (PTE_U | PTE_W) ||
         start & ~PAGE_MASK != task.bootPage || start & (PTE_U | PTE_W | PTE_X) != PTE_U return false
+    memoryRevokeLoader(id)
     taskEnqueue(task)
     return true
 }
@@ -651,6 +661,7 @@ let taskStop(task: *mut Task, code: Word, faulted: Bool, terminated: Bool): Void
     task.waitReason = WAIT_NONE
     task.state = TASK_DEAD
     task.createImages = 0
+    memoryRevokeTask(task.id)
     handlesReleaseTask(&mut task.handles, task.id)
     irqReleaseTask(task.id)
     fontCancelOwner(task.id)
@@ -715,6 +726,7 @@ let taskReap(): Void {
         return
     }
     fontReap()
+    memoryReapOrphans()
     for i: UWord in 0..MAX_TASKS {
         let task: *mut Task = &mut tasks[i]
         if task.state != TASK_DEAD || task.reaped continue

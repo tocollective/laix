@@ -53,7 +53,7 @@ sets `schedulerStarted`. Endpoint root issuance is sealed at the same entry.
 Memory issuance is part of image/start construction: the existing allocator
 assigns every frame an owner and purpose, and mapping APIs check that ledger.
 Init never accepts user-selected physical pages, owners, directories or device
-addresses. No task-create, memory-allocation or arbitrary task-control syscall
+addresses. No unrestricted task-create, physical-memory or arbitrary task-control syscall
 is installed; unknown syscall numbers return `-ENOSYS`. A future dynamic init
 API will need explicit scoped authority before it can be exposed to user mode.
 
@@ -113,3 +113,17 @@ See [console acceptance](../tests/CONSOLE_SERVICE_ACCEPTANCE.md), the historical
 [bootstrap acceptance](../tests/BOOTSTRAP_ACCEPTANCE.md) and
 [service request/reply](IPC_REQUEST_REPLY.md). Screen migration, service restart
 and device IRQ/DMA policy remain subsequent work.
+
+## Runtime extension
+
+The original fixed bootstrap mappings remain the initial image contract.
+[Scoped runtime memory](RUNTIME_MEMORY.md) now lets an application obtain self
+address-space authority and private eager regions after entry. The runtime task
+factory can additionally grant bounded loader access to an unpublished child.
+Neither extension exposes owner IDs, physical addresses, directory pointers,
+fixed startup/stack mappings or sealed device grants.
+
+Explicit [sharing grants](RUNTIME_MEMORY.md#explicit-sharing-and-both-death-orders)
+now allow a region owner to lend a whole region to a named borrower. A grant
+confers only bounded mapping rights, retains independent frame leases and never
+grants task control, allocation ownership or device/DMA authority.

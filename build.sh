@@ -18,6 +18,15 @@ set -- "$obj_dir/start.o"
 main_source=${LAIX_MAIN:-$laix_dir/src/kernel/main.m}
 case "${LAIX_CONSOLE:-uart}" in
     uart) ;;
+    memory|sharing)
+        if [ -n "${LAIX_MAIN:-}" ]; then
+            printf '%s\n' 'LAIX_CONSOLE=memory/sharing cannot be combined with LAIX_MAIN' >&2
+            exit 1
+        fi
+        sh "$laix_dir/tools/build_runtime_memory.sh" "$LAIX_CONSOLE"
+        main_source="$laix_dir/tests/programs/mm/runtime_memory.m"
+        if [ "$LAIX_CONSOLE" = sharing ]; then main_source="$laix_dir/tests/programs/mm/memory_sharing.m"; fi
+        ;;
     supervisor)
         if [ -n "${LAIX_MAIN:-}" ]; then
             printf '%s\n' 'LAIX_CONSOLE=supervisor cannot be combined with LAIX_MAIN' >&2
@@ -37,7 +46,7 @@ case "${LAIX_CONSOLE:-uart}" in
         fi
         sh "$laix_dir/tools/build_services.sh" "$LAIX_CONSOLE"
         ;;
-    *) printf '%s\n' 'LAIX_CONSOLE must be uart, screen, services or supervisor' >&2; exit 1 ;;
+    *) printf '%s\n' 'LAIX_CONSOLE must be uart, screen, services, supervisor, memory or sharing' >&2; exit 1 ;;
 esac
 python3 "$repo_dir/mc/mc.py" -c "$main_source" -o "$obj_dir/main.o"
 set -- "$@" "$obj_dir/main.o"
@@ -48,7 +57,7 @@ case "$(basename -- "$main_source")" in
         set -- "$@" "$obj_dir/mmu_probe.o"
         ;;
 esac
-for module in arch/wrm081632/defs kernel/boot kernel/bootstrap mm/memory mm/mmu trap/trap_frame ipc/objects task/start task/service_start task/runtime_start task/control task/task ipc/ipc trap/trap kernel/panic drivers/debug_uart drivers/timer drivers/irq drivers/service_devices drivers/input_device drivers/videocard console/console drivers/rnd console/font/font console/font/glyph_cache console/font/data; do
+for module in arch/wrm081632/defs kernel/boot kernel/bootstrap mm/memory mm/mmu mm/runtime mm/sharing trap/trap_frame ipc/objects task/start task/service_start task/runtime_start task/control task/task ipc/ipc trap/trap kernel/panic drivers/debug_uart drivers/timer drivers/irq drivers/service_devices drivers/input_device drivers/videocard console/console drivers/rnd console/font/font console/font/glyph_cache console/font/data; do
     mkdir -p "$(dirname -- "$obj_dir/$module.o")"
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/$module.m" -o "$obj_dir/$module.o"
     set -- "$@" "$obj_dir/$module.o"
@@ -60,6 +69,10 @@ if [ "${LAIX_CONSOLE:-uart}" = screen ] || [ "${LAIX_CONSOLE:-uart}" = services 
         python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/$module.m" -o "$obj_dir/$module.o"
         set -- "$@" "$obj_dir/$module.o"
     done
+fi
+if [ "${LAIX_CONSOLE:-uart}" = memory ] || [ "${LAIX_CONSOLE:-uart}" = sharing ]; then
+    python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/task/program.m" -o "$obj_dir/program.o"
+    set -- "$@" "$obj_dir/program.o"
 fi
 if [ "${LAIX_CONSOLE:-uart}" = supervisor ]; then
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/kernel/supervisor_bootstrap.m" -o "$obj_dir/supervisor_bootstrap.o"

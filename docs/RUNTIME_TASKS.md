@@ -156,3 +156,25 @@ endpoint cancellation's task-table enumeration. Both now use `taskSlot`;
 all authority and ownership checks still compare generation-bearing values.
 See [runtime task acceptance](../tests/RUNTIME_TASKS_ACCEPTANCE.md) for evidence
 and the distinction between checked-source and CPU coverage.
+
+## Scoped runtime memory
+
+[Runtime memory](RUNTIME_MEMORY.md) enrolls each new task in a 96-frame budget
+before its directory is allocated. The budget includes its private tables,
+all user frames and guarded kernel stack; application allocations leave the
+16-frame trusted progress reserve available. A creator with CONFIGURE authority
+can request a bounded memory capability for the Created child's private eager
+regions. Successful publication revokes that foreign loader capability.
+Region ownership remains with the child. Death revokes memory authority;
+selected-stack, DMA-quiescent reaping also frees private never-mapped/unmapped
+regions. Explicitly granted regions with surviving borrowers move to bounded
+orphan accounting before the original task's zero-charge budget closes. Their
+frames retain the original allocation generation until the last borrower/pin
+releases them; the old slot may be reused without owning or refunding those frames. Existing startup and task-control ABI
+layouts are unchanged.
+
+With sharing, TaskEvent RECLAIMED confirms retirement of the task's TCB-owned
+address space, kernel stack and budget. It can coexist with detached shared
+regions retained by borrowers; it does not promise that those independently
+pinned frames have returned to the allocator. Such retention is recorded by
+the region/grant ledgers and `memoryOrphanPages`, not the DMA QUARANTINED flag.

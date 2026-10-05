@@ -30,6 +30,17 @@ carry generations; scoped control capabilities, completion storage, rollback
 and DMA quarantine are specified in [the runtime task contract](docs/RUNTIME_TASKS.md)
 and [acceptance record](tests/RUNTIME_TASKS_ACCEPTANCE.md).
 
+Scoped eager memory is implemented with private region tokens, explicit
+address-space rights, per-task frame budgets and a kernel progress reserve.
+The minimal [user heap](user/heap.m) grows and releases complete page-backed
+regions. See the [runtime memory contract](docs/RUNTIME_MEMORY.md) and
+[acceptance record](tests/RUNTIME_MEMORY_ACCEPTANCE.md). The separate
+`LAIX_CONSOLE=memory` profile exercises heap growth, IPC, timer preemption,
+W^X aliases and unpublished-child loader authority on CPU. Explicit sharing
+uses scoped whole-region grants and a borrower/reference ledger; the separate
+`LAIX_CONSOLE=sharing` fixture checks both death orders and owner-slot reuse.
+See [sharing acceptance](tests/MEMORY_SHARING_ACCEPTANCE.md).
+
 Исходники сгруппированы по подсистемам:
 
 ```text
