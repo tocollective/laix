@@ -40,7 +40,8 @@ pending; see the [request/reply acceptance record](../tests/IPC_REQUEST_REPLY_AC
 `src/ipc/objects.m` owns a fixed pool of 16 endpoints. Each `Task` embeds a
 separate 16-entry `HandleTable` in supervisor memory. An endpoint has a stable
 pool ID, a 32-bit generation, Empty/Live/Destroyed/Retired state, a reference
-count, and the task ID of its management owner. Sender and receiver FIFO
+count, the full reference of its creator/destruction owner, and its immutable
+Service receiver reference. Raw endpoints bind both identities to the creator. Sender and receiver FIFO
 storage each holds eight trusted task IDs with a head and count. References
 count installed handles and queued IPC waits. Each task can own only one wait,
 and each wait pins its endpoint independently of the handle used to enter it.
@@ -66,8 +67,9 @@ Copying installs a new independent reference in the target task's table.
 Requested rights must be a nonempty subset of the source entry's rights; a
 recipient cannot amplify them by copying again. A target task ID selects a
 recipient, not an object authority. Management copies are permitted only within
-the original owner's task. Ownership transfer is not implemented. Nonmanagement
-rights can be copied to any live user task, including the caller. Copy returns
+the original owner's task. Ownership transfer is not implemented. Send rights and Raw receive rights can be copied to live user tasks. Service
+receive rights stay with the immutable receiver, including initial attenuation
+from a separate creator into its owned Created child. Copy returns
 the new token in the recipient's table; delivering that number to the recipient
 is a separate protocol. A failed copy does not change either table or references.
 
@@ -80,9 +82,10 @@ It marks the object Destroyed immediately, revoking every copy. Destroyed entrie
 can still be closed, but cannot be copied or used. They pin the object slot until
 the last reference closes, so a new endpoint cannot reuse it prematurely.
 Exit and fatal user faults release all of the task's handles in `taskFinish`
-before scheduler selection. Manager death destroys all its Live endpoints,
-even if it previously closed its management handles. Death of a nonmanager
-only drops that task's references. Task slots currently are not recycled.
+before scheduler selection. Creator death destroys all its Live endpoints,
+even if it previously closed its management handles; Service receiver death
+also revokes its endpoints. Other peer deaths drop their own references.
+Runtime task slots are recycled with persistent generations.
 
 Handle generations advance on every allocation and are preserved on close and
 task cleanup. A closed slot at generation `0x7FFFFF` is permanently unavailable.
@@ -95,8 +98,10 @@ The legacy kernel test fixture `taskBootstrapEndpoints` grants task 1 send/recei
 send on a shared endpoint before scheduling starts. Each initial token is placed
 in r4 of that task's private entry frame. Tasks created without this policy have
 empty tables and r4=0. The existing user demo does not consume r4 yet.
-`taskStart` permanently seals root issuance before the first user IRET. There is
-no user endpoint-create syscall and no later API for minting root rights.
+`taskStart` permanently seals root issuance before the first user IRET.
+The user endpoint-create syscall (53) is gated by the bounded factory described in
+[Runtime objects](RUNTIME_OBJECTS.md). It creates new objects without reopening
+bootstrap root issuance.
 Normal boot instead uses [embedded init](BOOTSTRAP.md), which grants only
 receive + UART TX to the server and send to the client through checked startup
 records, and discards the temporary root handle before the first user entry.
@@ -259,3 +264,16 @@ buffer rules, shutdown races, and acceptance scenarios. Existing raw
 ожидание экономит CPU, права проверяются, а все пути ошибки завершаются
 без зависших задач и повреждения памяти.
 Общий контракт регистров — [syscall ABI](../../docs/ABI.md#system-calls).
+
+### Runtime capability extension (A3)
+
+The [runtime object contract](RUNTIME_OBJECTS.md) defines scoped factories and recovery reserves. Syscall 53 creates Raw/Service
+endpoints through an explicitly delegated, quota-limited factory. Bootstrap
+root issuance remains sealed. Management belongs to `Endpoint.creator`;
+`Endpoint.manager` is the immutable Service receiver. Their full task references
+can differ. Either owner's death revokes the Service object. Receive rights
+can flow only to that receiver; send rights retain explicit attenuation.
+Runtime task slots are generation-bearing and reusable. Recovery factories
+reserve the last two endpoint slots and two supervisor handle slots against
+ordinary runtime allocation/copy pressure. See the linked contract for exact
+error, staging-reference, rollback, storage and revocation semantics.

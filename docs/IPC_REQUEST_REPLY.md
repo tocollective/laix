@@ -34,7 +34,9 @@ their rendezvous completes before a service response exists.
 
 Numbers 21..23 are implemented by `src/trap/trap.m` and `src/ipc/ipc.m`.
 `endpointBootstrapService` creates Service endpoints before root issuance is
-sealed. Normal boot uses the [embedded service bootstrap](BOOTSTRAP.md);
+sealed. [Runtime factories](RUNTIME_OBJECTS.md) can also create fresh Service
+endpoints after user scheduling starts, with immutable receiver identity and
+separate creator/destruction authority. Normal boot uses the [embedded service bootstrap](BOOTSTRAP.md);
 the old Raw endpoint policy remains only as a kernel acceptance fixture.
 Every new call preserves r3..r31
 and FCSR and advances saved EPC exactly once before any blocking transition.

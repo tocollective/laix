@@ -538,3 +538,7 @@ LAIX_CONSOLE=services sh laix/run.sh --ram 2M --no-net
 See the [protocols and failure lifecycle](docs/SIMPLE_SERVICES.md) and
 [source/CPU acceptance](tests/SIMPLE_SERVICES_ACCEPTANCE.md). Runtime restart,
 networking, a general user ELF loader and a full filesystem remain deferred.
+
+Runtime endpoint factories and bounded UART/input broker grants are described
+in [Runtime objects](docs/RUNTIME_OBJECTS.md), with
+[checked-source and CPU acceptance](tests/RUNTIME_OBJECTS_ACCEPTANCE.md).

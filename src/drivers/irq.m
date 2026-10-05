@@ -30,8 +30,15 @@ let irqMask(line: UWord): Void {
 // Boot may grant keyboard, video or the selected disk line, never the timer.
 let irqGrant(owner: UWord, line: UWord): UWord {
     objectAssertAtomic()
+    if irqSealed return 0
+    return irqIssue(owner, line)
+}
+
+// Internal issuance reached only by boot or checked runtime device policy.
+let irqIssue(owner: UWord, line: UWord): UWord {
+    objectAssertAtomic()
     let task: *mut Task = taskGet(owner)
-    if irqSealed || task == null || task.state != TASK_CREATED ||
+    if task == null || task.state != TASK_CREATED ||
         (line != KEYBOARD_IRQ && line != VIDEO_IRQ && line != 3 && line != 4 && line != 6) return 0
     let grant: *mut IrqGrant = &mut irqGrants[line]
     if grant.owner != 0 || grant.generation == 0x7FFFFF return 0
@@ -181,5 +188,5 @@ let irqReleaseTask(owner: UWord): Void {
     }
 }
 
-export { irqPollComplete, irqGrant, irqSeal, irqTokenValid, irqNotify, irqWait, irqComplete,
+export { irqIssue, irqPollComplete, irqGrant, irqSeal, irqTokenValid, irqNotify, irqWait, irqComplete,
     irqTimerTick, irqReleaseTask }

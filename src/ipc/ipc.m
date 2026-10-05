@@ -1,9 +1,11 @@
+import { taskControlLookup } from "../task/control.m"
+import { TASK_RIGHT_CONFIGURE } from "../arch/wrm081632/defs.m"
 // Public kernel entry points always resolve authority in the calling task.
 import { Task, currentTask, taskGet, taskSlot, TASK_RUNNING, TASK_READY, TASK_BLOCKED,
-    MAX_TASKS, WAIT_NONE, WAIT_IPC_SEND, WAIT_IPC_RECEIVE, WAIT_IPC_CALL, WAIT_IPC_ACCEPT,
+    TASK_CREATED, MAX_TASKS, WAIT_NONE, WAIT_IPC_SEND, WAIT_IPC_RECEIVE, WAIT_IPC_CALL, WAIT_IPC_ACCEPT,
     WAIT_IPC_REPLY, taskOwnsTrap, taskSaveContext, taskBlock, taskWake } from "../task/task.m"
 import { Endpoint, Handle, handleLookup, handleClose, handleCopy, endpointDestroy, objectAssertAtomic,
-    handleEntry, endpointRelease, ENDPOINT_WAIT_CAPACITY, ENDPOINT_RAW, ENDPOINT_SERVICE,
+    endpointFactoryCreate, handleEntry, endpointRelease, ENDPOINT_WAIT_CAPACITY, ENDPOINT_RAW, ENDPOINT_SERVICE,
     ENDPOINT_LIVE, HANDLE_GENERATION_MAX } from "objects.m"
 import { TrapFrame } from "../trap/trap_frame.m"
 import { mmuUserBufferValid, copyFromUser, copyToUser } from "../mm/mmu.m"
@@ -38,6 +40,22 @@ let ipcCopy(token: UWord, targetId: UWord, rights: UWord): Word {
         target.state != TASK_BLOCKED) return -ERRNO_ESRCH
     return handleCopy(&mut currentTask.handles, token, &mut target.handles,
         currentTask.id, target.id, rights)
+}
+
+// A numeric receiver reference only selects an owned unpublished child.
+let ipcCreate(mode: UWord, receiverReference: UWord): Word {
+    let mut receiver: UWord = receiverReference
+    if !ipcCallerValid() return -ERRNO_EPERM
+    if currentTask.handles.factoryModes == 0 return -ERRNO_EPERM
+    if mode > ENDPOINT_SERVICE return -ERRNO_EINVAL
+    if receiver == 0 receiver = currentTask.id
+    if mode == ENDPOINT_RAW && receiver != currentTask.id return -ERRNO_EINVAL
+    if receiver != currentTask.id {
+        if taskControlLookup(receiver, TASK_RIGHT_CONFIGURE) == null return -ERRNO_EPERM
+        let child: *mut Task = taskGet(receiver)
+        if child == null || child.state != TASK_CREATED || child.configured return -ERRNO_EBUSY
+    }
+    return endpointFactoryCreate(&mut currentTask.handles, currentTask.id, receiver, mode)
 }
 
 let ipcDestroy(token: UWord): Word {
@@ -389,6 +407,6 @@ let ipcCancelTask(id: UWord): Void {
     task.waitReason = WAIT_NONE
 }
 
-export { ipcResolve, ipcClose, ipcCopy, ipcDestroy, ipcSend, ipcReceive,
+export { ipcCreate, ipcResolve, ipcClose, ipcCopy, ipcDestroy, ipcSend, ipcReceive,
     ipcCall, ipcAccept, ipcReply,
     ipcCancelEndpoint, ipcCancelTask }

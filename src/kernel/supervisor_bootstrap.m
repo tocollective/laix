@@ -1,5 +1,7 @@
-// Bootstrap policy selects the user supervisor and grants only catalog image
-// 1 creation authority. Child configuration/launch/recovery is user policy.
+import { endpointFactoryBootstrap, ENDPOINT_FACTORY_QUOTA } from "../ipc/objects.m"
+import { DEVICE_UART_TX, DEVICE_INPUT } from "../arch/wrm081632/defs.m"
+// Boot delegates catalog image 1, bounded endpoint factories and narrow UART/
+// input broker grants. Child configuration/launch/recovery is user policy.
 import { taskInitAvailable, taskCreateImage, taskGet, taskPublish,
     taskDiscardCreated, Task } from "../task/task.m"
 import { panic } from "panic.m"
@@ -20,6 +22,12 @@ let supervisorBootstrap(): Bool {
     }
     let task: *mut Task = taskGet(reference)
     task.createImages = 1
+    task.deviceFactory = DEVICE_UART_TX | DEVICE_INPUT
+    if !endpointFactoryBootstrap(&mut task.handles, 3, ENDPOINT_FACTORY_QUOTA, true) {
+        taskReleaseSupervisor(reference)
+        if !taskDiscardCreated(reference) panic("could not discard factory owner", null)
+        return false
+    }
     if !taskPublish(reference) {
         taskReleaseSupervisor(reference)
         if !taskDiscardCreated(reference) panic("could not discard supervisor", null)

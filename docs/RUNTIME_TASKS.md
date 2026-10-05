@@ -50,9 +50,11 @@ termination; this does not grant foreign control.
 
 Creation grants all five child-control rights (31); it grants no rights over
 unrelated tasks. Endpoint configuration attenuates an existing caller handle
-through `handleCopy`. Service receive and management rights retain their
-existing owner restrictions. No IRQ, MMIO, DMA, UART or task-creation rights
-are inferred from startup arguments. Device/resource root grants stay sealed.
+through `handleCopy`. Service receive rights stay with the immutable receiver, while management
+rights stay with the creator; [runtime endpoint factories](RUNTIME_OBJECTS.md)
+can bind a fresh Service endpoint to an owned Created child. No IRQ, MMIO, DMA, UART or task-creation rights
+are inferred from startup arguments. Bootstrap device/resource root grants stay sealed; syscall 54 separately
+checks a bounded supervisor factory before issuing UART/input broker rights.
 User wrappers are in `user/syscalls.m`; ABI types are imported directly from
 `src/task/runtime_start.m`.
 
@@ -84,7 +86,7 @@ window, and no user-supplied pointer becomes a ledger entry.
 | guarded kernel stack | `kernelStackBottom`/`kernelStackTop`; allocator stack run | `mmuFreeKernelStack`, after moving to another stack |
 | attenuated endpoint handle | child's `HandleTable` with persistent generations | `handlesReleaseTask` drops copies and cancels owned endpoints/waits |
 | startup frame and mapping | `Task.bootPage`; allocator record and MMU pin | root teardown or `taskRollback` for an unmapped frame |
-| boot IRQ/device grants (runtime cannot acquire them) | IRQ grants, MMU resource grants, broker owners, all keyed by reference | masked/revoked at death; MMU grants removed at root teardown; DMA pin held until physical quiescence |
+| IRQ/device grants (boot or bounded runtime UART/input policy) | IRQ grants, MMU resource grants, broker owners, all keyed by reference | masked/revoked at death; MMU grants removed at root teardown; DMA pin held until physical quiescence |
 
 Invalid configuration arguments leave Created intact for retry. Allocation or
 startup mapping failure after rights acquisition discards the entire private

@@ -72,7 +72,8 @@ type Task {
     kernelStackTop: UWord,
     bootPage: UWord,
     deviceRights: UWord, // kernel-granted narrow operations; never user memory
-    context: TrapFrame,
+    context: TrapFrame, // keep offset and array stride eight-byte aligned
+    deviceFactory: UWord, // nontransferable bounded broker operation mask
     state: UWord,
     queued: Bool,
     waitReason: UWord,
@@ -171,6 +172,8 @@ let taskRollback(task: *mut Task): Void {
     }
     task.bootPage = PAGE_NONE
     task.deviceRights = 0
+    task.deviceFactory = 0
+    task.createImages = 0
     for i: UWord in 0..TASK_PAGE_COUNT {
         if physicalPageOwned(task.pages[i], task.id, taskPurposes[i]) &&
             !freePage(task.pages[i], task.id, taskPurposes[i]) {
@@ -215,6 +218,7 @@ let taskConstructImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord)
     task.reaped = false
     task.reusable = false
     task.configured = false
+    task.deviceFactory = 0
     task.createImages = 0
     task.exitCode = 0
     task.faulted = false
@@ -660,6 +664,7 @@ let taskStop(task: *mut Task, code: Word, faulted: Bool, terminated: Bool): Void
     task.faulted = faulted
     task.waitReason = WAIT_NONE
     task.state = TASK_DEAD
+    task.deviceFactory = 0
     task.createImages = 0
     memoryRevokeTask(task.id)
     handlesReleaseTask(&mut task.handles, task.id)

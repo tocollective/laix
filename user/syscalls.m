@@ -132,3 +132,10 @@ let mapGrantedRegion(space: UWord, grant: UWord, virtual: UWord, permissions: UW
 }
 let closeMemoryGrant(grant: UWord): Word { return syscall(SYS_MEM_GRANT_CLOSE, grant) }
 export { grantRegion, mapGrantedRegion, closeMemoryGrant }
+
+import { SYS_ENDPOINT_CREATE, SYS_TASK_DEVICES } from "../src/arch/wrm081632/defs.m"
+// Receiver zero selects self; foreign Service receivers must be owned Created children.
+let createEndpoint(mode: UWord, receiver: UWord): Word { return syscall(SYS_ENDPOINT_CREATE, mode, receiver) }
+// Returns the keyboard IRQ token (or zero for UART only), never an MMIO address.
+let grantTaskDevices(reference: UWord, devices: UWord): Word { return syscall(SYS_TASK_DEVICES, reference, devices) }
+export { createEndpoint, grantTaskDevices }

@@ -1,3 +1,4 @@
+import { Task, taskGet } from "../task/task.m"
 // Kernel-owned objects and capability tables. No user pointer enters this API.
 import { CR_STATUS, STATUS_IE, STATUS_EXL, WORD_MASK, ERRNO_EINVAL,
     ERRNO_EBADF, ERRNO_EPERM, ERRNO_EMFILE, ERRNO_ENFILE, ERRNO_EPIPE,
@@ -23,7 +24,8 @@ type Endpoint {
     generation: UWord,
     state: UWord,
     references: UWord,
-    manager: UWord,
+    manager: UWord, // immutable Service receiver (Raw: creator)
+    creator: UWord, // destruction authority and lifetime budget owner
     mode: UWord, // immutable until this object generation is released
     receiveReferences: UWord,
     senders: UWord[ENDPOINT_WAIT_CAPACITY],
@@ -39,14 +41,20 @@ type Handle {
     objectGeneration: UWord,
     generation: UWord,
     rights: UWord,
+    receiveReference: Bool, // counts usable receive rights, not factory staging
 }
 
 type HandleTable {
     entries: Handle[MAX_HANDLES],
+    factoryModes: UWord, // mode bits; bootstrap-only, nontransferable
+    factoryQuota: UWord,
+    factoryRecovery: Bool,
 }
 
 let mut endpoints: Endpoint[MAX_ENDPOINTS]
 let mut bootstrapSealed: Bool
+let ENDPOINT_RECOVERY_RESERVE: UWord = 2
+let ENDPOINT_FACTORY_QUOTA: UWord = 12
 
 // Single CPU: all table, reference and lifecycle mutations are indivisible
 // with respect to timer IRQs. Checked pointers must stay inside this region.
@@ -78,11 +86,12 @@ let handleLookup(table: *mut HandleTable, token: UWord, rights: UWord): *mut End
     return object
 }
 
-let handleInstall(table: *mut HandleTable, object: *mut Endpoint, rights: UWord): Word {
+let handleInstallScoped(table: *mut HandleTable, object: *mut Endpoint, rights: UWord, recovery: Bool): Word {
     objectAssertAtomic()
     if table == null || object == null || object.state != ENDPOINT_LIVE ||
         rights == 0 || rights & ~RIGHT_ALL != 0 return -ERRNO_EINVAL
     for i: UWord in 0..MAX_HANDLES {
+        if table.factoryRecovery && !recovery && i >= MAX_HANDLES - ENDPOINT_RECOVERY_RESERVE continue
         let entry: *mut Handle = &mut table.entries[i]
         if entry.object != null || entry.generation == HANDLE_GENERATION_MAX continue
         // Advance on allocation, never reset on close or task teardown.
@@ -90,11 +99,23 @@ let handleInstall(table: *mut HandleTable, object: *mut Endpoint, rights: UWord)
         entry.object = object
         entry.objectGeneration = object.generation
         entry.rights = rights
-        if rights & RIGHT_RECEIVE != 0 object.receiveReferences += 1
+        entry.receiveReference = false
+        if rights & RIGHT_RECEIVE != 0 {
+            let receiver: *mut Task = taskGet(object.manager)
+            if object.mode == ENDPOINT_RAW ||
+                (receiver != null && table == &mut receiver.handles) {
+                entry.receiveReference = true
+                object.receiveReferences += 1
+            }
+        }
         object.references += 1 // bounded by handles plus one wait per task
         return ((entry.generation << HANDLE_SLOT_BITS) | (i + 1)) as Word
     }
     return -ERRNO_EMFILE
+}
+
+let handleInstall(table: *mut HandleTable, object: *mut Endpoint, rights: UWord): Word {
+    return handleInstallScoped(table, object, rights, false)
 }
 
 let endpointRelease(object: *mut Endpoint): Void {
@@ -106,6 +127,7 @@ let endpointRelease(object: *mut Endpoint): Void {
     }
     // The last reference closes the object even if no manager handle remains.
     object.manager = 0
+    object.creator = 0
     if object.generation == WORD_MASK object.state = ENDPOINT_RETIRED
     else object.state = ENDPOINT_EMPTY
 }
@@ -116,7 +138,7 @@ let handleDrop(entry: *mut Handle): Void {
         panic("invalid endpoint reference", null)
         return
     }
-    if entry.rights & RIGHT_RECEIVE != 0 {
+    if entry.receiveReference {
         if object.receiveReferences == 0 {
             panic("invalid receive reference", null)
             return
@@ -130,6 +152,7 @@ let handleDrop(entry: *mut Handle): Void {
     entry.object = null
     entry.objectGeneration = 0
     entry.rights = 0
+    entry.receiveReference = false
     object.references -= 1
     endpointRelease(object)
 }
@@ -150,11 +173,12 @@ let handleCopy(source: *mut HandleTable, token: UWord, target: *mut HandleTable,
     if entry.rights & rights != rights return -ERRNO_EPERM
     let object: *mut Endpoint = handleLookup(source, token, rights)
     if object == null return -ERRNO_EPIPE
-    // Management is bound to the bootstrap owner. No ownership transfer yet.
+    // Creation authority is never copied. Management stays with the creator.
     if rights & RIGHT_MANAGE != 0 &&
-        (sourceOwner != object.manager || targetOwner != object.manager) return -ERRNO_EPERM
+        (sourceOwner != object.creator || targetOwner != object.creator) return -ERRNO_EPERM
     if object.mode == ENDPOINT_SERVICE && rights & RIGHT_RECEIVE != 0 &&
-        (sourceOwner != object.manager || targetOwner != object.manager) return -ERRNO_EPERM
+        (targetOwner != object.manager ||
+         (sourceOwner != object.creator && sourceOwner != object.manager)) return -ERRNO_EPERM
     return handleInstall(target, object, rights)
 }
 
@@ -164,18 +188,20 @@ let endpointDestroy(table: *mut HandleTable, token: UWord, owner: UWord): Word {
     if entry.rights & RIGHT_MANAGE == 0 return -ERRNO_EPERM
     let object: *mut Endpoint = handleLookup(table, token, RIGHT_MANAGE)
     if object == null return -ERRNO_EPIPE
-    if object.manager != owner return -ERRNO_EPERM
+    if object.creator != owner return -ERRNO_EPERM
     object.state = ENDPOINT_DESTROYED
     ipcCancelEndpoint(object)
     return 0
 }
 
-// Bootstrap is the sole root of authority. Seal before the first user entry.
-let endpointBootstrapMode(table: *mut HandleTable, owner: UWord, mode: UWord): Word {
+// Internal construction: publish only after root installation succeeds.
+let endpointAllocate(table: *mut HandleTable, owner: UWord, receiver: UWord,
+    mode: UWord, recovery: Bool): Word {
     objectAssertAtomic()
-    if bootstrapSealed || owner == 0 return -ERRNO_EPERM
+    if table == null || owner == 0 || receiver == 0 || mode > ENDPOINT_SERVICE return -ERRNO_EINVAL
     for i: UWord in 0..MAX_ENDPOINTS {
         let object: *mut Endpoint = &mut endpoints[i]
+        if !recovery && i >= MAX_ENDPOINTS - ENDPOINT_RECOVERY_RESERVE continue
         if object.state != ENDPOINT_EMPTY continue
         if object.generation == WORD_MASK {
             object.state = ENDPOINT_RETIRED
@@ -185,7 +211,8 @@ let endpointBootstrapMode(table: *mut HandleTable, owner: UWord, mode: UWord): W
         object.generation += 1
         object.state = ENDPOINT_LIVE
         object.references = 0
-        object.manager = owner
+        object.manager = receiver
+        object.creator = owner
         object.mode = mode
         object.receiveReferences = 0
         object.senderHead = 0
@@ -196,11 +223,44 @@ let endpointBootstrapMode(table: *mut HandleTable, owner: UWord, mode: UWord): W
             object.senders[j] = 0
             object.receivers[j] = 0
         }
-        let token: Word = handleInstall(table, object, RIGHT_ALL)
+        let token: Word = handleInstallScoped(table, object, RIGHT_ALL, recovery)
         if token < 0 endpointRelease(object)
         return token
     }
     return -ERRNO_ENFILE
+}
+
+// Bootstrap remains the sole root issuer, including factory policy.
+let endpointBootstrapMode(table: *mut HandleTable, owner: UWord, mode: UWord): Word {
+    objectAssertAtomic()
+    if bootstrapSealed || owner == 0 return -ERRNO_EPERM
+    return endpointAllocate(table, owner, owner, mode, true)
+}
+
+let endpointFactoryBootstrap(table: *mut HandleTable, modes: UWord, quota: UWord,
+    recovery: Bool): Bool {
+    objectAssertAtomic()
+    if bootstrapSealed || table == null || table.factoryModes != 0 || modes == 0 ||
+        modes > 3 || quota == 0 || quota > ENDPOINT_FACTORY_QUOTA return false
+    table.factoryModes = modes
+    table.factoryQuota = quota
+    table.factoryRecovery = recovery
+    return true
+}
+
+// Count destroyed-but-pinned objects too: stale copies cannot evade quotas.
+let endpointFactoryCreate(table: *mut HandleTable, owner: UWord, receiver: UWord,
+    mode: UWord): Word {
+    objectAssertAtomic()
+    if table == null || table.factoryModes == 0 return -ERRNO_EPERM
+    if mode > ENDPOINT_SERVICE return -ERRNO_EINVAL
+    if table.factoryModes & (1 as UWord << mode) == 0 return -ERRNO_EPERM
+    let mut charged: UWord = 0
+    for i: UWord in 0..MAX_ENDPOINTS {
+        if endpoints[i].creator == owner && endpoints[i].references != 0 charged += 1
+    }
+    if charged >= table.factoryQuota return -ERRNO_ENFILE
+    return endpointAllocate(table, owner, receiver, mode, table.factoryRecovery)
 }
 
 let endpointBootstrap(table: *mut HandleTable, owner: UWord): Word {
@@ -220,9 +280,12 @@ let endpointSealBootstrap(): Void {
 let handlesReleaseTask(table: *mut HandleTable, owner: UWord): Void {
     objectAssertAtomic()
     ipcCancelTask(owner)
-    // Manager death revokes peer handles even if its manage handle was closed.
+    table.factoryModes = 0
+    table.factoryQuota = 0
+    table.factoryRecovery = false
+    // Creator or receiver death revokes peer handles even if its manage handle was closed.
     for i: UWord in 0..MAX_ENDPOINTS {
-        if endpoints[i].state == ENDPOINT_LIVE && endpoints[i].manager == owner {
+        if endpoints[i].state == ENDPOINT_LIVE && (endpoints[i].creator == owner || endpoints[i].manager == owner) {
             endpoints[i].state = ENDPOINT_DESTROYED
             ipcCancelEndpoint(&mut endpoints[i])
         }
@@ -234,6 +297,7 @@ let handlesReleaseTask(table: *mut HandleTable, owner: UWord): Void {
 
 export { Endpoint, Handle, HandleTable, MAX_ENDPOINTS, MAX_HANDLES,
     ENDPOINT_EMPTY, ENDPOINT_LIVE, ENDPOINT_DESTROYED, ENDPOINT_RETIRED,
-    ENDPOINT_RAW, ENDPOINT_SERVICE,
+    ENDPOINT_RAW, ENDPOINT_SERVICE, ENDPOINT_FACTORY_QUOTA, ENDPOINT_RECOVERY_RESERVE,
+    endpointFactoryBootstrap, endpointFactoryCreate,
     HANDLE_GENERATION_MAX, ENDPOINT_WAIT_CAPACITY, handleEntry, endpointRelease, handleLookup, handleClose, handleCopy, endpointDestroy,
     endpointBootstrap, endpointBootstrapService, endpointSealBootstrap, handlesReleaseTask, objectAssertAtomic }

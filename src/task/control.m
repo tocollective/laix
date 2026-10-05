@@ -1,3 +1,6 @@
+import { irqIssue, irqReleaseTask } from "../drivers/irq.m"
+import { inputDevicesInit } from "../drivers/input_device.m"
+import { DEVICE_UART_TX, DEVICE_INPUT, KEYBOARD_IRQ } from "../arch/wrm081632/defs.m"
 // Bounded, nontransferable task capabilities and completion mailboxes.
 // References select records; only the kernel-recorded owner grants authority.
 import { Task, currentTask, taskGet, taskConstructImage, taskPublishChecked,
@@ -160,6 +163,30 @@ let taskInstallRuntimeStart(reference: UWord, token: UWord, rights: UWord, argum
     return true
 }
 
+// First runtime brokers: UART TX and exclusive keyboard events. Screen/font
+// and disk DMA retain their boot policy until their A7 restart contract exists.
+let taskRuntimeDevices(reference: UWord, devices: UWord): Word {
+    objectAssertAtomic()
+    if currentTask == null || devices == 0 ||
+        devices & ~(DEVICE_UART_TX | DEVICE_INPUT) != 0 ||
+        currentTask.deviceFactory & devices != devices return -ERRNO_EPERM
+    if taskControlLookup(reference, TASK_RIGHT_CONFIGURE) == null return -ERRNO_EPERM
+    let child: *mut Task = taskGet(reference)
+    if child == null || child.state != TASK_CREATED || child.configured ||
+        child.deviceRights != 0 return -ERRNO_EBUSY
+    let mut token: UWord = 0
+    if devices & DEVICE_INPUT != 0 {
+        token = irqIssue(reference, KEYBOARD_IRQ)
+        if token == 0 return -ERRNO_EBUSY
+        if !inputDevicesInit(reference, token) {
+            irqReleaseTask(reference)
+            return -ERRNO_EBUSY
+        }
+    }
+    child.deviceRights = devices
+    return token as Word
+}
+
 let taskRuntimePublish(reference: UWord): Word {
     let control: *mut TaskControl = taskControlLookup(reference, TASK_RIGHT_PUBLISH)
     if control == null return -ERRNO_EPERM
@@ -291,5 +318,5 @@ let taskRuntimeTerminate(frame: *mut TrapFrame, reference: UWord, code: Word): *
 
 export { taskControlLookup, TaskControl, taskControls, taskHistory, taskHistoryHead, taskHistoryCount,
     MAX_TASK_CONTROLS, TASK_HISTORY_SIZE, taskControlBootstrapSelf, taskControlBootstrap, taskControlSeal, taskInstallRuntimeStart,
-    taskRuntimeCreate, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
+    taskRuntimeDevices, taskRuntimeCreate, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
     taskRuntimeTerminate, taskRecordCompletion, taskRecordReaped, taskReleaseSupervisor }

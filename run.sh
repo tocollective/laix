@@ -16,8 +16,8 @@ if [ ! -f "$rom" ]; then
 fi
 case "${LAIX_CONSOLE:-uart}" in
     uart) image_name=laix ;;
-    screen|services|supervisor|memory|sharing) image_name=$LAIX_CONSOLE ;;
-    *) printf '%s\n' 'LAIX_CONSOLE must be uart, screen, services, supervisor, memory or sharing' >&2; exit 1 ;;
+    screen|services|supervisor|memory|sharing|objects) image_name=$LAIX_CONSOLE ;;
+    *) printf '%s\n' 'LAIX_CONSOLE must be uart, screen, services, supervisor, memory, sharing or objects' >&2; exit 1 ;;
 esac
 if [ ! -f "$laix_dir/build/$image_name.img" ]; then
     printf 'Run laix/build.sh first.\n' >&2

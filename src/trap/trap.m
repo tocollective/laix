@@ -1,3 +1,6 @@
+import { SYS_ENDPOINT_CREATE, SYS_TASK_DEVICES } from "../arch/wrm081632/defs.m"
+import { ipcCreate } from "../ipc/ipc.m"
+import { taskRuntimeDevices } from "../task/control.m"
 import { SYS_MEM_GRANT, SYS_MEM_GRANT_MAP, SYS_MEM_GRANT_CLOSE } from "../arch/wrm081632/defs.m"
 import { memoryCreateGrant, memoryMapGrant, memoryCloseGrant } from "../mm/sharing.m"
 import { SYS_MEM_SPACE, SYS_MEM_ALLOC, SYS_MEM_RELEASE, SYS_MEM_MAP,
@@ -92,6 +95,10 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
             return ipcAccept(frame, frame.regs[1], frame.regs[2], frame.regs[3])
         case SYS_IPC_REPLY:
             return ipcReply(frame, frame.regs[1], frame.regs[2], frame.regs[3])
+        case SYS_ENDPOINT_CREATE:
+            return deviceResult(frame, ipcCreate(frame.regs[1], frame.regs[2]))
+        case SYS_TASK_DEVICES:
+            return deviceResult(frame, taskRuntimeDevices(frame.regs[1], frame.regs[2]))
         case SYS_ENDPOINT_DESTROY:
             frame.regs[REG_RESULT] = ipcDestroy(frame.regs[1]) as UWord
             taskSaveContext(frame)
