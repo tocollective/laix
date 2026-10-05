@@ -189,8 +189,8 @@ class RecoveryTests(unittest.TestCase):
         caller = client(vm)
         ref, root, rx, old_irq = replacement(vm, 1, devices=C['DEVICE_DISK'])
         vm.run(ref)
-        self.assertEqual(vm.call('diskBegin', ref, 0, 16), 0)
-        bounce = vm.globals['fontBounce']
+        self.assertGreater(vm.call('deviceSubmit', ref, 0, 16, 1), 0)
+        bounce = vm.globals['deviceBounce']
         vm.run(1)
         vm.invoke(C['SYS_TASK_TERMINATE'], ref, 0)
         child = create(vm, configure=False, publish=False)

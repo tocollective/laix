@@ -1,4 +1,4 @@
-// Read-only byte chunks in the fixed boot bitmap extent. No raw DMA address.
+// Read-only byte chunks in the approved byte resource. No raw DMA address.
 import { ServiceStart, serviceStartValid } from "../../src/task/service_start.m"
 import { START_BLOCK_VA, SERVICE_START_BYTES, START_ROLE_DISK, DATA_GENERATION,
     DISK_REQUEST_HEADER, DISK_STAT_HEADER, DISK_RESPONSE_HEADER,
@@ -32,14 +32,16 @@ let diskHandle(request: *UWord, size: UWord, response: *mut UWord, irq: UWord): 
         response[3] = status as UWord
         return
     }
+    if request[3] == 0 || request[3] > 16 return
     status = diskBegin(request[2], request[3])
-    if status == 0 {
+    if status > 0 {
+        let instance: UWord = status as UWord
         status = irqWait(irq, 5)
         if status != 0 {
-            if diskCancel() != 0 exit(1)
+            if diskCancel(instance) != 0 exit(1)
             status = -ERRNO_EIO
         } else {
-            status = diskFinish(&mut response[4] as *mut UByte)
+            status = diskFinish(instance, &mut response[4] as *mut UByte)
             if status > 0 && (status as UWord) == request[3] {
                 response[3] = status as UWord
                 status = irqComplete(irq)

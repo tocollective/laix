@@ -399,8 +399,8 @@ class RuntimeTaskTests(unittest.TestCase):
             vm.call('taskStart', 1000000)
         vm.run(2)
         self.assertEqual(vm.call('irqComplete', 2, irq), 0)
-        self.assertEqual(vm.call('fontBegin', 2, 0, 0), 0)
-        root, stack, bounce = vm.field('directory', 2), vm.field('kernelStackBottom', 2), vm.globals['fontBounce']
+        self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
+        root, stack, bounce = vm.field('directory', 2), vm.field('kernelStackBottom', 2), vm.globals['deviceBounce']
         vm.call('irqWait', vm.field_address('context', 2), irq, 5)
         self.assertEqual(vm.current(), 3)
         vm.invoke(40, 2, 83)

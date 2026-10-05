@@ -1,40 +1,47 @@
-// Narrow trusted hardware broker. User services cannot select MMIO, a DMA
-// address, scatter-gather descriptors, disk writes or video DMA commands.
+// Trusted physical-device mechanism. Descriptors contain approved byte ranges;
+// no filesystem, bitmap format, user address or user command reaches DMA MMIO.
 import { DISK0_BASE, DISK1_BASE, FLOPPY_BASE, DISK_PRESENT, DISK_CHANGED,
-    DISK_BUSY, DISK_DONE, DISK_READ, SECTOR_SIZE, SECTOR_MASK, GLYPH_BYTES,
-    PAGE_SIZE, VIDEO_BASE, VIDEO_BUSY, VIDEO_MODE_640_480, VIDEO_8BPP,
-    SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_BPP, SCREEN_PITCH, ERRNO_EPERM,
-    ERRNO_EINVAL, ERRNO_EBUSY, ERRNO_EPIPE, ERRNO_EIO } from "../arch/wrm081632/defs.m"
+    DISK_BUSY, DISK_DONE, DISK_READ, SECTOR_SIZE, SECTOR_MASK, PAGE_SIZE,
+    VIDEO_BASE, VIDEO_BUSY, SCREEN_VRAM_BYTES, ERRNO_EPERM, ERRNO_EINVAL,
+    ERRNO_EBUSY, ERRNO_EPIPE, ERRNO_EIO, ERRNO_EOVERFLOW } from "../arch/wrm081632/defs.m"
 import { PAGE_NONE, PAGE_KERNEL, allocPage, freePage, retainPage, releasePage,
     physicalPageOwned } from "../mm/memory.m"
 import { copyToUser } from "../mm/mmu.m"
 import { taskGet, Task, TASK_CREATED, TASK_DEAD } from "../task/task.m"
-import { fontData, fontDataEnd } from "../console/font/data.m"
+import { approvedStorageBytes } from "resources.m"
 import { objectAssertAtomic } from "../ipc/objects.m"
 import { panic } from "../kernel/panic.m"
 
 type DiskRegisters {
-    status: UWord,
-    sectors: UWord,
-    sector: UWord,
-    count: UWord,
-    address: UWord,
-    command: UWord,
-    error: UWord,
-    list: UWord,
+    status: UWord, sectors: UWord, sector: UWord, count: UWord,
+    address: UWord, command: UWord, error: UWord, list: UWord,
+}
+
+type DeviceExtent {
+    owner: UWord,
+    generation: UWord,
+    firstSector: UWord,
+    bytes: UWord,
+    revoked: Bool,
+    mediumInvalid: Bool,
+}
+
+type DeviceOperation {
+    owner: UWord, // immutable full task reference, including slot generation
+    instance: UWord, // monotonic, never wraps or resets on regrant
+    resourceGeneration: UWord,
+    offset: UWord,
+    bytes: UWord,
+    cancelled: Bool,
 }
 let DMA_BUFFER_OWNER: UWord = 0xFFFFFFFE
-let mut fontDisk: *volatile mut DiskRegisters
-let mut fontStorageOwner: UWord
+let mut deviceDisk: *volatile mut DiskRegisters
+let mut deviceExtent: DeviceExtent
+let mut deviceOperation: DeviceOperation
+let mut deviceBounce: UWord
 let mut screenOwner: UWord
-let mut fontFirstSector: UWord
-let mut fontGlyphCount: UWord
-let mut fontMediumInvalid: Bool
-let mut fontDisabled: Bool
-let mut fontBounce: UWord
-let mut fontOperationOwner: UWord
-let mut fontOperationBytes: UWord
-let mut fontOperationOffset: UWord
+let mut approvedFirstSector: UWord
+let mut approvedBytes: UWord
 let mut devicesInitialized: Bool
 
 let serviceDiskIrq(disk: UWord): UWord {
@@ -44,83 +51,96 @@ let serviceDiskIrq(disk: UWord): UWord {
     return 32
 }
 
-let serviceDevicesInit(screen: UWord, storage: UWord, disk: UWord, imageBytes: UWord): Bool {
+// Bootstrap consumes a build-issued resource manifest, never a font header.
+// The kernel-only constructor also supports independent approved resources.
+let deviceExtentInit(screen: UWord, storage: UWord, disk: UWord,
+    first: UWord, bytes: UWord): Bool {
     objectAssertAtomic()
     let screenTask: *mut Task = taskGet(screen)
     let storageTask: *mut Task = taskGet(storage)
-    let bytes: UWord = (&fontDataEnd as UWord) - (&fontData as UWord)
-    let header: *UWord = &fontData as *UWord
-    if devicesInitialized || screen == storage || storageTask == null ||
-        (screen != 0 && (screenTask == null || screenTask.state != TASK_CREATED)) || storageTask.state != TASK_CREATED ||
-        serviceDiskIrq(disk) == 32 || imageBytes == 0 || imageBytes & SECTOR_MASK != 0 ||
-        bytes < 32 || header[0] != 0x3146414C || header[1] != 1 || header[2] == 0 ||
-        header[2] > 0x7FFFFFFF / GLYPH_BYTES || header[2] > (bytes - 32) / 8 || bytes != 32 + header[2] * 8 return false
+    if devicesInitialized || deviceExtent.generation == 0x7FFFFFFF || screen == storage || storageTask == null ||
+        (screen != 0 && (screenTask == null || screenTask.state != TASK_CREATED)) ||
+        storageTask.state != TASK_CREATED || serviceDiskIrq(disk) == 32 ||
+        bytes == 0 || bytes > 0x7FFFFFFF return false
     let drive: *volatile mut DiskRegisters = disk as *volatile mut DiskRegisters
-    let first: UWord = imageBytes / SECTOR_SIZE
-    let sectors: UWord = (header[2] + 15) / 16
+    let sectors: UWord = (bytes - 1) / SECTOR_SIZE + 1
     if drive.status & DISK_PRESENT == 0 || drive.status & DISK_BUSY != 0 ||
         first > drive.sectors || sectors > drive.sectors - first return false
-    // Adopt the boot medium once. Subsequent CHANGED permanently invalidates
-    // this boot resource, even if replacement media has the same size.
+    // Initial adoption is trusted boot policy. Runtime regrant never clears a
+    // medium-change cause, even when replacement media has the same capacity.
     drive.status = DISK_CHANGED | DISK_DONE
     fence()
     if drive.status & (DISK_PRESENT | DISK_CHANGED) != DISK_PRESENT return false
-    fontDisk = drive
-    fontFirstSector = first
-    fontGlyphCount = header[2]
+    deviceDisk = drive
+    approvedFirstSector = first
+    approvedBytes = bytes
+    deviceExtent.owner = storage
+    deviceExtent.generation += 1
+    deviceExtent.firstSector = first
+    deviceExtent.bytes = bytes
+    deviceExtent.revoked = false
+    deviceExtent.mediumInvalid = false
     screenOwner = screen
-    fontStorageOwner = storage
     devicesInitialized = true
-    fontDisabled = false
     return true
 }
 
-// Rollback before publication clears policy, but can never discard a live DMA
-// buffer. Normal service death permanently revokes its grant for this boot.
+let serviceDevicesInit(screen: UWord, storage: UWord, disk: UWord, imageBytes: UWord): Bool {
+    if imageBytes == 0 || imageBytes & SECTOR_MASK != 0 return false
+    return deviceExtentInit(screen, storage, disk, imageBytes / SECTOR_SIZE, approvedStorageBytes)
+}
+let diskDevicesInit(owner: UWord, disk: UWord, imageBytes: UWord): Bool {
+    return serviceDevicesInit(0, owner, disk, imageBytes)
+}
 let serviceDevicesRollback(): Void {
     objectAssertAtomic()
-    if fontBounce != PAGE_NONE return
-    fontDisk = null
-    fontStorageOwner = 0
+    if deviceBounce != PAGE_NONE return
+    deviceDisk = null
+    deviceExtent.owner = 0
     screenOwner = 0
     devicesInitialized = false
 }
 
-let fontMediumLive(): Bool {
-    if fontDisabled || fontDisk == null return false
-    if fontDisk.status & (DISK_PRESENT | DISK_CHANGED) != DISK_PRESENT {
-        fontDisabled = true
-        fontMediumInvalid = true
+let deviceMediumLive(): Bool {
+    if deviceExtent.revoked || deviceDisk == null return false
+    if deviceDisk.status & (DISK_PRESENT | DISK_CHANGED) != DISK_PRESENT {
+        deviceExtent.revoked = true
+        deviceExtent.mediumInvalid = true
         return false
     }
     return true
 }
-
-let fontValidate(owner: UWord): Word {
+let deviceValidate(owner: UWord): Word {
     objectAssertAtomic()
-    if owner == 0 || owner != fontStorageOwner return -ERRNO_EPERM
-    if !fontMediumLive() return -ERRNO_EPIPE
+    if owner == 0 || owner != deviceExtent.owner return -ERRNO_EPERM
+    let task: *mut Task = taskGet(owner)
+    if task == null || task.state == TASK_DEAD || !deviceMediumLive() return -ERRNO_EPIPE
     return 0
 }
+let diskInfo(owner: UWord): Word {
+    let status: Word = deviceValidate(owner)
+    if status != 0 return status
+    return deviceExtent.bytes as Word
+}
 
-let fontReleaseBuffer(): Void {
-    if fontBounce == PAGE_NONE return
-    // The physical allocator pin is independent of both service tasks' roots.
-    if !releasePage(fontBounce, DMA_BUFFER_OWNER, PAGE_KERNEL) ||
-        !freePage(fontBounce, DMA_BUFFER_OWNER, PAGE_KERNEL) {
-        panic("could not release completed font DMA", null)
-        return
+// Preflight before consuming an IRQ generation or mutating ownership.
+let diskDevicesCheck(disk: UWord): Word {
+    objectAssertAtomic()
+    if serviceDiskIrq(disk) == 32 return -ERRNO_EPERM
+    if !devicesInitialized {
+        let drive: *volatile DiskRegisters = disk as *volatile DiskRegisters
+        if drive.status & DISK_BUSY != 0 return -ERRNO_EBUSY
+        return 0
     }
-    fontBounce = PAGE_NONE
-    fontOperationOwner = 0
+    let old: *mut Task = taskGet(deviceExtent.owner)
+    if screenOwner != 0 || (old != null && old.state != TASK_DEAD) return -ERRNO_EBUSY
+    deviceReap()
+    if deviceBounce != PAGE_NONE || deviceDisk == null || deviceDisk.status & DISK_BUSY != 0 return -ERRNO_EBUSY
+    if deviceExtent.mediumInvalid || deviceDisk.status & (DISK_PRESENT | DISK_CHANGED) != DISK_PRESENT return -ERRNO_EPIPE
+    if deviceDisk != disk as *volatile mut DiskRegisters return -ERRNO_EPERM
+    if deviceExtent.generation == 0x7FFFFFFF return -ERRNO_EOVERFLOW
+    return 0
 }
-
-let diskDevicesInit(owner: UWord, disk: UWord, imageBytes: UWord): Bool {
-    return serviceDevicesInit(0, owner, disk, imageBytes)
-}
-
-// Scoped runtime handover never acknowledges CHANGED or releases a BUSY pin.
-// The runtime factory checks authority and reserves a fresh IRQ before entry.
 let diskDevicesRegrant(owner: UWord, disk: UWord, imageBytes: UWord): Word {
     objectAssertAtomic()
     let child: *mut Task = taskGet(owner)
@@ -131,165 +151,189 @@ let diskDevicesRegrant(owner: UWord, disk: UWord, imageBytes: UWord): Word {
         if !diskDevicesInit(owner, disk, imageBytes) return -ERRNO_EPIPE
         return 0
     }
-    fontDisk.status = DISK_DONE
+    deviceDisk.status = DISK_DONE
     fence()
-    fontStorageOwner = owner
-    fontDisabled = false
+    deviceExtent.owner = owner
+    deviceExtent.generation += 1
+    deviceExtent.firstSector = approvedFirstSector
+    deviceExtent.bytes = approvedBytes
+    deviceExtent.revoked = false
     return 0
 }
 
-// Preflight before allocating an IRQ generation or changing any owner.
-let diskDevicesCheck(disk: UWord): Word {
+// Called only after scoped manager + child CONFIGURE authority is checked.
+// Offset is relative to the immutable approved root, never an MMIO/PA value.
+let deviceExtentConfigure(owner: UWord, offset: UWord, bytes: UWord): Word {
     objectAssertAtomic()
-    if !devicesInitialized {
-        let drive: *volatile DiskRegisters = disk as *volatile DiskRegisters
-        if serviceDiskIrq(disk) == 32 return -ERRNO_EPERM
-        if drive.status & DISK_BUSY != 0 return -ERRNO_EBUSY
-        return 0
-    }
-    let old: *mut Task = taskGet(fontStorageOwner)
-    if screenOwner != 0 || (old != null && old.state != TASK_DEAD) return -ERRNO_EBUSY
-    fontReap()
-    if fontBounce != PAGE_NONE || fontDisk == null || fontDisk.status & DISK_BUSY != 0 return -ERRNO_EBUSY
-    if fontMediumInvalid || fontDisk.status & (DISK_PRESENT | DISK_CHANGED) != DISK_PRESENT return -ERRNO_EPIPE
-    if fontDisk != disk as *volatile mut DiskRegisters return -ERRNO_EPERM
+    if owner == 0 || owner != deviceExtent.owner return -ERRNO_EPERM
+    let child: *mut Task = taskGet(owner)
+    if child == null || child.state != TASK_CREATED || child.configured ||
+        deviceBounce != PAGE_NONE || deviceExtent.revoked return -ERRNO_EBUSY
+    if offset & SECTOR_MASK != 0 || bytes == 0 || offset >= approvedBytes ||
+        bytes > approvedBytes - offset return -ERRNO_EINVAL
+    if deviceExtent.generation == 0x7FFFFFFF return -ERRNO_EOVERFLOW
+    deviceExtent.firstSector = approvedFirstSector + offset / SECTOR_SIZE
+    deviceExtent.bytes = bytes
+    deviceExtent.generation += 1
     return 0
 }
 
-let diskInfo(owner: UWord): Word {
-    let status: Word = fontValidate(owner)
+// One bounded operation per physical engine; the physical transfer is one
+// sector, while publication may copy any checked subrange of that sector.
+let deviceSubmit(owner: UWord, offset: UWord, bytes: UWord, command: UWord): Word {
+    let status: Word = deviceValidate(owner)
     if status != 0 return status
-    return (fontGlyphCount * GLYPH_BYTES) as Word
-}
-
-let diskBegin(owner: UWord, offset: UWord, bytes: UWord): Word {
-    let status: Word = fontValidate(owner)
-    if status != 0 return status
-    let extent: UWord = fontGlyphCount * GLYPH_BYTES
-    if bytes == 0 || bytes > 16 || offset >= extent || bytes > extent - offset ||
+    if command != DISK_READ || bytes == 0 || bytes > SECTOR_SIZE ||
+        offset >= deviceExtent.bytes || bytes > deviceExtent.bytes - offset ||
         bytes > SECTOR_SIZE - offset % SECTOR_SIZE return -ERRNO_EINVAL
-    return fontSubmit(owner, fontFirstSector + offset / SECTOR_SIZE, offset % SECTOR_SIZE, bytes)
-}
-
-let fontBegin(owner: UWord, glyph: UWord, chunk: UWord): Word {
-    objectAssertAtomic()
-    let live: Word = fontValidate(owner)
-    if live != 0 return live
-    if glyph >= fontGlyphCount || chunk > 1 return -ERRNO_EINVAL
-    return fontSubmit(owner, fontFirstSector + glyph / 16, (glyph % 16) * GLYPH_BYTES + chunk * 16, 16)
-}
-
-let fontSubmit(owner: UWord, sector: UWord, offset: UWord, bytes: UWord): Word {
-    if fontBounce != PAGE_NONE || fontDisk.status & DISK_BUSY != 0 return -ERRNO_EBUSY
-    if sector >= fontDisk.sectors return -ERRNO_EPIPE
-    fontBounce = allocPage(DMA_BUFFER_OWNER, PAGE_KERNEL)
-    if fontBounce == PAGE_NONE return -ERRNO_EBUSY
-    if !physicalPageOwned(fontBounce, DMA_BUFFER_OWNER, PAGE_KERNEL) ||
-        fontBounce % PAGE_SIZE != 0 || SECTOR_SIZE > PAGE_SIZE ||
-        !retainPage(fontBounce, DMA_BUFFER_OWNER, PAGE_KERNEL) {
-        if !freePage(fontBounce, DMA_BUFFER_OWNER, PAGE_KERNEL) panic("invalid DMA reservation", null)
-        fontBounce = PAGE_NONE
+    if deviceBounce != PAGE_NONE || deviceDisk.status & DISK_BUSY != 0 return -ERRNO_EBUSY
+    if deviceOperation.instance == 0x7FFFFFFF return -ERRNO_EOVERFLOW
+    let sector: UWord = deviceExtent.firstSector + offset / SECTOR_SIZE
+    if sector >= deviceDisk.sectors return -ERRNO_EPIPE
+    deviceBounce = allocPage(DMA_BUFFER_OWNER, PAGE_KERNEL)
+    if deviceBounce == PAGE_NONE return -ERRNO_EBUSY
+    if !physicalPageOwned(deviceBounce, DMA_BUFFER_OWNER, PAGE_KERNEL) ||
+        deviceBounce % PAGE_SIZE != 0 || SECTOR_SIZE > PAGE_SIZE ||
+        !retainPage(deviceBounce, DMA_BUFFER_OWNER, PAGE_KERNEL) {
+        if !freePage(deviceBounce, DMA_BUFFER_OWNER, PAGE_KERNEL) panic("invalid DMA reservation", null)
+        deviceBounce = PAGE_NONE
         return -ERRNO_EIO
     }
-    let buffer: *mut UWord = fontBounce as *mut UWord
+    let buffer: *mut UWord = deviceBounce as *mut UWord
     for i: UWord in 0..(SECTOR_SIZE / 4) buffer[i] = 0
-    fontOperationOwner = owner
-    fontOperationOffset = offset
-    fontOperationBytes = bytes
-    // The entire transfer lies in the pinned page, never in a user VA. No
-    // untrusted command/address field can reach the register stores below.
-    fontDisk.sector = sector
-    fontDisk.count = 1
-    fontDisk.address = fontBounce
+    deviceOperation.owner = owner
+    deviceOperation.instance += 1
+    deviceOperation.resourceGeneration = deviceExtent.generation
+    deviceOperation.offset = offset % SECTOR_SIZE
+    deviceOperation.bytes = bytes
+    deviceOperation.cancelled = false
+    deviceDisk.sector = sector
+    deviceDisk.count = 1
+    deviceDisk.address = deviceBounce
     fence()
-    fontDisk.command = DISK_READ
+    deviceDisk.command = DISK_READ
     fence()
+    return deviceOperation.instance as Word
+}
+let deviceReleaseBuffer(): Void {
+    if deviceBounce == PAGE_NONE return
+    if !releasePage(deviceBounce, DMA_BUFFER_OWNER, PAGE_KERNEL) ||
+        !freePage(deviceBounce, DMA_BUFFER_OWNER, PAGE_KERNEL) {
+        panic("could not release completed device DMA", null)
+        return
+    }
+    deviceBounce = PAGE_NONE
+}
+let deviceCancelOwner(owner: UWord): Void {
+    objectAssertAtomic()
+    if owner == 0 || owner != deviceExtent.owner return
+    deviceExtent.revoked = true
+    if deviceOperation.owner == owner deviceOperation.cancelled = true
+    deviceReap()
+}
+let deviceCancel(owner: UWord, instance: UWord): Word {
+    objectAssertAtomic()
+    if owner == 0 || owner != deviceExtent.owner return -ERRNO_EPERM
+    if deviceBounce == PAGE_NONE || instance != deviceOperation.instance ||
+        owner != deviceOperation.owner return -ERRNO_EINVAL
+    deviceCancelOwner(owner)
     return 0
 }
-
-let fontCancelOwner(owner: UWord): Void {
+// Cancellation is logical. Masking/death/timeout cannot abort WRM DMA. A
+// cancelled page remains pinned until BUSY clears, including permanent hangs.
+let deviceReap(): Void {
     objectAssertAtomic()
-    if owner == 0 || owner != fontStorageOwner return
-    fontDisabled = true
-    if fontOperationOwner == owner fontOperationOwner = 0
-    // A mask, timeout or death cannot abort WRM disk DMA. Keep the pin until
-    // BUSY clears; only then can late completion/quiescence release the page.
-    fontReap()
+    if deviceBounce == PAGE_NONE || !deviceOperation.cancelled || deviceDisk == null ||
+        deviceDisk.status & DISK_BUSY != 0 return
+    fence()
+    deviceDisk.status = DISK_DONE
+    fence()
+    deviceReleaseBuffer()
 }
-
-// Device shutdown forbids new submissions. WRM has no per-disk abort, so
-// final task/resource destruction must wait for observed physical quiescence.
 let serviceDevicesQuiescent(owner: UWord): Bool {
     objectAssertAtomic()
-    if owner != fontStorageOwner return true
-    fontReap()
-    return fontBounce == PAGE_NONE
+    if owner != deviceExtent.owner return true
+    deviceReap()
+    return deviceBounce == PAGE_NONE
 }
-
-let fontReap(): Void {
+let deviceFinish(owner: UWord, instance: UWord, destination: UWord): Word {
     objectAssertAtomic()
-    if fontBounce == PAGE_NONE || fontOperationOwner != 0 || fontDisk == null ||
-        fontDisk.status & DISK_BUSY != 0 return
-    fence()
-    fontDisk.status = DISK_DONE
-    fence()
-    fontReleaseBuffer()
-}
-
-let fontFinish(owner: UWord, destination: UWord): Word {
-    objectAssertAtomic()
-    if owner == 0 || owner != fontStorageOwner return -ERRNO_EPERM
-    if fontBounce == PAGE_NONE || fontOperationOwner != owner return -ERRNO_EINVAL
-    let state: UWord = fontDisk.status
+    if owner == 0 || owner != deviceExtent.owner return -ERRNO_EPERM
+    if deviceBounce == PAGE_NONE || deviceOperation.owner != owner ||
+        instance != deviceOperation.instance || deviceOperation.cancelled ||
+        deviceOperation.resourceGeneration != deviceExtent.generation return -ERRNO_EINVAL
+    let state: UWord = deviceDisk.status
     if state & DISK_BUSY != 0 || state & DISK_DONE == 0 {
-        fontCancelOwner(owner)
+        deviceCancelOwner(owner)
         return -ERRNO_EIO
     }
     fence()
     let mut result: Word = -ERRNO_EIO
-    if !fontMediumLive() result = -ERRNO_EPIPE
-    else if fontDisk.error == 0 {
+    if deviceValidate(owner) != 0 result = -ERRNO_EPIPE
+    else if deviceDisk.error == 0 {
         let task: *mut Task = taskGet(owner)
         result = copyToUser(task.directory, owner, destination,
-            (fontBounce + fontOperationOffset) as *UByte, fontOperationBytes)
-        if result == 0 result = fontOperationBytes as Word
+            (deviceBounce + deviceOperation.offset) as *UByte, deviceOperation.bytes)
+        if result == 0 result = deviceOperation.bytes as Word
     }
-    fontDisk.status = DISK_DONE
+    deviceDisk.status = DISK_DONE
     fence()
-    fontReleaseBuffer()
+    deviceReleaseBuffer()
     return result
 }
 
-// Only mode/scanout/palette and W1C status are exposed. Rendering uses CPU
-// stores into granted VRAM; COMMAND, ADDRESS and COUNT have no user operation.
-let screenControl(owner: UWord, operation: UWord): Word {
+// Safe register broker. Mode, palette and scanout policy belong to the owner.
+// DMA/drawing registers and arbitrary command/control bits are never writable.
+let displayFrameBytes(mode: UWord): UWord {
+    if mode & 0xFFFFFF8C != 0 || mode >> 4 > 4 return 0
+    let mut pixels: UWord = 320 * 240
+    if mode & 3 == 1 pixels = 640 * 480
+    else if mode & 3 == 2 pixels = 800 * 600
+    else if mode & 3 == 3 pixels = 1024 * 768
+    let depth: UWord = mode >> 4
+    if depth == 0 return pixels / 8
+    if depth == 1 return pixels / 2
+    return pixels << (depth - 2)
+}
+let screenControl(owner: UWord, register: UWord, value: UWord): Word {
     objectAssertAtomic()
-    if owner == 0 || owner != screenOwner return -ERRNO_EPERM
+    let task: *mut Task = taskGet(owner)
+    if owner == 0 || owner != screenOwner || task == null || task.state == TASK_DEAD return -ERRNO_EPERM
+    if register != 0 && register != 4 && register != 8 && register != 32 &&
+        register != 40 && register != 44 && register != 128 return -ERRNO_EINVAL
     let registers: *volatile mut UWord = VIDEO_BASE as *volatile mut UWord
-    if operation > 3 return -ERRNO_EINVAL
-    if operation == 2 {
-        registers[0] = 10 // W1C DONE and VBLANK, both causes of video IRQ 5
-        fence()
-        return 0
+    if register == 0 {
+        if value & 0xFFFFFFF5 != 0 return -ERRNO_EINVAL
+    } else {
+        if registers[0] & VIDEO_BUSY != 0 return -ERRNO_EBUSY
+        if register == 4 {
+            if value & 0xFFFFFFFA != 0 return -ERRNO_EINVAL
+            if value & 1 != 0 {
+                let bytes: UWord = displayFrameBytes(registers[2])
+                let start: UWord = registers[8]
+                if bytes == 0 || start > SCREEN_VRAM_BYTES || bytes > SCREEN_VRAM_BYTES - start return -ERRNO_EINVAL
+            }
+        } else if register == 8 || register == 32 {
+            let mut mode: UWord = registers[2]
+            let mut start: UWord = registers[8]
+            if register == 8 mode = value
+            else start = value
+            let bytes: UWord = displayFrameBytes(mode)
+            if bytes == 0 || start > SCREEN_VRAM_BYTES || bytes > SCREEN_VRAM_BYTES - start return -ERRNO_EINVAL
+        } else if register == 40 {
+            if value >= 256 return -ERRNO_EINVAL
+        } else if register == 44 {
+            if value > 0xFFFFFF return -ERRNO_EINVAL
+        } else if register == 128 {
+            if value != 0 return -ERRNO_EINVAL // cursor stays off until bounded sprite grants exist
+        } else return -ERRNO_EINVAL
     }
-    if registers[0] & VIDEO_BUSY != 0 return -ERRNO_EBUSY
-    if operation == 0 {
-        registers[1] = 0
-        registers[2] = VIDEO_MODE_640_480 | VIDEO_8BPP
-        registers[8] = 0
-        registers[10] = 0
-        registers[11] = 0
-        registers[11] = 0xFFFFFF
-        registers[32] = 0 // disable the firmware cursor
-        if registers[3] != SCREEN_WIDTH || registers[4] != SCREEN_HEIGHT ||
-            registers[5] != SCREEN_BPP || registers[6] != SCREEN_PITCH return -ERRNO_EIO
-    } else if operation == 1 registers[1] = 5 // scanout + VBLANK IRQ only
-    else registers[1] = 0
+    registers[register / 4] = value
     fence()
     return 0
 }
-
 let screenReleaseOwner(owner: UWord): Void {
+    objectAssertAtomic()
     if owner == 0 || owner != screenOwner return
     let registers: *volatile mut UWord = VIDEO_BASE as *volatile mut UWord
     registers[1] = 0
@@ -297,8 +341,8 @@ let screenReleaseOwner(owner: UWord): Void {
     fence()
     screenOwner = 0
 }
-
-export { serviceDiskIrq, serviceDevicesInit, serviceDevicesRollback,
-    diskDevicesCheck, diskDevicesRegrant, diskDevicesInit, diskInfo, diskBegin, serviceDevicesQuiescent,
-    fontValidate, fontBegin, fontFinish, fontCancelOwner, fontReap,
-    screenControl, screenReleaseOwner }
+export { DeviceExtent, DeviceOperation, serviceDiskIrq, serviceDevicesInit,
+    deviceExtentInit, deviceExtentConfigure, serviceDevicesRollback,
+    diskDevicesCheck, diskDevicesRegrant, diskDevicesInit, diskInfo,
+    serviceDevicesQuiescent, deviceSubmit, deviceFinish, deviceCancel,
+    deviceCancelOwner, deviceReap, screenControl, screenReleaseOwner }

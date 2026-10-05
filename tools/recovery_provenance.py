@@ -18,7 +18,7 @@ def source_manifest():
                 paths.add(path)
     paths.update([LAIX/'build.sh', LAIX/'tools/build_recovery.sh', Path(__file__).resolve(),
                   LAIX/'tools/append_font.py', LAIX/'tools/pack_unifont.py', LAIX/'fonts/unifont-index.laf',
-                  LAIX/'fonts/unifont-console.laf'])
+                  LAIX/'fonts/unifont-console.laf', LAIX/'fonts/storage-extent.bin'])
     return {str(path.relative_to(ROOT)): digest(path) for path in sorted(paths)}
 
 def artifacts():

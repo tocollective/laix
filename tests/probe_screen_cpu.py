@@ -179,11 +179,11 @@ def main():
     paths.update({name: args.services / (name + '.elf') for name in ('screen', 'storage', 'application')})
     hashes = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in paths.items()}
     symbols = symbols_from_map(args.map)
-    report = {'complete': False, 'cases': [], 'sha256': hashes, 'ram': '1M'}
+    report = {'complete': False, 'cases': [], 'sha256': hashes, 'ram': '2M'}
     try:
         for case in cases:
             with ready_monitor(args.image.read_bytes(), args.emulator.resolve(), args.rom.resolve(), args.timeout,
-                               full_image=True, extra_args=('--ram', '1M')) as opened:
+                               full_image=True, extra_args=('--ram', '2M')) as opened:
                 monitor, process, stdout, stderr = opened
                 probe = ScreenProbe(monitor, symbols, args.services)
                 probe.prepare()
@@ -196,8 +196,8 @@ def main():
                               'font-write': C['SCREEN_FONT_VA'], 'client-vram': C['SCREEN_VRAM_VA']}[case]
                     probe.fault(id, target, case.endswith('-nx'))
                 else:
-                    number = {'irq-denied': 24, 'rearm-denied': 25, 'video-denied': 26, 'dma-denied': 27,
-                              'dma-result-denied': 28, 'cancel-denied': 29, 'font-denied': 30}[case]
+                    number = {'irq-denied': 24, 'rearm-denied': 25, 'video-denied': 26, 'dma-denied': 71,
+                              'dma-result-denied': 72, 'cancel-denied': 73, 'font-denied': 70}[case]
                     probe.denied(number)
                 uart = uart_text(stdout)
                 require('PANIC' not in uart, 'user service caused a kernel panic')

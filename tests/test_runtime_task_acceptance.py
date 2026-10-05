@@ -268,13 +268,13 @@ class RuntimeTaskAcceptanceTests(unittest.TestCase):
         vm, tokens = boot(irq=True, dma=True)
         vm.run(2)
         vm.invoke(25, vm.irq)
-        self.assertEqual(vm.call('fontBegin', 2, 0, 0), 0)
+        self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
         vm.invoke(24, vm.irq, 5)
         vm.run(1)
         root = vm.field('directory', 2)
         virtuals = (0x40000000, USER_DATA, vm.field('userStackBottom', 2), C['START_BLOCK_VA'])
         leaves = tuple(vm.leaf(va, root) for va in virtuals)
-        bounce = vm.globals['fontBounce']
+        bounce = vm.globals['deviceBounce']
         # The free-page set detects directory, page-table and guard/run pages
         # as well as the obvious task data and DMA buffer pages.
         owned = set(vm.free_pages())
@@ -296,7 +296,7 @@ class RuntimeTaskAcceptanceTests(unittest.TestCase):
             self.assertEqual(vm.field('id', 2), 2)
             self.assertEqual((vm.field('directory', 2), vm.field('kernelStackBottom', 2),
                               vm.field('kernelStackTop', 2), vm.field('bootPage', 2),
-                              tuple(vm.pages(2)), vm.globals['fontBounce']), resources)
+                              tuple(vm.pages(2)), vm.globals['deviceBounce']), resources)
             self.assertEqual(tuple(vm.leaf(va, root) for va in virtuals), leaves)
             self.assertTrue(set(vm.free_pages()) <= owned)
             self.assertFalse(vm.call('physicalPageAvailable', bounce))

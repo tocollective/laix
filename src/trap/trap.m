@@ -9,7 +9,7 @@ import { ipcCallTimed, ipcSendMode, ipcReceiveMode, ipcAcceptMode,
     ipcSupervisorCancel, ipcSleep } from "../ipc/ipc.m"
 import { SYS_ENDPOINT_CREATE, SYS_TASK_DEVICES } from "../arch/wrm081632/defs.m"
 import { ipcCreate } from "../ipc/ipc.m"
-import { taskRuntimeDevices } from "../task/control.m"
+import { taskRuntimeDevices, taskRuntimeExtent } from "../task/control.m"
 import { SYS_MEM_GRANT, SYS_MEM_GRANT_MAP, SYS_MEM_GRANT_CLOSE } from "../arch/wrm081632/defs.m"
 import { memoryCreateGrant, memoryMapGrant, memoryCloseGrant } from "../mm/sharing.m"
 import { SYS_MEM_SPACE, SYS_MEM_ALLOC, SYS_MEM_RELEASE, SYS_MEM_MAP,
@@ -30,15 +30,13 @@ import { panic } from "../kernel/panic.m"
 import { currentTask, taskSaveContext, taskOwnsTrap, taskFinish, taskYield, taskTick } from "../task/task.m"
 import { timerInterrupt } from "../drivers/timer.m"
 import { irqWait, irqComplete } from "../drivers/irq.m"
-import { screenControl, fontValidate, fontBegin, fontFinish, fontCancelOwner } from "../drivers/service_devices.m"
+import { screenControl, diskInfo, deviceSubmit, deviceFinish, deviceCancel } from "../drivers/service_devices.m"
 import { inputRead } from "../drivers/input_device.m"
-import { diskInfo, diskBegin } from "../drivers/service_devices.m"
-import { SYS_INPUT_READ, SYS_DISK_INFO, SYS_DISK_BEGIN, SYS_DISK_FINISH,
-    SYS_DISK_CANCEL, DEVICE_INPUT, DEVICE_DISK } from "../arch/wrm081632/defs.m"
+import { SYS_INPUT_READ, DEVICE_INPUT, DEVICE_DISK, DEVICE_FONT,
+    SYS_DEVICE_INFO, SYS_DEVICE_SUBMIT, SYS_DEVICE_FINISH, SYS_DEVICE_CANCEL,
+    SYS_DEVICE_EXTENT } from "../arch/wrm081632/defs.m"
 import { taskIrqReturn } from "../task/task.m"
-import { SYS_IRQ_WAIT, SYS_IRQ_COMPLETE, SYS_SCREEN_CONTROL, SYS_FONT_VALIDATE,
-    SYS_FONT_BEGIN, SYS_FONT_FINISH, SYS_FONT_CANCEL, DEVICE_SCREEN,
-    DEVICE_FONT } from "../arch/wrm081632/defs.m"
+import { SYS_IRQ_WAIT, SYS_IRQ_COMPLETE, SYS_SCREEN_CONTROL, DEVICE_SCREEN } from "../arch/wrm081632/defs.m"
 import { debugPutChar } from "../drivers/debug_uart.m"
 import { ipcClose, ipcCopy, ipcDestroy, ipcSend, ipcReceive, ipcCall, ipcAccept, ipcReply } from "../ipc/ipc.m"
 
@@ -188,40 +186,26 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
             return deviceResult(frame, irqComplete(currentTask.id, frame.regs[1]))
         case SYS_SCREEN_CONTROL:
             if currentTask.deviceRights != DEVICE_SCREEN return deviceResult(frame, -ERRNO_EPERM)
-            return deviceResult(frame, screenControl(currentTask.id, frame.regs[1]))
-        case SYS_FONT_VALIDATE:
-            if currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
-            return deviceResult(frame, fontValidate(currentTask.id))
-        case SYS_FONT_BEGIN:
-            if currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
-            return deviceResult(frame, fontBegin(currentTask.id, frame.regs[1], frame.regs[2]))
-        case SYS_FONT_FINISH:
-            if currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
-            return deviceResult(frame, fontFinish(currentTask.id, frame.regs[1]))
-        case SYS_FONT_CANCEL:
-            if currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
-            fontCancelOwner(currentTask.id)
-            return deviceResult(frame, 0)
+            return deviceResult(frame, screenControl(currentTask.id, frame.regs[1], frame.regs[2]))
         case SYS_INPUT_READ:
             if currentTask.deviceRights != DEVICE_INPUT return deviceResult(frame, -ERRNO_EPERM)
-            return deviceResult(frame, inputRead(currentTask.id, frame.regs[1]))
-        case SYS_DISK_INFO:
-            if currentTask.deviceRights != DEVICE_DISK return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, inputRead(currentTask.id, frame.regs[1], frame.regs[2]))
+        case SYS_DEVICE_INFO:
+            if currentTask.deviceRights != DEVICE_DISK && currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
             return deviceResult(frame, diskInfo(currentTask.id))
-        case SYS_DISK_BEGIN:
-            if currentTask.deviceRights != DEVICE_DISK return deviceResult(frame, -ERRNO_EPERM)
-            return deviceResult(frame, diskBegin(currentTask.id, frame.regs[1], frame.regs[2]))
-        case SYS_DISK_FINISH:
-            if currentTask.deviceRights != DEVICE_DISK return deviceResult(frame, -ERRNO_EPERM)
-            return deviceResult(frame, fontFinish(currentTask.id, frame.regs[1]))
-        case SYS_DISK_CANCEL:
-            if currentTask.deviceRights != DEVICE_DISK return deviceResult(frame, -ERRNO_EPERM)
-            fontCancelOwner(currentTask.id)
-            return deviceResult(frame, 0)
+        case SYS_DEVICE_SUBMIT:
+            if currentTask.deviceRights != DEVICE_DISK && currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, deviceSubmit(currentTask.id, frame.regs[1], frame.regs[2], frame.regs[3]))
+        case SYS_DEVICE_FINISH:
+            if currentTask.deviceRights != DEVICE_DISK && currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, deviceFinish(currentTask.id, frame.regs[1], frame.regs[2]))
+        case SYS_DEVICE_CANCEL:
+            if currentTask.deviceRights != DEVICE_DISK && currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, deviceCancel(currentTask.id, frame.regs[1]))
+        case SYS_DEVICE_EXTENT:
+            return deviceResult(frame, taskRuntimeExtent(frame.regs[1], frame.regs[2], frame.regs[3]))
         default:
-            frame.regs[REG_RESULT] = (-ERRNO_ENOSYS) as UWord
-            taskSaveContext(frame)
-            return frame
+            return deviceResult(frame, -ERRNO_ENOSYS)
     }
     return frame
 }

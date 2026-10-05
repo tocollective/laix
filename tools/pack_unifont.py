@@ -50,11 +50,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path, help='Unifont HEX file')
     parser.add_argument('output', type=Path, help='indexed binary font (.laf)')
-    parser.add_argument('--index', type=Path, help='also write just the header and index for the kernel')
+    parser.add_argument('--index', type=Path, help='also write the read-only header and index resource')
+    parser.add_argument('--extent', type=Path, help='write the approved bitmap byte extent manifest')
     args = parser.parse_args()
     try:
         data = pack(args.source.read_text(encoding='utf-8'))
         args.output.write_bytes(data)
+        if args.extent is not None:
+            args.extent.write_bytes(struct.pack('<I', len(data) - HEADER.unpack_from(data)[4]))
         if args.index is not None:
             pixels_offset = HEADER.unpack_from(data)[4]
             args.index.write_bytes(data[:pixels_offset])

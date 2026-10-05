@@ -6,7 +6,7 @@ The SIL Open Font License 1.1 is included in `LICENSE-Unifont.txt`.
 Regenerate the font data (without compiling the kernel):
 
 ```sh
-python3 -B laix/tools/pack_unifont.py vendor/SDL/test/unifont-15.1.05.hex laix/fonts/unifont-console.laf --index laix/fonts/unifont-index.laf
+python3 -B laix/tools/pack_unifont.py vendor/SDL/test/unifont-15.1.05.hex laix/fonts/unifont-console.laf --index laix/fonts/unifont-index.laf --extent laix/fonts/storage-extent.bin
 ```
 
 LAF1 is little-endian. Its 32-byte header contains eight 32-bit words:
@@ -44,5 +44,8 @@ LAF1 remains the source for `tools/append_font.py`, which appends only the
 bitmap section (padded to 512 bytes) to the boot disk image.
 The WRMB sector count still describes only the kernel payload; the first
 bitmap sector is at `BootInfo.imageSize / 512`. Glyph i belongs to bitmap
-sector i / 16 at byte offset (i % 16) × 32. The kernel caches sixteen
-512-byte bitmap pages in VRAM and replaces them in FIFO order.
+sector i / 16 at byte offset (i % 16) × 32. The user Screen service caches glyphs in its exclusive VRAM grant. Font index
+validation and glyph-to-byte translation run in user space. The generic kernel
+broker consumes `storage-extent.bin`, a four-byte little-endian bitmap byte
+length issued by the build resource producer, without parsing LAF. User resource
+managers can select approved subranges through the generic device contract.

@@ -89,7 +89,7 @@ class SimpleKernelTests(unittest.TestCase):
             self.assertEqual(words[13:15], [0, 0])
         self.assertEqual(vm.call('diskInfo', 2), 608)
         self.assertEqual(vm.call('diskInfo', 3), error(1))
-        self.assertEqual(vm.call('inputRead', 4, USER_DATA), error(1))
+        self.assertEqual(vm.call('inputRead', 4, USER_DATA, 4), error(1))
 
     def test_bootstrap_rollback_restores_all_resources_and_can_retry(self):
         for fail in range(1, 21):
@@ -108,12 +108,28 @@ class SimpleKernelTests(unittest.TestCase):
         vm.memory = KeyboardDevices(vm)
         token = vm.call('irqGrant', 3, C['KEYBOARD_IRQ'])
         self.assertTrue(vm.call('inputDevicesInit', 3, token))
+        class InputPolicy(SourceM):
+            def __init__(policy):
+                super().__init__(LAIX / 'user/services/input.m')
+            def call(policy, name, *args):
+                if name == 'inputRead':
+                    destination, capacity = args
+                    result = vm.call('inputRead', 3, USER_DATA, capacity)
+                    if result != 136:
+                        return result
+                    physical = vm.pages(3)[1]
+                    data = bytes(vm.memory[physical + i] for i in range(136))
+                    for i, word in enumerate(struct.unpack('<34I', data)):
+                        policy.memory[destination + 4 * i] = word
+                    return result
+                return super().call(name, *args)
+        vm.input_policy = InputPolicy()
         return vm, token
 
     def snapshot(self, vm):
-        self.assertEqual(vm.call('inputRead', 3, USER_DATA), 24)
-        address = vm.pages(3)[1]
-        return struct.unpack('<6I', bytes(vm.memory[address + i] for i in range(24)))
+        policy = vm.input_policy
+        self.assertEqual(policy.call('inputSnapshot', 0x1000000), 24)
+        return tuple(policy.memory[0x1000000 + i * 4] for i in range(6))
 
     def test_input_fifo_release_bit_overflow_and_irq_coalescing(self):
         vm, token = self.input_vm()
@@ -127,7 +143,7 @@ class SimpleKernelTests(unittest.TestCase):
         self.assertEqual(vm.call('irqComplete', 1, token), error(1))
         vm.call('irqReleaseTask', 3)
         vm.call('inputReleaseOwner', 3)
-        self.assertEqual(vm.call('inputRead', 3, USER_DATA), error(1))
+        self.assertEqual(vm.call('inputRead', 3, USER_DATA, 4), error(1))
         self.assertEqual(vm.memory[C['PIC_ENABLE']] & 1, 0)
 
     def test_input_invalid_destination_does_not_pop_or_clear_overflow(self):
@@ -135,7 +151,7 @@ class SimpleKernelTests(unittest.TestCase):
         vm.memory.inject([4], overflow=True)
         reads = vm.memory.status_reads
         for pointer in (0, 0xFFFFFFFF, C['KEYBOARD_BASE'], USER_DATA + 4090):
-            self.assertEqual(vm.call('inputRead', 3, pointer), error(14))
+            self.assertEqual(vm.call('inputRead', 3, pointer, 4), error(14))
         self.assertEqual(vm.memory.status_reads, reads)
         self.assertEqual(vm.memory.keys, [4])
         self.assertTrue(vm.memory.overflow)
@@ -149,23 +165,23 @@ class SimpleKernelTests(unittest.TestCase):
         self.assertEqual(self.snapshot(vm), (4, 1, 5, 6, 7, 8))
         self.assertEqual(vm.memory[C['PIC_ENABLE']] & 1, 1)
         remaining = []
-        while vm.globals['inputCount']:
+        while vm.input_policy.globals['inputCount']:
             values = self.snapshot(vm)
             remaining.extend(values[2:2 + values[0]])
         self.assertEqual(remaining, list(range(9, 37)))
 
     def test_disk_extent_cross_sector_overflow_and_exact_copy_length(self):
         vm = kernel_fixture()
-        for offset, count in ((608, 1), (0xFFFFFFFF, 1), (607, 2), (511, 2), (0, 0), (0, 17), (0, 0xFFFFFFFF)):
-            self.assertEqual(vm.call('diskBegin', 2, offset, count), error(22))
+        for offset, count in ((608, 1), (0xFFFFFFFF, 1), (607, 2), (511, 2), (0, 0), (0, 513), (0, 0xFFFFFFFF)):
+            self.assertEqual(vm.call('deviceSubmit', 2, offset, count, 1), error(22))
         self.assertEqual(vm.memory.commands, [])
-        self.assertEqual(vm.call('diskBegin', 2, 511, 1), 0)
-        physical = vm.globals['fontBounce']
+        self.assertGreater(vm.call('deviceSubmit', 2, 511, 1, 1), 0)
+        physical = vm.globals['deviceBounce']
         self.assertEqual(vm.call('physicalPageReferences', physical), 1)
         vm.memory.complete()
         target = vm.pages(2)[1]
         vm.memory[target + 1] = 0xAB
-        self.assertEqual(vm.call('fontFinish', 2, USER_DATA), 1)
+        self.assertEqual(vm.call('deviceFinish', 2, vm.operation_instance(), USER_DATA), 1)
         self.assertEqual((vm.memory[target], vm.memory[target + 1]), (255, 0xAB))
         self.assertTrue(vm.call('physicalPageAvailable', physical))
 
@@ -183,8 +199,8 @@ class SimpleKernelTests(unittest.TestCase):
             vm.call('ipcAccept', vm.field_address('context', 2), rx, USER_DATA, 32)
             vm.call('taskYield', vm.field_address('context', 2))
             vm.call('ipcCall', vm.field_address('context', 3), tx[3], USER_DATA, 0, USER_DATA, 32)
-            self.assertEqual(vm.call('fontBegin', 2, 0, 0), 0)
-            physical, directory = vm.globals['fontBounce'], vm.field('directory', 2)
+            self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
+            physical, directory = vm.globals['deviceBounce'], vm.field('directory', 2)
             pages = vm.pages(2)
             vm.call('taskFinish', vm.field_address('context', 2), 9, faulted)
             for id in (1, 3):
@@ -192,7 +208,7 @@ class SimpleKernelTests(unittest.TestCase):
                 self.assertEqual(vm.memory[vm.field_address('context', id) + C['TF_R1']], error(32))
                 self.assertEqual(vm.field('ipcEndpoint', id), 0)
             self.assertEqual(vm.call('irqComplete', 2, vm.disk_irq), error(1))
-            self.assertEqual(vm.call('fontBegin', 2, 0, 0), error(32))
+            self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, 1), error(32))
             current = (vm.globals['currentTask'] - vm.addresses['tasks']) // vm.task_type.size + 1
             vm.cpu_sp = vm.field('kernelStackTop', current) - 64
             vm.call('taskReap')

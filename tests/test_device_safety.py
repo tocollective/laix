@@ -126,15 +126,15 @@ class DeviceSafetyTests(unittest.TestCase):
     def test_dma_rejects_overflow_sector_crossing_and_extent_before_submission(self):
         vm = kernel_fixture()
         free = vm.free_pages()
-        for offset, length in ((0, 0), (0, 17), (608, 1), (607, 2),
+        for offset, length in ((0, 0), (0, 513), (608, 1), (607, 2),
                                (511, 2), (0xFFFFFFFF, 1), (0xFFFFFFF8, 16), (0, 0xFFFFFFFF)):
-            self.assertEqual(vm.call('diskBegin', 2, offset, length), error(22))
-        self.assertEqual(vm.call('diskBegin', 1, 0, 16), error(1))
+            self.assertEqual(vm.call('deviceSubmit', 2, offset, length, 1), error(22))
+        self.assertEqual(vm.call('deviceSubmit', 1, 0, 16, 1), error(1))
         self.assertEqual(vm.free_pages(), free)
         self.assertEqual(vm.memory.commands, [])
-        self.assertEqual(vm.call('diskBegin', 2, 607, 1), 0)
+        self.assertGreater(vm.call('deviceSubmit', 2, 607, 1, 1), 0)
         vm.memory.complete()
-        self.assertEqual(vm.call('fontFinish', 2, USER_DATA), 1)
+        self.assertEqual(vm.call('deviceFinish', 2, vm.operation_instance(), USER_DATA), 1)
 
     def test_dma_destination_foreign_page_or_partial_range_publishes_nothing(self):
         for destination in (USER_DATA, USER_DATA + 4096 - 8, 0xFFFFFFF8):
@@ -151,30 +151,30 @@ class DeviceSafetyTests(unittest.TestCase):
                     for offset in range(4096):
                         vm.memory[physical + offset] = 0xAA
                 before = {a: vm.memory[a] for p in (own, foreign) for a in range(p, p + 4096)}
-                self.assertEqual(vm.call('fontBegin', 2, 0, 0), 0)
-                bounce = vm.globals['fontBounce']
+                self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
+                bounce = vm.globals['deviceBounce']
                 vm.memory.complete()
-                self.assertEqual(vm.call('fontFinish', 2, destination), error(14))
+                self.assertEqual(vm.call('deviceFinish', 2, vm.operation_instance(), destination), error(14))
                 self.assertEqual({a: vm.memory[a] for a in before}, before)
                 self.assertTrue(vm.call('physicalPageAvailable', bounce))
 
     def test_early_finish_and_repeated_reap_keep_busy_dma_pinned(self):
         vm = kernel_fixture()
-        self.assertEqual(vm.call('fontBegin', 2, 0, 0), 0)
-        bounce = vm.globals['fontBounce']
-        self.assertEqual(vm.call('fontFinish', 1, USER_DATA), error(1))
-        self.assertEqual(vm.call('fontFinish', 2, USER_DATA), error(5))
+        self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
+        bounce = vm.globals['deviceBounce']
+        self.assertEqual(vm.call('deviceFinish', 1, vm.operation_instance(), USER_DATA), error(1))
+        self.assertEqual(vm.call('deviceFinish', 2, vm.operation_instance(), USER_DATA), error(5))
         for _ in range(8):
-            vm.call('fontReap')
+            vm.call('deviceReap')
             self.assertFalse(vm.call('serviceDevicesQuiescent', 2))
             self.assertFalse(vm.call('freePage', bounce, 0xFFFFFFFE, 2))
             self.assertFalse(vm.call('releasePage', bounce, 2, 2))
             self.assertEqual(vm.call('physicalPageReferences', bounce), 1)
         vm.memory.complete()
-        vm.call('fontReap')
-        vm.call('fontReap')
+        vm.call('deviceReap')
+        vm.call('deviceReap')
         self.assertTrue(vm.call('physicalPageAvailable', bounce))
-        self.assertEqual(vm.globals['fontBounce'], 0)
+        self.assertEqual(vm.globals['deviceBounce'], 0)
         self.assertEqual(len(vm.memory.commands), 1)
 
 

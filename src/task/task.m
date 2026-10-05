@@ -15,7 +15,7 @@ import { USER_VA_START, USER_VA_END, mmuCreateAddressSpace, mmuDestroyAddressSpa
     mmuAllocKernelStack, mmuFreeKernelStack } from "../mm/mmu.m"
 import { mmuSealResources, mmuScreenResourcesValid } from "../mm/mmu.m"
 import { irqReleaseTask, irqSeal, irqTokenValid } from "../drivers/irq.m"
-import { fontCancelOwner, fontReap, screenReleaseOwner, serviceDevicesQuiescent } from "../drivers/service_devices.m"
+import { deviceCancelOwner, deviceReap, screenReleaseOwner, serviceDevicesQuiescent } from "../drivers/service_devices.m"
 import { inputReleaseOwner } from "../drivers/input_device.m"
 import { ServiceStart, serviceStartValid } from "service_start.m"
 import { panic } from "../kernel/panic.m"
@@ -423,7 +423,7 @@ let taskDiscardChecked(id: UWord): Bool {
     if task == null || task.state != TASK_CREATED || task.queued return false
     handlesReleaseTask(&mut task.handles, id)
     irqReleaseTask(id)
-    fontCancelOwner(id)
+    deviceCancelOwner(id)
     screenReleaseOwner(id)
     inputReleaseOwner(id)
     taskRollback(task)
@@ -573,6 +573,9 @@ let taskIdlePoll(): *TrapFrame {
         panic("idle without wakeup IRQ", null)
         return null
     }
+    // Timer/device IRQs may return to this same idle frame. Reap on the safe
+    // idle stack even when no context switch follows a late DMA completion.
+    taskReap()
     return null
 }
 
@@ -686,7 +689,7 @@ let taskStop(task: *mut Task, code: Word, faulted: Bool, terminated: Bool): Void
     memoryRevokeTask(task.id)
     handlesReleaseTask(&mut task.handles, task.id)
     irqReleaseTask(task.id)
-    fontCancelOwner(task.id)
+    deviceCancelOwner(task.id)
     screenReleaseOwner(task.id)
     inputReleaseOwner(task.id)
     task.deviceRights = 0
@@ -747,7 +750,7 @@ let taskReap(): Void {
         panic("invalid task cleanup stack", null)
         return
     }
-    fontReap()
+    deviceReap()
     memoryReapOrphans()
     for i: UWord in 0..MAX_TASKS {
         let task: *mut Task = &mut tasks[i]

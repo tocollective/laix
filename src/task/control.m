@@ -1,7 +1,7 @@
 import { taskConstructProgram } from "program.m"
 import { serviceReleaseSupervisor, serviceDependencyLive } from "recovery.m"
 import { irqIssue, irqReleaseTask } from "../drivers/irq.m"
-import { diskDevicesCheck, diskDevicesRegrant, serviceDiskIrq } from "../drivers/service_devices.m"
+import { diskDevicesCheck, diskDevicesRegrant, serviceDiskIrq, deviceExtentConfigure } from "../drivers/service_devices.m"
 import { kernelBootInfo } from "../kernel/boot.m"
 import { inputDevicesInit } from "../drivers/input_device.m"
 import { DEVICE_UART_TX, DEVICE_INPUT, DEVICE_DISK, KEYBOARD_IRQ } from "../arch/wrm081632/defs.m"
@@ -194,8 +194,8 @@ let taskInstallRuntimeStart(reference: UWord, token: UWord, rights: UWord, argum
     return true
 }
 
-// Scoped brokers: UART TX, keyboard events and quiescent read-only boot Disk.
-// Screen/font retain their separate boot-only policy.
+// Scoped brokers: UART TX, raw keyboard batches and approved read-only extents.
+// Screen resource issuance remains boot-only; display policy lives in user mode.
 let taskRuntimeDevices(reference: UWord, devices: UWord): Word {
     objectAssertAtomic()
     if currentTask == null || devices == 0 ||
@@ -228,6 +228,17 @@ let taskRuntimeDevices(reference: UWord, devices: UWord): Word {
     }
     child.deviceRights = devices
     return token as Word
+}
+
+// A manager may select a subextent of its approved boot resource only for
+// its own unpublished child. Possession of the child reference is insufficient.
+let taskRuntimeExtent(reference: UWord, offset: UWord, bytes: UWord): Word {
+    objectAssertAtomic()
+    if currentTask == null || currentTask.deviceFactory & DEVICE_DISK == 0 ||
+        taskControlLookup(reference, TASK_RIGHT_CONFIGURE) == null return -ERRNO_EPERM
+    let child: *mut Task = taskGet(reference)
+    if child == null || child.deviceRights != DEVICE_DISK return -ERRNO_EPERM
+    return deviceExtentConfigure(reference, offset, bytes)
 }
 
 let taskRuntimePublish(reference: UWord): Word {
@@ -363,5 +374,5 @@ let taskRuntimeTerminate(frame: *mut TrapFrame, reference: UWord, code: Word): *
 
 export { taskControlLookup, TaskControl, taskControls, taskHistory, taskHistoryHead, taskHistoryCount,
     MAX_TASK_CONTROLS, TASK_HISTORY_SIZE, taskControlBootstrapSelf, taskControlBootstrap, taskControlSeal, taskInstallRuntimeStart,
-    taskControlLookupBootOpen, taskRegisterImage, taskRuntimeDiscard, taskRuntimeDevices, taskRuntimeCreate, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
+    taskControlLookupBootOpen, taskRegisterImage, taskRuntimeDiscard, taskRuntimeDevices, taskRuntimeExtent, taskRuntimeCreate, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
     taskRuntimeTerminate, taskRecordCompletion, taskRecordReaped, taskReleaseSupervisor }

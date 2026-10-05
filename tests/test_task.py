@@ -23,6 +23,7 @@ class TaskEntered(Exception):
 class TaskM(SourceM):
     def __init__(self, ram=0x100000, root=None):
         super().__init__(root or LAIX / "src/trap/trap.m")
+        self.globals["approvedStorageBytes"] = 608  # Build-issued fixture resource, independent of LAF bytes.
         self.task_type = self.decls["tasks"].sym.type.elem
         self.addresses.update(userCodeStart=0x14000, userCodeEnd=0x1401C,
                               kernelStackBottom=0x91000, taskKernelResume=0x14100)
@@ -45,6 +46,10 @@ class TaskM(SourceM):
 
     def field(self, field, id=1):
         return self.memory[self.field_address(field, id)]
+
+    def operation_instance(self):
+        typ = self.decls['deviceOperation'].sym.type
+        return self.memory[self.addresses['deviceOperation'] + typ.field('instance').offset]
 
     def idle_address(self, field):
         return self.addresses["idleTask"] + self.task_type.field(field).offset

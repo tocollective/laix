@@ -2,7 +2,7 @@
 // Deadlines and sleep bound watchdog work; no registry entry pins a stale root.
 import { TaskEvent } from "../../src/task/runtime_start.m"
 import { createTask, createEndpoint, configureService, publishService,
-    withdrawService, grantTaskDevices, closeHandle, terminateTask, inspectTask,
+    withdrawService, grantTaskDevices, grantDeviceExtent, closeHandle, terminateTask, inspectTask,
     collectTask, sleep } from "../syscalls.m"
 import { ENDPOINT_MODE_SERVICE, DEVICE_DISK, TASK_EVENT_RECLAIMED,
     ERRNO_EAGAIN, ERRNO_EPIPE, ERRNO_EBUSY, ERRNO_ESRCH } from "../../src/arch/wrm081632/defs.m"
@@ -14,6 +14,10 @@ type ManagedService {
     attempts: UWord,
     unavailable: Bool,
 }
+// User manager configuration: zero bytes retains the complete approved root.
+// Nonzero windows are checked relative byte ranges, with sector-aligned offset.
+let mut recoveryDiskOffset: UWord
+let mut recoveryDiskBytes: UWord
 let mut recoveryEvent: TaskEvent
 
 // Every failure discards unpublished construction or terminates a published
@@ -31,6 +35,9 @@ let launchService(service: *mut ManagedService, image: UWord, name: UWord,
         result = 0
         if devices != 0 irq = grantTaskDevices(child as UWord, devices)
         if irq < 0 result = irq
+        if result == 0 && devices == DEVICE_DISK && recoveryDiskBytes != 0 {
+            result = grantDeviceExtent(child as UWord, recoveryDiskOffset, recoveryDiskBytes)
+        }
         if result == 0 result = configureService(child as UWord, root as UWord,
             dependency, generation, irq as UWord)
         if result == 0 result = publishService(name, child as UWord, root as UWord, generation)

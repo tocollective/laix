@@ -1,5 +1,5 @@
 // Untrusted bitmap storage service: protocol parsing and replies in user mode;
-// fixed-range physical disk DMA is exclusively the narrow kernel broker.
+// approved-range physical disk DMA is exclusively the narrow kernel broker.
 import { ServiceStart, serviceStartValid } from "../../src/task/service_start.m"
 import { START_BLOCK_VA, SERVICE_START_BYTES, START_ROLE_STORAGE,
     FONT_GENERATION, FONT_REQUEST_HEADER, FONT_VALIDATE_HEADER,
@@ -24,13 +24,14 @@ let storageHandle(request: *UWord, size: UWord, response: *mut UWord, irq: UWord
     let mut status: Word = fontValidate()
     if status == 0 && request[0] == FONT_REQUEST_HEADER {
         status = fontBegin(request[2], request[3])
-        if status == 0 {
+        if status > 0 {
+            let instance: UWord = status as UWord
             status = irqWait(irq, 5)
             if status != 0 {
-                if fontCancel() != 0 exit(1)
+                if fontCancel(instance) != 0 exit(1)
                 status = -ERRNO_EIO
             } else {
-                status = fontFinish(&mut response[4] as *mut UByte)
+                status = fontFinish(instance, &mut response[4] as *mut UByte)
                 if status == 16 {
                     response[3] = 16
                     status = irqComplete(irq)

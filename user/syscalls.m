@@ -1,8 +1,9 @@
 // User-only wrappers: import constants, never kernel code or the boot runtime.
 import { SYS_DEBUG_PUT_CHAR, SYS_EXIT, SYS_YIELD, SYS_HANDLE_CLOSE, SYS_HANDLE_COPY,
     SYS_ENDPOINT_DESTROY, SYS_IPC_SEND, SYS_IPC_RECEIVE, SYS_IPC_CALL, SYS_IPC_REPLY } from "../src/arch/wrm081632/defs.m"
-import { SYS_IRQ_WAIT, SYS_IRQ_COMPLETE, SYS_SCREEN_CONTROL, SYS_FONT_BEGIN,
-    SYS_FONT_FINISH, SYS_FONT_CANCEL, SYS_FONT_VALIDATE } from "../src/arch/wrm081632/defs.m"
+import { SYS_IRQ_WAIT, SYS_IRQ_COMPLETE, SYS_SCREEN_CONTROL, DISK_READ,
+    GLYPH_BYTES, ERRNO_EINVAL, SYS_DEVICE_INFO, SYS_DEVICE_SUBMIT,
+    SYS_DEVICE_FINISH, SYS_DEVICE_CANCEL, SYS_DEVICE_EXTENT } from "../src/arch/wrm081632/defs.m"
 
 type AcceptResult {
     length: Word,
@@ -71,21 +72,32 @@ export { AcceptResult, debugPutChar, exit, yield, closeHandle, copyHandle, destr
 
 let irqWait(token: UWord, seconds: UWord): Word { return syscall(SYS_IRQ_WAIT, token, seconds) }
 let irqComplete(token: UWord): Word { return syscall(SYS_IRQ_COMPLETE, token) }
-let screenControl(operation: UWord): Word { return syscall(SYS_SCREEN_CONTROL, operation) }
-let fontBegin(glyph: UWord, chunk: UWord): Word { return syscall(SYS_FONT_BEGIN, glyph, chunk) }
-let fontFinish(destination: *mut UByte): Word { return syscall(SYS_FONT_FINISH, destination) }
-let fontCancel(): Word { return syscall(SYS_FONT_CANCEL) }
-let fontValidate(): Word { return syscall(SYS_FONT_VALIDATE) }
-
+let screenControl(register: UWord, value: UWord): Word { return syscall(SYS_SCREEN_CONTROL, register, value) }
+// Font-specific offsets and chunk validation are entirely user policy.
+let fontBegin(glyph: UWord, chunk: UWord): Word {
+    if chunk > 1 || glyph > (0x7FFFFFFF - 16) / GLYPH_BYTES return -ERRNO_EINVAL
+    return diskBegin(glyph * GLYPH_BYTES + chunk * 16, 16)
+}
+let fontFinish(instance: UWord, destination: *mut UByte): Word { return diskFinish(instance, destination) }
+let fontCancel(instance: UWord): Word { return diskCancel(instance) }
+let fontValidate(): Word {
+    let result: Word = diskInfo()
+    if result < 0 return result
+    return 0
+}
 export { irqWait, irqComplete, screenControl, fontBegin, fontFinish, fontCancel, fontValidate }
 
-import { SYS_INPUT_READ, SYS_DISK_INFO, SYS_DISK_BEGIN, SYS_DISK_FINISH,
-    SYS_DISK_CANCEL } from "../src/arch/wrm081632/defs.m"
-let inputRead(destination: *mut UByte): Word { return syscall(SYS_INPUT_READ, destination) }
-let diskInfo(): Word { return syscall(SYS_DISK_INFO) }
-let diskBegin(offset: UWord, bytes: UWord): Word { return syscall(SYS_DISK_BEGIN, offset, bytes) }
-let diskFinish(destination: *mut UByte): Word { return syscall(SYS_DISK_FINISH, destination) }
-let diskCancel(): Word { return syscall(SYS_DISK_CANCEL) }
+import { SYS_INPUT_READ } from "../src/arch/wrm081632/defs.m"
+let inputRead(destination: *mut UByte, capacity: UWord): Word { return syscall(SYS_INPUT_READ, destination, capacity) }
+let diskInfo(): Word { return syscall(SYS_DEVICE_INFO) }
+let diskBegin(offset: UWord, bytes: UWord): Word { return syscall(SYS_DEVICE_SUBMIT, offset, bytes, DISK_READ) }
+let diskFinish(instance: UWord, destination: *mut UByte): Word { return syscall(SYS_DEVICE_FINISH, instance, destination) }
+let diskCancel(instance: UWord): Word { return syscall(SYS_DEVICE_CANCEL, instance) }
+let grantDeviceExtent(reference: UWord, offset: UWord, bytes: UWord): Word {
+    return syscall(SYS_DEVICE_EXTENT, reference, offset, bytes)
+}
+export { grantDeviceExtent }
+
 export { inputRead, diskInfo, diskBegin, diskFinish, diskCancel }
 
 import { SYS_TASK_CREATE, SYS_TASK_CONFIGURE, SYS_TASK_PUBLISH, SYS_TASK_INSPECT,

@@ -189,27 +189,27 @@ class ScreenSecurityTests(unittest.TestCase):
         vm = kernel_fixture()
         # Reading/clearing status is the only available acknowledgement path;
         # an operation cannot encode COMMAND, ADDRESS or extra device flags.
-        for operation in (4, 0x100, 0xFFFFFFFF):
-            self.assertEqual(vm.call('screenControl', 1, operation), error(22))
-        self.assertEqual(vm.call('screenControl', 2, 2), error(1))
+        for operation in (0x40, 0x6C, 0x70, 0x100, 0xFFFFFFFF):
+            self.assertEqual(vm.call('screenControl', 1, operation, 0), error(22))
+        self.assertEqual(vm.call('screenControl', 2, 0, 10), error(1))
         self.assertEqual(vm.memory.commands, [])
         for offset in (0x40, 0x6C, 0x70):
             self.assertNotIn(C['VIDEO_BASE'] + offset, vm.memory)
 
     def test_dma_is_physical_pinned_bounded_and_copies_only_after_completion(self):
         vm = kernel_fixture()
-        self.assertEqual(vm.call('fontBegin', 1, 0, 0), error(1))
-        for glyph, chunk in [(19, 0), (0xFFFFFFFF, 0), (0, 2), (0, 0xFFFFFFFF)]:
-            self.assertEqual(vm.call('fontBegin', 2, glyph, chunk), error(22))
+        self.assertEqual(vm.call('deviceSubmit', 1, 0, 16, 1), error(1))
+        for offset, length in [(608, 16), (0xFFFFFFFF, 16), (0, 513), (0, 0xFFFFFFFF)]:
+            self.assertEqual(vm.call('deviceSubmit', 2, offset, length, 1), error(22))
         self.assertEqual(vm.memory.commands, [])
-        self.assertEqual(vm.call('fontBegin', 2, 18, 1), 0)
-        physical = vm.globals['fontBounce']
+        self.assertGreater(vm.call('deviceSubmit', 2, 592, 16, 1), 0)
+        physical = vm.globals['deviceBounce']
         self.assertEqual(vm.memory.commands, [(1, physical, 3, 1)])
         self.assertEqual(physical & 4095, 0)
         self.assertEqual(vm.call('physicalPageReferences', physical), 1)
         self.assertFalse(vm.call('freePage', physical, 0xFFFFFFFE, 2))
         vm.memory.complete()
-        self.assertEqual(vm.call('fontFinish', 2, USER_DATA + 16), 16)
+        self.assertEqual(vm.call('deviceFinish', 2, vm.operation_instance(), USER_DATA + 16), 16)
         target = vm.pages(2)[1] + 16
         self.assertEqual(bytes(vm.memory[target + i] for i in range(16)), bytes(range(80, 96)))
         self.assertNotEqual(physical, USER_DATA + 16)
@@ -218,18 +218,18 @@ class ScreenSecurityTests(unittest.TestCase):
 
     def test_dma_cancel_quarantines_until_late_completion_and_outlives_task(self):
         vm = kernel_fixture()
-        self.assertEqual(vm.call('fontBegin', 2, 0, 0), 0)
-        physical = vm.globals['fontBounce']
-        vm.call('fontCancelOwner', 2)
+        self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
+        physical = vm.globals['deviceBounce']
+        vm.call('deviceCancelOwner', 2)
         self.assertFalse(vm.call('physicalPageAvailable', physical))
         self.assertEqual(vm.call('physicalPageReferences', physical), 1)
         self.assertTrue(vm.call('taskDiscardCreated', 2))
         self.assertFalse(vm.call('physicalPageAvailable', physical))
-        self.assertEqual(vm.call('fontBegin', 2, 0, 0), error(32))
+        self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, 1), error(32))
         vm.memory.complete()
-        vm.call('fontReap')
+        vm.call('deviceReap')
         self.assertTrue(vm.call('physicalPageAvailable', physical))
-        self.assertEqual(vm.globals['fontBounce'], 0)
+        self.assertEqual(vm.globals['deviceBounce'], 0)
         self.assertEqual(len(vm.memory.commands), 1)
 
     def test_dma_error_media_change_and_invalid_destination_publish_no_data(self):
@@ -241,13 +241,13 @@ class ScreenSecurityTests(unittest.TestCase):
                 for i in range(16):
                     vm.memory[target + i] = 0xAA
                 before = [vm.memory[target + i] for i in range(16)]
-                self.assertEqual(vm.call('fontBegin', 2, 0, 0), 0)
+                self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
                 vm.memory.complete(code, changed)
-                self.assertEqual(vm.call('fontFinish', 2, destination), error(expected))
+                self.assertEqual(vm.call('deviceFinish', 2, vm.operation_instance(), destination), error(expected))
                 self.assertEqual([vm.memory[target + i] for i in range(16)], before)
-                self.assertEqual(vm.globals['fontBounce'], 0)
+                self.assertEqual(vm.globals['deviceBounce'], 0)
                 if changed:
-                    self.assertEqual(vm.call('fontValidate', 2), error(32))
+                    self.assertEqual(vm.call('deviceValidate', 2), error(32))
 
     def test_embedded_program_constructor_permissions_zero_bss_and_invalid_ranges(self):
         vm = TaskM(ram=0x200000, root=LAIX / 'src/task/program.m')
@@ -325,7 +325,7 @@ class ScreenSecurityTests(unittest.TestCase):
             self.assertEqual(vm.free_pages(), free)
             self.assertTrue(vm.call('taskInitAvailable'))
             self.assertEqual(vm.memory[C['PIC_ENABLE']], 0)
-            self.assertEqual(vm.globals['fontBounce'], 0)
+            self.assertEqual(vm.globals['deviceBounce'], 0)
 
 
 class UserComponentTests(unittest.TestCase):

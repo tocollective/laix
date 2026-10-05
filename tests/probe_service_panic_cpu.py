@@ -22,7 +22,7 @@ from source_m import LAYOUT as C
 def run_case(case, image, symbols, services, emulator, rom, timeout, log_dir):
     traps, dispatch_return = locations(image, symbols)
     with ready_monitor(image, emulator, rom, timeout, full_image=True,
-                       extra_args=('--ram', '1M')) as opened:
+                       extra_args=('--ram', '2M')) as opened:
         monitor, process, stdout, stderr = opened
         probe = ScreenProbe(monitor, symbols, services)
         probe.prepare()
@@ -98,7 +98,7 @@ def main():
     paths.update({name: args.services / (name + '.elf') for name in ('screen', 'storage', 'application')})
     hashes = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in paths.items()}
     args.log_dir.mkdir(parents=True, exist_ok=True)
-    report = {'complete': False, 'cases': [], 'sha256': hashes, 'ram': '1M'}
+    report = {'complete': False, 'cases': [], 'sha256': hashes, 'ram': '2M'}
     try:
         image, symbols = args.image.read_bytes(), symbols_from_map(args.map)
         for case in ('blocked', 'dead'):
