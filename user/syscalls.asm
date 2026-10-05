@@ -15,3 +15,16 @@ ipcAcceptResult:
     sw r1, 0(r4)
     sw r5, WORD_BYTES(r4)
     ret
+
+    .align WORD_BYTES
+    .globl ipcTryAcceptResult
+ipcTryAcceptResult:
+    li r9, SYS_IPC_TRY_ACCEPT
+    syscall
+    li r5, 0
+    bltz r1, .failed
+    mv r5, r2
+.failed:
+    sw r1, 0(r4)
+    sw r5, WORD_BYTES(r4)
+    ret

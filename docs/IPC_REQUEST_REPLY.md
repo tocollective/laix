@@ -6,8 +6,9 @@ accept ABI and executes its public M ABI output helper on CPU. See the
 [console contract](CONSOLE_SERVICE.md). Existing syscalls 19/20 remain raw
 synchronous message transport. This contract adds an atomic `call` and a
 kernel-issued, one-use reply right. See the [acceptance record](../tests/IPC_REQUEST_REPLY_ACCEPTANCE.md).
-Timeouts, reply delegation, general deadlock detection and service discovery
-are deferred.
+Timed calls, nonblocking variants, scoped cancellation and watchdog sleep are
+implemented by [A4 liveness](IPC_LIVENESS.md). Reply delegation, general cycle
+detection and service discovery remain deferred.
 
 ## Service endpoints and authority
 
@@ -91,8 +92,8 @@ allowed, including raw IPC and service calls. No allocation proportional to
 untrusted message contents is needed; at most eight task records exist.
 
 On successful `accept`, the kernel grants the bound service a reply right in
-that client's record. Its token is `(callGeneration << 8) | clientTaskId`,
-where task IDs are the existing stable values 1..8, generation is nonzero,
+that client's record. Its token is `(callGeneration << 8) | clientSlot`,
+where the low byte is the diagnostic task slot 1..8, generation is nonzero,
 and bit 31 is clear. These tokens are unique across clients and successive
 calls. Generations never wrap or reset during a boot; after `0x7FFFFF`, that
 task's further `call` admissions fail with -EOVERFLOW (75), without affecting
@@ -175,9 +176,10 @@ A Service endpoint has exactly one designated receiver. After validating
 authority/liveness, `call` to a service bound to the calling task returns
 -EDEADLK (35), including a zero-length request, without copying or blocking.
 A local service function should be invoked directly instead. General cycles
-such as A calling B while B calls A are not detected in this step. A live
-service that never accepts or replies can still leave a client blocked;
-timeouts and explicit client cancellation are later extensions.
+such as A calling B while B calls A are not detected in this step. Legacy
+unbounded calls to a live service that never accepts or replies can
+still leave a client blocked. Use `callTimed` and scoped supervisor cancellation
+from [A4](IPC_LIVENESS.md) to bound these waits.
 
 ## Service termination and cancellation
 

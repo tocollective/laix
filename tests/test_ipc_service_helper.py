@@ -18,7 +18,7 @@ class AcceptUserM(UserM):
         self.labels = {name: i for i, st in enumerate(self.statements) for name in st.labels}
 
     def call(self, name, *args):
-        if name != "ipcAcceptResult":
+        if name not in ("ipcAcceptResult", "ipcTryAcceptResult"):
             return super().call(name, *args)
         regs = [0] * 32
         regs[1:5] = args

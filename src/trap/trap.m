@@ -1,3 +1,7 @@
+import { SYS_IPC_CALL_TIMED, SYS_IPC_TRY_SEND, SYS_IPC_TRY_RECEIVE,
+    SYS_IPC_TRY_ACCEPT, SYS_TASK_CANCEL_WAIT, SYS_SLEEP } from "../arch/wrm081632/defs.m"
+import { ipcCallTimed, ipcSendMode, ipcReceiveMode, ipcAcceptMode,
+    ipcSupervisorCancel, ipcSleep } from "../ipc/ipc.m"
 import { SYS_ENDPOINT_CREATE, SYS_TASK_DEVICES } from "../arch/wrm081632/defs.m"
 import { ipcCreate } from "../ipc/ipc.m"
 import { taskRuntimeDevices } from "../task/control.m"
@@ -89,6 +93,18 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
             return ipcSend(frame, frame.regs[1], frame.regs[2], frame.regs[3])
         case SYS_IPC_RECEIVE:
             return ipcReceive(frame, frame.regs[1], frame.regs[2], frame.regs[3])
+        case SYS_IPC_CALL_TIMED:
+            return ipcCallTimed(frame, frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4], frame.regs[5], frame.regs[6])
+        case SYS_IPC_TRY_SEND:
+            return ipcSendMode(frame, frame.regs[1], frame.regs[2], frame.regs[3], true)
+        case SYS_IPC_TRY_RECEIVE:
+            return ipcReceiveMode(frame, frame.regs[1], frame.regs[2], frame.regs[3], true)
+        case SYS_IPC_TRY_ACCEPT:
+            return ipcAcceptMode(frame, frame.regs[1], frame.regs[2], frame.regs[3], true)
+        case SYS_TASK_CANCEL_WAIT:
+            return deviceResult(frame, ipcSupervisorCancel(frame.regs[1]))
+        case SYS_SLEEP:
+            return ipcSleep(frame, frame.regs[1])
         case SYS_IPC_CALL:
             return ipcCall(frame, frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4], frame.regs[5])
         case SYS_IPC_ACCEPT:

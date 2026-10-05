@@ -20,7 +20,7 @@ import { inputReleaseOwner } from "../drivers/input_device.m"
 import { ServiceStart, serviceStartValid } from "service_start.m"
 import { panic } from "../kernel/panic.m"
 import { debugPrint } from "../drivers/debug_uart.m"
-import { timerReady, timerInit, timerCanSleep } from "../drivers/timer.m"
+import { TimerCount, timerReady, timerInit, timerCanSleep } from "../drivers/timer.m"
 import { Handle, HandleTable, handlesReleaseTask, endpointBootstrap, handleCopy,
     handleClose, endpointSealBootstrap, handleEntry, handleLookup, ENDPOINT_SERVICE } from "../ipc/objects.m"
 import { TaskStart, taskStartBlockValid } from "start.m"
@@ -50,6 +50,7 @@ let WAIT_IPC_CALL: UWord = 4
 let WAIT_IPC_ACCEPT: UWord = 5
 let WAIT_IPC_REPLY: UWord = 6
 let WAIT_IRQ: UWord = 7
+let WAIT_SLEEP: UWord = 8
 let USER_CODE: UWord = USER_VA_START
 let USER_DATA: UWord = USER_CODE + PAGE_SIZE
 let USER_STACK_TOP: UWord = USER_VA_END
@@ -94,6 +95,9 @@ type Task {
     ipcReplyOwner: UWord,
     ipcReplyBuffer: UWord,
     ipcReplyCapacity: UWord,
+    waitTimed: UWord, // authoritative deadline flag; cleared before Ready/death
+    waitDeadline: TimerCount,
+    waitPadding: UWord, // keep the array stride aligned to eight bytes
     ipcPadding: UWord, // keep every TCB's TrapFrame aligned to eight bytes
 }
 
@@ -630,7 +634,7 @@ let taskWake(id: UWord): Bool {
     // Recheck state under the same exclusion as block/finish/selection.
     let status: UWord = memoryLock()
     let task: *mut Task = taskGet(id)
-    if task == null || task.state != TASK_BLOCKED || task.ipcEndpoint != null {
+    if task == null || task.state != TASK_BLOCKED || task.ipcEndpoint != null || task.waitTimed != 0 {
         memoryUnlock(status)
         return false
     }
@@ -752,7 +756,7 @@ let taskReap(): Void {
 
 export { Task, tasks, idleTask, currentTask, MAX_TASKS, TASK_EMPTY, TASK_READY, TASK_RUNNING,
     TASK_BLOCKED, TASK_DEAD, TASK_CREATED, WAIT_NONE, WAIT_EVENT, WAIT_IPC_SEND, WAIT_IPC_RECEIVE,
-    WAIT_IPC_CALL, WAIT_IPC_ACCEPT, WAIT_IPC_REPLY, WAIT_IRQ,
+    WAIT_IPC_CALL, WAIT_IPC_ACCEPT, WAIT_IPC_REPLY, WAIT_IRQ, WAIT_SLEEP,
     USER_CODE, USER_DATA, USER_STACK_BOTTOM, USER_STACK_TOP, USER_STACK_GUARD,
     taskPrepare, taskCreate, taskGet, taskStart, taskBootstrapEndpoints, taskIdlePoll, taskTransitionAllowed,
     taskCreateImage, taskInstallStart, taskPublish, taskDiscardCreated, taskInitAvailable,

@@ -47,8 +47,10 @@ termination; this does not grant foreign control.
 | 39 inspect | reference, writable `TaskEvent*` | INSPECT (4) | 0 and snapshot |
 | 40 terminate | reference, final exit code | TERMINATE (8) | 0; self termination does not resume |
 | 41 collect | reference, writable `TaskEvent*` | COLLECT (16) | 0 and final event; capability consumed |
+| 59 cancel wait | reference | CANCEL (32) | 0 or `-EAGAIN`; current IPC/sleep wait only |
 
-Creation grants all five child-control rights (31); it grants no rights over
+Creation grants all six child-control rights (63), including the independent
+`TASK_RIGHT_CANCEL=32` from [A4 liveness](IPC_LIVENESS.md); it grants no rights over
 unrelated tasks. Endpoint configuration attenuates an existing caller handle
 through `handleCopy`. Service receive rights stay with the immutable receiver, while management
 rights stay with the creator; [runtime endpoint factories](RUNTIME_OBJECTS.md)

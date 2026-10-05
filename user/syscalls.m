@@ -139,3 +139,25 @@ let createEndpoint(mode: UWord, receiver: UWord): Word { return syscall(SYS_ENDP
 // Returns the keyboard IRQ token (or zero for UART only), never an MMIO address.
 let grantTaskDevices(reference: UWord, devices: UWord): Word { return syscall(SYS_TASK_DEVICES, reference, devices) }
 export { createEndpoint, grantTaskDevices }
+
+import { SYS_IPC_CALL_TIMED, SYS_IPC_TRY_SEND, SYS_IPC_TRY_RECEIVE,
+    SYS_TASK_CANCEL_WAIT, SYS_SLEEP } from "../src/arch/wrm081632/defs.m"
+extern let ipcTryAcceptResult(handle: UWord, buffer: *mut UByte, capacity: UWord, result: *mut AcceptResult): Word
+// A single 1..60 second budget covers acceptance and reply; expiry is not rollback.
+let callTimed(handle: UWord, request: *UByte, length: UWord, response: *mut UByte,
+    capacity: UWord, seconds: UWord): Word {
+    return syscall(SYS_IPC_CALL_TIMED, handle, request, length, response, capacity, seconds)
+}
+let trySend(handle: UWord, buffer: *UByte, length: UWord): Word {
+    return syscall(SYS_IPC_TRY_SEND, handle, buffer, length)
+}
+let tryRecv(handle: UWord, buffer: *mut UByte, capacity: UWord): Word {
+    return syscall(SYS_IPC_TRY_RECEIVE, handle, buffer, capacity)
+}
+let tryAccept(handle: UWord, buffer: *mut UByte, capacity: UWord, result: *mut AcceptResult): Word {
+    return ipcTryAcceptResult(handle, buffer, capacity, result)
+}
+// Requires TASK_RIGHT_CANCEL for this exact task reference; cancels its current IPC/sleep wait.
+let cancelTaskWait(reference: UWord): Word { return syscall(SYS_TASK_CANCEL_WAIT, reference) }
+let sleep(seconds: UWord): Word { return syscall(SYS_SLEEP, seconds) }
+export { callTimed, trySend, tryRecv, tryAccept, cancelTaskWait, sleep }

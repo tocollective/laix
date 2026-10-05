@@ -116,7 +116,7 @@ class KernelContractTests(unittest.TestCase):
         handler = module.scope["userSyscall"].decl
         dispatch = next(st for st in handler.body.stmts if isinstance(st, Switch))
         self.assertEqual({case.value.const for case in dispatch.cases if case.value is not None},
-                         {0, 1, 2, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54})
+                         {0, 1, 2, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60})
         for case in dispatch.cases:
             last = case.body[-1]
             while isinstance(last, Block):

@@ -1,6 +1,6 @@
 // Only trusted boot embeds can use this limited PT_LOAD constructor. It is
 // neither a user ELF loader nor a syscall: no relocations, TLS or dynamic link.
-import { taskCreateImage, taskDiscardCreated, taskGet, Task } from "task.m"
+import { taskConstructImage, taskDiscardChecked, taskInitAvailable, taskGet, Task } from "task.m"
 import { mapPage, unmapPage } from "../mm/mmu.m"
 import { PAGE_NONE, PAGE_USER, allocPage, freePage } from "../mm/memory.m"
 import { PAGE_SIZE, PAGE_MASK, PTE_U, PTE_RO, PTE_RW, PTE_RX,
@@ -24,11 +24,11 @@ type ProgramHeader {
 }
 
 let programRollback(id: UWord): UWord {
-    if !taskDiscardCreated(id) panic("could not discard service image", null)
+    if !taskDiscardChecked(id) panic("could not discard service image", null)
     return 0
 }
 
-let taskCreateProgram(start: UWord, end: UWord): UWord {
+let taskConstructProgram(start: UWord, end: UWord): UWord {
     if start < (&__start_rodata as UWord) || end > (&__stop_rodata as UWord) ||
         end <= start || start % WORD_BYTES != 0 || end - start < 52 return 0
     let bytes: UWord = end - start
@@ -63,7 +63,7 @@ let taskCreateProgram(start: UWord, end: UWord): UWord {
             header[6] - segment.virtual < segment.fileBytes && header[6] % WORD_BYTES == 0 executableEntry = true
     }
     if !executableEntry return 0
-    let id: UWord = taskCreateImage(&userCodeStart as UWord, &userCodeEnd as UWord, 0)
+    let id: UWord = taskConstructImage(&userCodeStart as UWord, &userCodeEnd as UWord, 0)
     if id == 0 return 0
     let task: *mut Task = taskGet(id)
     // Drop the construction fixture before installing the real service code.
@@ -99,4 +99,8 @@ let taskCreateProgram(start: UWord, end: UWord): UWord {
     return id
 }
 
-export { taskCreateProgram }
+let taskCreateProgram(start: UWord, end: UWord): UWord {
+    if !taskInitAvailable() return 0
+    return taskConstructProgram(start, end)
+}
+export { taskCreateProgram, taskConstructProgram }

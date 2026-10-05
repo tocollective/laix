@@ -65,7 +65,7 @@ These priorities describe completeness, not CVE severity:
 | A1 | Runtime task lifecycle and a user-space supervisor | P1 |
 | A2 | Authorized memory management beyond fixed startup mappings | P1 |
 | A3 | Runtime object/resource creation under scoped capabilities | P1 |
-| A4 | IPC deadlines/cancellation and recovery from live but unresponsive services | P1 |
+| A4 | [Accepted](../tests/IPC_LIVENESS_ACCEPTANCE.md): timed calls, try IPC, scoped cancellation and watchdog sleep | P1 |
 | A5 | Restart with fresh service identity, discovery and resource regrant | P1 |
 | A6 | Receiver-controlled capability transfer and resource quotas | P2 |
 | A7 | A general device interface with less service policy in the kernel | P2 |
