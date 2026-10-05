@@ -33,8 +33,7 @@ let closeHandle(handle: UWord): Word {
     return syscall(SYS_HANDLE_CLOSE, handle)
 }
 
-// Returns a positive handle in targetTask's table, or a negative errno.
-// The caller communicates the returned number to the recipient separately.
+// Self-table copy only. Foreign task IDs return -EPERM; use consent below.
 let copyHandle(handle: UWord, targetTask: UWord, rights: UWord): Word {
     return syscall(SYS_HANDLE_COPY, handle, targetTask, rights)
 }
@@ -177,3 +176,20 @@ let configureService(reference: UWord, root: UWord, dependency: UWord, generatio
     return syscall(SYS_SERVICE_CONFIGURE, reference, root, dependency, generation, irq)
 }
 export { publishService, resolveService, allowServices, withdrawService, configureService }
+
+// Receiver-selected slot and authenticated kernel notification, separate from
+// payload IPC. TransferResult is filled even on errors (identity fields zero).
+import { SYS_TRANSFER_RESERVE, SYS_TRANSFER_COMMIT, SYS_TRANSFER_CANCEL } from "../src/arch/wrm081632/defs.m"
+type TransferResult { handle: Word, sender: UWord, rights: UWord }
+extern let transferCollectResult(ticket: UWord, result: *mut TransferResult): Word
+let reserveTransfer(slot: UWord, sender: UWord, rights: UWord, seconds: UWord): Word {
+    return syscall(SYS_TRANSFER_RESERVE, slot, sender, rights, seconds)
+}
+let commitTransfer(source: UWord, receiver: UWord, ticket: UWord, rights: UWord): Word {
+    return syscall(SYS_TRANSFER_COMMIT, source, receiver, ticket, rights)
+}
+let cancelTransfer(ticket: UWord): Word { return syscall(SYS_TRANSFER_CANCEL, ticket) }
+let collectTransfer(ticket: UWord, result: *mut TransferResult): Word {
+    return transferCollectResult(ticket, result)
+}
+export { TransferResult, reserveTransfer, commitTransfer, cancelTransfer, collectTransfer }

@@ -106,6 +106,11 @@ and a separate 32-entry diagnostic history ring. Reaped runtime slots become
 Empty independently of completion collection. The event remains in its own
 reserved row even if the slot is reused. Slow collection cannot overflow or
 drop these events: creation returns `-ENFILE` when all rows are occupied.
+Ordinary creators have a four-child control quota including uncollected events.
+The final two global task slots and control rows are reserved for bootstrap's
+sealed recovery policy; its `factoryRecovery` flag is nontransferable. These
+limits are enforced before construction; collecting an event refunds its
+creator's quota. See [domain accounting](CAPABILITY_TRANSFER.md).
 The history ring intentionally overwrites old diagnostics and supplies no
 authority. Existing fixed boot/acceptance tasks retain their Dead TCB snapshots;
 only runtime children are marked reusable by the runtime policy.

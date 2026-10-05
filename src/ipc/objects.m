@@ -4,6 +4,7 @@ import { CR_STATUS, STATUS_IE, STATUS_EXL, WORD_MASK, ERRNO_EINVAL,
     ERRNO_EBADF, ERRNO_EPERM, ERRNO_EMFILE, ERRNO_ENFILE, ERRNO_EPIPE,
     RIGHT_RECEIVE, RIGHT_MANAGE, RIGHT_ALL } from "../arch/wrm081632/defs.m"
 import { ipcCancelEndpoint, ipcCancelTask } from "ipc.m"
+import { transferReleaseTask } from "transfer.m"
 import { panic } from "../kernel/panic.m"
 
 let MAX_ENDPOINTS: UWord = 16
@@ -41,6 +42,7 @@ type Handle {
     objectGeneration: UWord,
     generation: UWord,
     rights: UWord,
+    reserved: Bool, // receiver-owned transfer reservation; no endpoint reference
     receiveReference: Bool, // counts usable receive rights, not factory staging
 }
 
@@ -93,25 +95,35 @@ let handleInstallScoped(table: *mut HandleTable, object: *mut Endpoint, rights: 
     for i: UWord in 0..MAX_HANDLES {
         if table.factoryRecovery && !recovery && i >= MAX_HANDLES - ENDPOINT_RECOVERY_RESERVE continue
         let entry: *mut Handle = &mut table.entries[i]
-        if entry.object != null || entry.generation == HANDLE_GENERATION_MAX continue
-        // Advance on allocation, never reset on close or task teardown.
-        entry.generation += 1
-        entry.object = object
-        entry.objectGeneration = object.generation
-        entry.rights = rights
-        entry.receiveReference = false
-        if rights & RIGHT_RECEIVE != 0 {
-            let receiver: *mut Task = taskGet(object.manager)
-            if object.mode == ENDPOINT_RAW ||
-                (receiver != null && table == &mut receiver.handles) {
-                entry.receiveReference = true
-                object.receiveReferences += 1
-            }
-        }
-        object.references += 1 // bounded by handles plus one wait per task
-        return ((entry.generation << HANDLE_SLOT_BITS) | (i + 1)) as Word
+        if entry.object != null || entry.reserved || entry.generation == HANDLE_GENERATION_MAX continue
+        return handleInstallAt(table, object, rights, i + 1)
     }
     return -ERRNO_EMFILE
+}
+
+// Caller validates policy and owns this free slot, including its reservation.
+let handleInstallAt(table: *mut HandleTable, object: *mut Endpoint, rights: UWord, slot: UWord): Word {
+    objectAssertAtomic()
+    if table == null || object == null || object.state != ENDPOINT_LIVE || slot == 0 ||
+        slot > MAX_HANDLES || rights == 0 || rights & ~RIGHT_ALL != 0 return -ERRNO_EINVAL
+    let entry: *mut Handle = &mut table.entries[slot - 1]
+    if entry.object != null || entry.generation == HANDLE_GENERATION_MAX return -ERRNO_EMFILE
+    // Advance on allocation, never reset on close or task teardown.
+    entry.generation += 1
+    entry.object = object
+    entry.objectGeneration = object.generation
+    entry.rights = rights
+    entry.receiveReference = false
+    if rights & RIGHT_RECEIVE != 0 {
+        let receiver: *mut Task = taskGet(object.manager)
+        if object.mode == ENDPOINT_RAW ||
+            (receiver != null && table == &mut receiver.handles) {
+            entry.receiveReference = true
+            object.receiveReferences += 1
+        }
+    }
+    object.references += 1 // bounded by handles plus one wait per task
+    return ((entry.generation << HANDLE_SLOT_BITS) | slot) as Word
 }
 
 let handleInstall(table: *mut HandleTable, object: *mut Endpoint, rights: UWord): Word {
@@ -165,7 +177,8 @@ let handleClose(table: *mut HandleTable, token: UWord): Word {
     return 0
 }
 
-let handleCopy(source: *mut HandleTable, token: UWord, target: *mut HandleTable,
+// Common attenuation/liveness policy for trusted setup and receiver consent.
+let handleCopyCheck(source: *mut HandleTable, token: UWord,
     sourceOwner: UWord, targetOwner: UWord, rights: UWord): Word {
     let entry: *mut Handle = handleEntry(source, token)
     if entry == null return -ERRNO_EBADF
@@ -179,7 +192,15 @@ let handleCopy(source: *mut HandleTable, token: UWord, target: *mut HandleTable,
     if object.mode == ENDPOINT_SERVICE && rights & RIGHT_RECEIVE != 0 &&
         (targetOwner != object.manager ||
          (sourceOwner != object.creator && sourceOwner != object.manager)) return -ERRNO_EPERM
-    return handleInstall(target, object, rights)
+    return 0
+}
+
+// Kernel-only setup/resolution API. Public IPC must establish consent first.
+let handleCopy(source: *mut HandleTable, token: UWord, target: *mut HandleTable,
+    sourceOwner: UWord, targetOwner: UWord, rights: UWord): Word {
+    let checked: Word = handleCopyCheck(source, token, sourceOwner, targetOwner, rights)
+    if checked != 0 return checked
+    return handleInstall(target, handleLookup(source, token, rights), rights)
 }
 
 let endpointDestroy(table: *mut HandleTable, token: UWord, owner: UWord): Word {
@@ -283,6 +304,7 @@ let handlesReleaseTask(table: *mut HandleTable, owner: UWord): Void {
     table.factoryModes = 0
     table.factoryQuota = 0
     table.factoryRecovery = false
+    transferReleaseTask(owner)
     // Creator or receiver death revokes peer handles even if its manage handle was closed.
     for i: UWord in 0..MAX_ENDPOINTS {
         if endpoints[i].state == ENDPOINT_LIVE && (endpoints[i].creator == owner || endpoints[i].manager == owner) {
@@ -299,5 +321,5 @@ export { Endpoint, Handle, HandleTable, MAX_ENDPOINTS, MAX_HANDLES,
     ENDPOINT_EMPTY, ENDPOINT_LIVE, ENDPOINT_DESTROYED, ENDPOINT_RETIRED,
     ENDPOINT_RAW, ENDPOINT_SERVICE, ENDPOINT_FACTORY_QUOTA, ENDPOINT_RECOVERY_RESERVE,
     endpointFactoryBootstrap, endpointFactoryCreate,
-    HANDLE_GENERATION_MAX, ENDPOINT_WAIT_CAPACITY, handleEntry, endpointRelease, handleLookup, handleClose, handleCopy, endpointDestroy,
+    HANDLE_GENERATION_MAX, ENDPOINT_WAIT_CAPACITY, handleInstallAt, handleEntry, endpointRelease, handleLookup, handleClose, handleCopyCheck, handleCopy, endpointDestroy,
     endpointBootstrap, endpointBootstrapService, endpointSealBootstrap, handlesReleaseTask, objectAssertAtomic }

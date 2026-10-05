@@ -4,13 +4,16 @@
 
 Date: 2026-10-04. Priority: **P2**.
 
-These checklists describe proposed work, not completed implementation.
+Implemented and accepted on 2026-10-05. [Contract](CAPABILITY_TRANSFER.md) ·
+[Requirement-to-test mapping and evidence levels](../tests/CAPABILITY_TRANSFER_ACCEPTANCE.md) ·
+[Source/image provenance](../tests/CAPABILITY_TRANSFER_PROVENANCE.json).
+The original gap below records the pre-remediation finding.
 
 ## Dependencies
 
 The unsolicited endpoint-copy restriction can be fixed on the current model. Apply the same consent and accounting rules to the new object types in A1–A3.
 
-## Current state and gap
+## Original state and gap
 
 **Evidence:** [ipcCopy](../src/ipc/ipc.m) accepts any live user task ID as
 the recipient and calls `handleCopy`; [handleInstall](../src/ipc/objects.m)
@@ -52,32 +55,42 @@ authorize a capability in the recipient.
 
 ## Implementation checklist
 
-- [ ] Choose a receiver-controlled transfer mechanism: an explicit receive slot, a bounded transfer ticket or a scoped target-table capability.
-- [ ] Remove unrestricted installation into an arbitrary live task selected only by task ID.
-- [ ] Define which rights are transferable for Raw endpoints, Service endpoints and future task/memory/device objects.
-- [ ] Couple transferred authority to authenticated IPC delivery or document a separate atomic installation/notification protocol.
-- [ ] Specify slot reservation lifetime, expiry, cancellation and stale-ticket rejection.
-- [ ] Validate attenuation, source liveness and recipient consent before changing either table or reference count.
-- [ ] Make failed multi-capability transfers transactional, or define explicit partial-result semantics before exposing them.
-- [ ] Add per-domain budgets for handles/endpoints/tasks/frames and charge pins or queued resources to a defined owner.
-- [ ] Reserve supervisory capacity for cancellation, notification and cleanup when an application budget is exhausted.
-- [ ] Define release/revocation rules for delegated references and resource accounting when sender or recipient dies.
-- [ ] Add a permanent regression for the sixteen-copy foreign-table exhaustion scenario.
-- [ ] Document that attenuation alone prevents rights amplification but does not prevent resource interference.
+- [x] Choose a receiver-controlled transfer mechanism: an explicit receive slot, a bounded transfer ticket or a scoped target-table capability.
+- [x] Remove unrestricted installation into an arbitrary live task selected only by task ID.
+- [x] Define which rights are transferable for Raw endpoints, Service endpoints and future task/memory/device objects.
+- [x] Couple transferred authority to authenticated IPC delivery or document a separate atomic installation/notification protocol.
+- [x] Specify slot reservation lifetime, expiry, cancellation and stale-ticket rejection.
+- [x] Validate attenuation, source liveness and recipient consent before changing either table or reference count.
+- [x] Make failed multi-capability transfers transactional, or define explicit partial-result semantics before exposing them.
+- [x] Add per-domain budgets for handles/endpoints/tasks/frames and charge pins or queued resources to a defined owner.
+- [x] Reserve supervisory capacity for cancellation, notification and cleanup when an application budget is exhausted.
+- [x] Define release/revocation rules for delegated references and resource accounting when sender or recipient dies.
+- [x] Add a permanent regression for the sixteen-copy foreign-table exhaustion scenario.
+- [x] Document that attenuation alone prevents rights amplification but does not prevent resource interference.
 
 ## Acceptance checklist
 
-- [ ] Attempt sixteen unsolicited copies into another live task and verify that its table and budget stay unchanged.
-- [ ] Accept a transfer into a selected slot and verify exact attenuated rights and authenticated notification.
-- [ ] Reject forged, stale, already-consumed and expired transfer permissions without installation.
-- [ ] Fail a transfer due to full tables, dead recipients or revocation and conserve all references/reservations.
-- [ ] Exhaust one client budget while unrelated clients and the supervisor continue allocating within their own budgets.
-- [ ] Kill sender and receiver at transfer boundaries and prove no hidden authority or leaked quota remains.
-- [ ] Reproduce consent/exhaustion behavior on CPU after source-model regressions pass.
+- [x] Attempt sixteen unsolicited copies into another live task and verify that its table and budget stay unchanged.
+- [x] Accept a transfer into a selected slot and verify exact attenuated rights and authenticated notification.
+- [x] Reject forged, stale, already-consumed and expired transfer permissions without installation.
+- [x] Fail a transfer due to full tables, dead recipients or revocation and conserve all references/reservations.
+- [x] Exhaust one client budget while unrelated clients and the supervisor continue allocating within their own budgets.
+- [x] Kill sender and receiver at transfer boundaries and prove no hidden authority or leaked quota remains.
+- [x] Reproduce consent/exhaustion behavior on CPU after source-model regressions pass.
 
 ## Completion record
 
-When work is accepted, link each completed requirement to its tests and record
-the source and image provenance, remaining limitations and CPU acceptance
-results. A checked box must not imply a stronger evidence level than the linked
-record establishes.
+All twelve implementation and seven acceptance requirements are linked to
+specific implementation paths, checked-source regressions and CPU observations
+in the [completion record](../tests/CAPABILITY_TRANSFER_ACCEPTANCE.md).
+Receiver-selected expiring permissions replace public foreign-table copies;
+installation publishes a kernel-authenticated notification atomically. Ordinary
+child/control quotas and recovery reserves supplement existing endpoint/frame
+budgets. Memory-grant offers spend lender resources until borrower acceptance.
+
+The CPU regression rejects 640 unsolicited copies, completes forty Raw/Service
+transfers and a final sender-death transfer, rejects forged/replayed/cancelled/
+expired permissions, restores an exhausted client table, and finishes with zero
+references, transfer records or uncollected authority. WRM was not built;
+new LA/IX images ran on the existing emulator/ROM. The linked evidence record
+states remaining scope and which adversarial cases use checked-source evidence.

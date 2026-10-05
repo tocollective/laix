@@ -1,3 +1,4 @@
+import { transferTimerTick } from "transfer.m"
 import { TimerCount, timerDeadline, timerReadCount, timerDeadlineReached } from "../drivers/timer.m"
 import { taskControlLookup } from "../task/control.m"
 import { TASK_RIGHT_CONFIGURE, TASK_RIGHT_CANCEL } from "../arch/wrm081632/defs.m"
@@ -33,13 +34,14 @@ let ipcClose(token: UWord): Word {
     return handleClose(&mut currentTask.handles, token)
 }
 
-// The result is a handle in the target's table. Passing a task ID selects a
-// recipient, never authority. Only rights already held by this caller flow.
+// Ordinary copying spends only the caller's own table budget. Foreign tables
+// require receiver-issued transfer consent or trusted unpublished-child setup.
 let ipcCopy(token: UWord, targetId: UWord, rights: UWord): Word {
     if !ipcCallerValid() return -ERRNO_EPERM
     let target: *mut Task = taskGet(targetId)
     if target == null || (target.state != TASK_READY && target.state != TASK_RUNNING &&
         target.state != TASK_BLOCKED) return -ERRNO_ESRCH
+    if target != currentTask return -ERRNO_EPERM
     return handleCopy(&mut currentTask.handles, token, &mut target.handles,
         currentTask.id, target.id, rights)
 }
@@ -438,7 +440,7 @@ let ipcCancelTask(id: UWord): Void {
     if !ipcFinishWait(task, -ERRNO_ECANCELED, 0, false) panic("invalid dying waiter", null)
 }
 
-export { ipcCreate, ipcResolve, ipcClose, ipcCopy, ipcDestroy, ipcSend, ipcReceive,
+export { ipcCallerValid, ipcCreate, ipcResolve, ipcClose, ipcCopy, ipcDestroy, ipcSend, ipcReceive,
     ipcCall, ipcAccept, ipcReply,
     ipcCancelEndpoint, ipcCancelTask }
 
@@ -486,6 +488,7 @@ let ipcSleep(frame: *mut TrapFrame, seconds: UWord): *TrapFrame {
 // not the number of delivered/coalesced IRQs, determines expiry.
 let ipcTimerTick(): Void {
     objectAssertAtomic()
+    transferTimerTick()
     let mut hasWait: Bool = false
     for slot: UWord in 1..(MAX_TASKS + 1) {
         if taskSlot(slot).waitTimed != 0 hasWait = true

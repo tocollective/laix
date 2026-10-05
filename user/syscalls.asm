@@ -28,3 +28,15 @@ ipcTryAcceptResult:
     sw r1, 0(r4)
     sw r5, WORD_BYTES(r4)
     ret
+
+    .align WORD_BYTES
+    .globl transferCollectResult
+transferCollectResult:
+    ; r2 becomes authenticated sender; keep the output pointer in preserved r4.
+    mv r4, r2
+    li r9, SYS_TRANSFER_COLLECT
+    syscall
+    sw r1, 0(r4)
+    sw r2, WORD_BYTES(r4)
+    sw r3, 2 * WORD_BYTES(r4)
+    ret

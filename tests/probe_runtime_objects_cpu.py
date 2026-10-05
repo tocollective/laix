@@ -24,7 +24,7 @@ def probe(image, map_path, emulator, rom, timeout=30):
     require(symbols['currentTask'] - symbols['tasks'] == 8 * size, 'image/source task layout mismatch')
     types = {name: module.scope[name].type
              for module in check_m(LAIX / 'src/trap/trap.m')
-             for name in ('Endpoint', 'HandleTable', 'Handle', 'IrqGrant', 'TaskControl')
+             for name in ('Endpoint', 'HandleTable', 'Handle', 'IrqGrant', 'TaskControl', 'Transfer')
              if name in module.scope and module.scope[name].type is not None}
     with ready_monitor(image.read_bytes(), emulator, rom, timeout, full_image=True) as opened:
         monitor, process, stdout, stderr = opened
@@ -32,6 +32,13 @@ def probe(image, map_path, emulator, rom, timeout=30):
         monitor.command(f"del 0x{symbols['taskStart']:X}")
         transcript.append(monitor.stop_at(symbols['taskTick']))
         monitor.command(f"del 0x{symbols['taskTick']:X}")
+        # The consent-expiry test sleeps before any user exits, so reaching
+        # idle once no longer implies completion. Observe all three exits first.
+        transcript.append(monitor.stop_at(symbols['taskFinish']))
+        for _ in range(2):
+            transcript.append(monitor.command('c'))
+            transcript.append(monitor.command('r'))
+        monitor.command(f"del 0x{symbols['taskFinish']:X}")
         transcript.append(monitor.stop_at(symbols['taskKernelResume.idle']))
 
         def field(slot, name):
@@ -62,6 +69,17 @@ def probe(image, map_path, emulator, rom, timeout=30):
             require(all(monitor.words(address + table.field('entries').offset + i * handle.size +
                                       handle.field('object').offset, 1) == [0] for i in range(16)),
                     'endpoint reference survived task teardown')
+            for i in range(16):
+                reserved = address + table.field('entries').offset + i * handle.size + handle.field('reserved').offset
+                word = monitor.words(reserved & ~3, 1)[0]
+                require((word >> ((reserved & 3) * 8)) & 255 == 0,
+                        'handle reservation survived task teardown')
+        transfer = types['Transfer']
+        for slot in range(8):
+            address = symbols['transfer__transfers'] + slot * transfer.size
+            for name in ('state', 'receiver', 'sender', 'slot', 'rights', 'handle'):
+                require(monitor.words(address + transfer.field(name).offset, 1) == [0],
+                        f'transfer {slot + 1} leaked {name}')
         irq = types['IrqGrant']
         address = symbols['irq__irqGrants'] + C['KEYBOARD_IRQ'] * irq.size
         require(monitor.words(address + irq.field('owner').offset, 1) == [0], 'keyboard grant survived')
@@ -77,6 +95,9 @@ def probe(image, map_path, emulator, rom, timeout=30):
             'probe changed input artifacts')
     return dict(complete=True, raw_lifetimes=20, service_lifetimes=20,
                 timer_preemption=True, quota_recovery=True, irq_renewals=2,
+                consent_transfers=41, unsolicited_copies_rejected=640,
+                forged_and_consumed_tickets=True, cancelled_and_expired_tickets=True,
+                authenticated_notification=True, sender_death_after_commit=True,
                 sha256=hashes), uart, '\n'.join(transcript)
 
 

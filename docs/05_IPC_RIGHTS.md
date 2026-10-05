@@ -63,15 +63,14 @@ All lookup, copy, close, destruction, and task cleanup operations require IE=0
 or EXL=1 on this single CPU. Borrowed endpoint pointers remain valid only inside
 that exclusion region. IRQ-enabled calls panic before reading the caller's table.
 
-Copying installs a new independent reference in the target task's table.
-Requested rights must be a nonempty subset of the source entry's rights; a
-recipient cannot amplify them by copying again. A target task ID selects a
-recipient, not an object authority. Management copies are permitted only within
-the original owner's task. Ownership transfer is not implemented. Send rights and Raw receive rights can be copied to live user tasks. Service
-receive rights stay with the immutable receiver, including initial attenuation
-from a separate creator into its owned Created child. Copy returns
-the new token in the recipient's table; delivering that number to the recipient
-is a separate protocol. A failed copy does not change either table or references.
+Copying installs a new independent reference within the caller's own table.
+Requested rights must be a nonempty subset of the source rights. Send and Raw
+receive rights require receiver-issued consent for foreign installation;
+management remains creator-local and Service receive remains receiver-bound.
+[Receiver-controlled transfer](CAPABILITY_TRANSFER.md) defines selected slots,
+single-use permissions, atomic authenticated notification and resource charges.
+Trusted bootstrap/Created-child configuration use scoped kernel setup paths.
+A failed installation changes no endpoint references or installed handles.
 
 Closing removes exactly one table entry. Other copies remain usable while the
 endpoint is Live. Closing the last reference releases the object automatically.
@@ -109,7 +108,7 @@ records, and discards the temporary root handle before the first user entry.
 | Syscall | Arguments in saved r1..r3 | Result in r1 |
 | --- | --- | --- |
 | 16 `closeHandle` | local token | 0 or negative errno |
-| 17 `copyHandle` | local token, target task ID, subset rights | positive target token or negative errno |
+| 17 `copyHandle` | local token, caller task reference, subset rights | positive self-table token or negative errno |
 | 18 `destroyEndpoint` | local token | 0 or negative errno |
 
 Each syscall consumes EPC once and preserves r2..r31 and FCSR. User wrappers
@@ -119,7 +118,8 @@ are in `user/syscalls.m`; rights constants can be imported from
 unauthorized management; `-EPIPE` (32) for a destroyed endpoint; `-ESRCH` (3)
 for an absent, Empty, Dead, or idle copy recipient; `-EMFILE` (24) and
 `-ENFILE` (23) for capacity exhaustion. Checks run in this order: copy validates
-the recipient, source token, mask, subset, liveness, management owner, and capacity;
+the live recipient and self-table restriction, then source token, mask, subset,
+liveness, management owner, and capacity;
 destruction validates the token, manage right, liveness, and owner.
 
 `tests/test_ipc_handles.py` executes checked M ASTs for private table isolation,

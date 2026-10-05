@@ -176,7 +176,10 @@ reference, with an R, RW or RX permission ceiling. The owner communicates the
 token through IPC. Only that borrower may map it, into its own authorized
 runtime window, at most once at a time. A grant covers all 1–16 region frames;
 there is no subregion lending, regrant, owner transfer or arbitrary frame access.
-There are 64 grant rows, at most eight per lender and eight per borrower.
+There are 64 grant rows, at most eight offers per lender and eight simultaneously
+mapped grants per borrower. Unsolicited offers and their lease pins spend only
+the lender's quota; borrower charging begins with explicit map acceptance.
+See [the transfer/accounting contract](CAPABILITY_TRANSFER.md).
 Generations advance on issuance, retire without wrap and survive task-slot reuse.
 
 Each grant retains one lease pin per frame, independent of the actual borrower

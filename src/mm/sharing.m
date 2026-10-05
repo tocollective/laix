@@ -58,15 +58,13 @@ let memoryCreateGrant(space: UWord, regionToken: UWord, borrower: UWord, permiss
     if region == null || target == null || target.state == TASK_DEAD || target == task return -ERRNO_EPERM
     if !mmuPermissionsValid(permissions) return -ERRNO_EINVAL
     let mut lent: UWord = 0
-    let mut borrowed: UWord = 0
     let mut slot: UWord = MAX_MEMORY_GRANTS
     for i: UWord in 0..MAX_MEMORY_GRANTS {
         let grant: *MemoryGrant = &memoryGrants[i]
         if grant.lender == task.id lent += 1
-        if grant.borrower == borrower borrowed += 1
         if slot == MAX_MEMORY_GRANTS && grant.lender == 0 && grant.generation < GRANT_GENERATION_MAX slot = i
     }
-    if lent >= 8 || borrowed >= 8 || slot == MAX_MEMORY_GRANTS return -ERRNO_ENFILE
+    if lent >= 8 || slot == MAX_MEMORY_GRANTS return -ERRNO_ENFILE
     for i: UWord in 0..region.count {
         if !physicalPageOwned(region.pages[i], task.id, PAGE_USER) ||
             physicalPageReferences(region.pages[i]) == 0xFFFFFFFF return -ERRNO_EBUSY
@@ -96,6 +94,13 @@ let memoryMapGrant(space: UWord, token: UWord, virtual: UWord, permissions: UWor
     if !memoryRangeValid(virtual, region.count) || !mmuPermissionsValid(permissions) return -ERRNO_EINVAL
     if permissions & PTE_RWX_BITS & ~(grant.permissions & PTE_RWX_BITS) != 0 return -ERRNO_EPERM
     if grant.mapped != 0 return -ERRNO_EBUSY
+    // Offers and lease pins spend only the lender's quota. The borrower is
+    // charged only after it explicitly accepts by mapping the grant.
+    let mut borrowed: UWord = 0
+    for i: UWord in 0..MAX_MEMORY_GRANTS {
+        if memoryGrants[i].borrower == task.id && memoryGrants[i].mapped != 0 borrowed += 1
+    }
+    if borrowed >= 8 return -ERRNO_ENFILE
     for i: UWord in 0..region.count {
         if mmuUserLeaf(task.directory, task.id, virtual + i * PAGE_SIZE) != 0 ||
             !mmuAccessValid(region.pages[i], PAGE_USER, permissions, 0) return -ERRNO_EBUSY

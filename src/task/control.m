@@ -27,6 +27,8 @@ import { TASK_RIGHT_CONFIGURE, TASK_RIGHT_PUBLISH, TASK_RIGHT_INSPECT,
     ERRNO_EAGAIN, ERRNO_EBUSY } from "../arch/wrm081632/defs.m"
 
 let MAX_TASK_CONTROLS: UWord = 16 // also bounds uncollected completion events
+let TASK_DOMAIN_QUOTA: UWord = 4 // includes uncollected child completion records
+let TASK_CONTROL_RESERVE: UWord = 2
 let TASK_HISTORY_SIZE: UWord = 32 // diagnostic ring; never used as authority
 
 type TaskControl {
@@ -108,8 +110,15 @@ let taskRuntimeCreate(image: UWord): Word {
     if currentTask == null || image == 0 || image > 5 ||
         currentTask.createImages & (1 << (image - 1)) == 0 ||
         (image != 1 && runtimeImageStart[image - 1] == 0) return -ERRNO_EPERM
-    let control: *mut TaskControl = taskControlFree()
-    if control == null return -ERRNO_ENFILE
+    let mut charged: UWord = 0
+    let mut control: *mut TaskControl = null
+    for i: UWord in 0..MAX_TASK_CONTROLS {
+        let row: *mut TaskControl = &mut taskControls[i]
+        if row.owner == currentTask.id && row.reference != 0 && row.reference != currentTask.id charged += 1
+        if !currentTask.handles.factoryRecovery && i >= MAX_TASK_CONTROLS - TASK_CONTROL_RESERVE continue
+        if control == null && row.reference == 0 control = row
+    }
+    if ((!currentTask.handles.factoryRecovery && charged >= TASK_DOMAIN_QUOTA) || control == null) return -ERRNO_ENFILE
     // Reserve a mailbox before any fallible resource allocation. No task can
     // exit without its completion storage, even when the supervisor is slow.
     control.owner = currentTask.id

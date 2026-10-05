@@ -28,6 +28,8 @@ def boot(manager=2, raw=False, receive=False, irq=False, dma=False, self_control
             assert 0 < tokens[ref] < 0x80000000
     vm.memory[vm.field_address('reusable', 2)] = 1
     vm.memory[vm.field_address('createImages', 1)] = 1
+    # Slot-pressure acceptance exercises a trusted recovery supervisor.
+    assert vm.call('endpointFactoryBootstrap', vm.field_address('handles', 1), 3, 12, True)
     if irq:
         vm.irq = vm.call('irqGrant', 2, 3)
         assert vm.irq

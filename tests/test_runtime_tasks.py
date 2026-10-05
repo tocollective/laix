@@ -62,6 +62,9 @@ def fixture(count=2, endpoint=False):
         assert vm.call('taskInstallRuntimeStart', reference, 0, 0, 0)
         assert vm.call('taskControlBootstrapSelf', reference)
         vm.memory[vm.field_address('createImages', reference)] = 1
+        # These fixtures represent bootstrap-authorized supervisors.
+        table = vm.decls['tasks'].sym.type.elem.field('handles').type
+        vm.memory[vm.field_address('handles', reference) + table.field('factoryRecovery').offset] = 1
         assert vm.call('taskPublish', reference)
     if endpoint:
         vm.root_handle = vm.call('endpointBootstrapService', vm.field_address('handles'), 1)

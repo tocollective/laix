@@ -24,6 +24,7 @@ class HandlesM(SourceM):
         self.handle_type = self.task_type.field("handles").type.field("entries").type.elem
         for id in range(1, 9):
             self.memory[self.task_field(id, "id")] = id
+            self.memory[self.task_field(id, "slot")] = id
             self.memory[self.task_field(id, "state")] = 1
         self.select(1)
 
@@ -54,6 +55,11 @@ class HandlesM(SourceM):
         assert 0 < token <= 0x7FFFFFFF
         return token
 
+    def copy_fixture(self, token, target, rights):
+        # Trusted setup for lifetime tests; public consent is tested separately.
+        owner = self.memory[self.globals["currentTask"] + self.task_type.field("id").offset]
+        return self.call("handleCopy", self.table(owner), token, self.table(target), owner, target, rights)
+
     def resolve(self, id, token, rights=SEND):
         return self.call("handleLookup", self.table(id), token, rights)
 
@@ -81,23 +87,23 @@ class HandleTests(unittest.TestCase):
     def test_subset_copy_and_management_owner(self):
         vm = HandlesM()
         token = vm.bootstrap()
-        sender = vm.call("ipcCopy", token, 2, SEND)
+        sender = vm.copy_fixture(token, 2, SEND)
         object = vm.resolve(2, sender)
         self.assertEqual(vm.value(object, "references"), 2)
-        self.assertEqual(vm.call("ipcCopy", token, 2, MANAGE), error(PERM))
+        self.assertEqual(vm.copy_fixture(token, 2, MANAGE), error(PERM))
         vm.select(2)
         self.assertEqual(vm.call("ipcResolve", sender, RECEIVE), 0)
         self.assertEqual(vm.call("ipcDestroy", sender), error(PERM))
         before = dict(vm.memory)
         for rights in (RECEIVE, MANAGE, ALL):
-            self.assertEqual(vm.call("ipcCopy", sender, 3, rights), error(PERM))
+            self.assertEqual(vm.copy_fixture(sender, 3, rights), error(PERM))
         for rights in (0, 8, 0xFFFFFFFF):
-            self.assertEqual(vm.call("ipcCopy", sender, 3, rights), error(INVAL))
+            self.assertEqual(vm.copy_fixture(sender, 3, rights), error(INVAL))
         self.assertEqual(vm.memory, before)
-        third = vm.call("ipcCopy", sender, 3, SEND)
+        third = vm.copy_fixture(sender, 3, SEND)
         self.assertEqual(vm.resolve(3, third), object)
         vm.select(1)
-        manager_copy = vm.call("ipcCopy", token, 1, MANAGE)
+        manager_copy = vm.copy_fixture(token, 1, MANAGE)
         self.assertEqual(vm.call("ipcDestroy", manager_copy), 0)
         self.assertEqual(vm.resolve(3, third), 0)
 
@@ -117,7 +123,7 @@ class HandleTests(unittest.TestCase):
     def test_close_one_copy_and_last_reference(self):
         vm = HandlesM()
         token = vm.bootstrap()
-        copy = vm.call("ipcCopy", token, 2, RECEIVE)
+        copy = vm.copy_fixture(token, 2, RECEIVE)
         object = vm.resolve(1, token)
         self.assertEqual(vm.call("ipcClose", token), 0)
         self.assertEqual(vm.call("ipcClose", token), error(BADF))
@@ -132,19 +138,19 @@ class HandleTests(unittest.TestCase):
     def test_destroy_revokes_copies_and_pins_object_until_close(self):
         vm = HandlesM()
         token = vm.bootstrap()
-        copy = vm.call("ipcCopy", token, 2, SEND)
+        copy = vm.copy_fixture(token, 2, SEND)
         object = vm.resolve(1, token)
         self.assertEqual(vm.call("ipcDestroy", token), 0)
         self.assertEqual(vm.value(object, "state"), DESTROYED)
         self.assertEqual(vm.value(object, "references"), 2)
         self.assertEqual(vm.call("ipcDestroy", token), error(PIPE))
-        self.assertEqual(vm.call("ipcCopy", token, 3, SEND), error(PIPE))
+        self.assertEqual(vm.copy_fixture(token, 3, SEND), error(PIPE))
         other = vm.bootstrap()
         self.assertNotEqual(vm.resolve(1, other), object)
         self.assertEqual(vm.call("ipcClose", token), 0)
         vm.select(2)
         self.assertEqual(vm.call("ipcResolve", copy, SEND), 0)
-        self.assertEqual(vm.call("ipcCopy", copy, 3, SEND), error(PIPE))
+        self.assertEqual(vm.copy_fixture(copy, 3, SEND), error(PIPE))
         self.assertEqual(vm.call("ipcClose", copy), 0)
         fresh = vm.bootstrap(1)
         self.assertEqual(vm.resolve(1, fresh), object)
@@ -186,9 +192,9 @@ class HandleTests(unittest.TestCase):
         token = vm.bootstrap()
         object = vm.resolve(1, token)
         for _ in range(15):
-            self.assertGreater(vm.call("ipcCopy", token, 1, SEND), 0)
+            self.assertGreater(vm.copy_fixture(token, 1, SEND), 0)
         before = dict(vm.memory)
-        self.assertEqual(vm.call("ipcCopy", token, 1, SEND), error(MFILE))
+        self.assertEqual(vm.copy_fixture(token, 1, SEND), error(MFILE))
         self.assertEqual(vm.memory, before)
         self.assertEqual(vm.call("endpointBootstrap", vm.table(1), 1), error(MFILE))
         self.assertEqual(vm.value(object, "references"), 16)
@@ -210,7 +216,7 @@ class HandleTests(unittest.TestCase):
     def test_manager_death_revokes_even_without_manage_handle(self):
         vm = HandlesM()
         token = vm.bootstrap()
-        peer = vm.call("ipcCopy", token, 2, SEND)
+        peer = vm.copy_fixture(token, 2, SEND)
         object = vm.resolve(1, token)
         vm.call("ipcClose", token)
         vm.call("handlesReleaseTask", vm.table(1), 1)
@@ -224,8 +230,8 @@ class HandleTests(unittest.TestCase):
     def test_nonmanager_death_leaves_owner_and_other_peers_live(self):
         vm = HandlesM()
         token = vm.bootstrap()
-        vm.call("ipcCopy", token, 2, SEND)
-        third = vm.call("ipcCopy", token, 3, RECEIVE)
+        vm.copy_fixture(token, 2, SEND)
+        third = vm.copy_fixture(token, 3, RECEIVE)
         object = vm.resolve(1, token)
         vm.call("handlesReleaseTask", vm.table(2), 2)
         self.assertEqual(vm.value(object, "references"), 2)
@@ -305,7 +311,7 @@ class HandleTests(unittest.TestCase):
             self.assertEqual(vm.call("endpointBootstrap", table, 1), error(PERM))
             if not fault:
                 registers = [vm.memory[frame + 4 * i] for i in range(32)]
-                registers[1:4] = [token, 2, SEND]
+                registers[1:4] = [token, 1, SEND]
                 registers[9] = 17
                 for i, value in enumerate(registers):
                     vm.memory[frame + 4 * i] = value

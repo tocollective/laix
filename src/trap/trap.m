@@ -1,3 +1,5 @@
+import { transferReserve, transferCommit, transferCancel, transferCollect } from "../ipc/transfer.m"
+import { SYS_TRANSFER_RESERVE, SYS_TRANSFER_COMMIT, SYS_TRANSFER_CANCEL, SYS_TRANSFER_COLLECT } from "../arch/wrm081632/defs.m"
 import { servicePublish, serviceResolve, serviceAllow, serviceWithdraw, serviceConfigure } from "../task/recovery.m"
 import { SYS_SERVICE_PUBLISH, SYS_SERVICE_RESOLVE, SYS_SERVICE_ALLOW,
     SYS_SERVICE_WITHDRAW, SYS_SERVICE_CONFIGURE } from "../arch/wrm081632/defs.m"
@@ -88,6 +90,20 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
             frame.regs[REG_RESULT] = ipcClose(frame.regs[1]) as UWord
             taskSaveContext(frame)
             return frame
+        case SYS_TRANSFER_RESERVE:
+            frame.regs[REG_RESULT] = transferReserve(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4]) as UWord
+            taskSaveContext(frame)
+            return frame
+        case SYS_TRANSFER_COMMIT:
+            frame.regs[REG_RESULT] = transferCommit(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4]) as UWord
+            taskSaveContext(frame)
+            return frame
+        case SYS_TRANSFER_CANCEL:
+            frame.regs[REG_RESULT] = transferCancel(frame.regs[1]) as UWord
+            taskSaveContext(frame)
+            return frame
+        case SYS_TRANSFER_COLLECT:
+            return transferCollect(frame, frame.regs[1])
         case SYS_HANDLE_COPY:
             frame.regs[REG_RESULT] = ipcCopy(frame.regs[1], frame.regs[2], frame.regs[3]) as UWord
             taskSaveContext(frame)

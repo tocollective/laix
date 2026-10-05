@@ -111,7 +111,9 @@ they are not claimed as additional CPU adversarial scenarios.
 
 The first runtime supports only catalog image 1 and UART TX/keyboard INPUT
 resource factories. Disk DMA and screen/font regrant remain A5/A7 work.
-Receiver-controlled ordinary capability delivery remains A6 work. There is no
+The subsequent [A6 completion record](CAPABILITY_TRANSFER_ACCEPTANCE.md) supersedes
+the original unrestricted ordinary copy path with receiver-controlled delivery.
+The provenance and CPU results above describe this earlier A3 milestone. There is no
 endpoint receiver rebinding, general task-control/factory transfer, arbitrary
 IRQ/MMIO issuance or delegation-tree revocation. Trusted boot must leave its
 recovery reserves available; retired generations permanently reduce capacity.

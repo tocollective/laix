@@ -33,6 +33,7 @@ import { RIGHT_SEND, IPC_MESSAGE_MAX, START_BLOCK_VA, START_BLOCK_BYTES,
 
 let SCHEDULER_QUANTUM_HZ: UWord = 100
 let MAX_TASKS: UWord = 8
+let TASK_RECOVERY_RESERVE: UWord = 2
 let IDLE_STACK_OWNER: UWord = MAX_TASKS + 1
 let TASK_EMPTY: UWord = 0 // unused slot, not a schedulable state
 let TASK_READY: UWord = 1
@@ -209,6 +210,8 @@ let taskConstructImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord)
     if codeBytes > PAGE_SIZE || entryOffset >= codeBytes || entryOffset % WORD_BYTES != 0 return 0
     let mut task: *mut Task = null
     for i: UWord in 0..MAX_TASKS {
+        // Bootstrap and the sealed recovery policy may use the final two slots.
+        if currentTask != null && !currentTask.handles.factoryRecovery && i >= MAX_TASKS - TASK_RECOVERY_RESERVE continue
         if tasks[i].state == TASK_EMPTY && tasks[i].id >> 8 < TASK_GENERATION_MAX {
             task = &mut tasks[i]
             break

@@ -20,6 +20,11 @@ class ObjectsM(LifecycleM):
             return error(24)
         return super().call(name, *args)
 
+    def copy_fixture(self, token, target, rights):
+        owner = self.current()
+        return self.call('handleCopy', self.field_address('handles', owner), token,
+                         self.field_address('handles', target), owner, target, rights)
+
     def factory(self, mode=0, receiver=0):
         self.invoke(C['SYS_ENDPOINT_CREATE'], mode, receiver)
         return self.result(self.current())[0]
@@ -52,7 +57,7 @@ class RuntimeObjectTests(unittest.TestCase):
         token = vm.factory()
         self.assertTrue(0 < token < 0x80000000)
         obj = vm.root(token)
-        peer = vm.call('ipcCopy', token, 2, 3)
+        peer = vm.copy_fixture(token, 2, 3)
         vm.seed(vm.pages(1)[1], b'raw')
         vm.invoke(C['SYS_IPC_SEND'], token, USER_DATA, 3)
         vm.run(2)
@@ -107,7 +112,7 @@ class RuntimeObjectTests(unittest.TestCase):
         vm = fixture()
         token = vm.factory(1)
         obj = vm.root(token)
-        peers = {i: vm.call('ipcCopy', token, i, 1) for i in (2, 3)}
+        peers = {i: vm.copy_fixture(token, i, 1) for i in (2, 3)}
         for i in (2, 3):
             vm.run(i)
             vm.request(peers[i])
