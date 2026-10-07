@@ -37,6 +37,21 @@ restart attempts/backoff are bounded and BUSY DMA remains quarantined. See the
 [recovery contract](docs/SERVICE_RECOVERY.md) and
 [source/CPU acceptance](tests/SERVICE_RECOVERY_ACCEPTANCE.md).
 
+The `LAIX_CONSOLE=fs` profile runs Input, Disk, a writable flat filesystem (WFS1)
+and an acceptance client. The kernel broker writes and flushes only when the
+storage root, the manager's extent and the drive all allow it; the filesystem
+commits atomically through two checksummed metadata copies. See
+[the filesystem contract](docs/FILESYSTEM.md) and the
+[write/flush contract](docs/DEVICE_CONTRACT.md#multi-sector-and-writeflush-contract).
+
+The `LAIX_CONSOLE=shell` profile adds Exec, which loads a program from the
+filesystem by name, and a command shell over the UART console and the keyboard.
+See [the shell contract](docs/SHELL.md).
+
+The `LAIX_CONSOLE=net` profile runs a kernel-brokered Ethernet card, a driver
+service and a small IPv4 stack (ARP, ICMP echo, UDP) with ping and DNS lookup.
+See [the network contract](docs/NETWORK.md).
+
 Scoped eager memory is implemented with private region tokens, explicit
 address-space rights, per-task frame budgets and a kernel progress reserve.
 The minimal [user heap](user/heap.m) grows and releases complete page-backed

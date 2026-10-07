@@ -13,10 +13,12 @@ import { PAGE_NONE, PAGE_USER, PAGE_USER_STACK, allocPage, allocTaskPages, freeP
 import { USER_VA_START, USER_VA_END, mmuCreateAddressSpace, mmuDestroyAddressSpace,
     mmuSwitchAddressSpace, mmuActivateKernel, mapPage, mmuUserLeaf,
     mmuAllocKernelStack, mmuFreeKernelStack } from "../mm/mmu.m"
-import { mmuSealResources, mmuScreenResourcesValid } from "../mm/mmu.m"
+import { mmuSealResources, mmuResourcesValid } from "../mm/mmu.m"
 import { irqReleaseTask, irqSeal, irqTokenValid } from "../drivers/irq.m"
+import { DEVICE_ROLE_SCREEN, DEVICE_ROLE_INPUT, deviceRoleIrq, deviceRoleBlobBytes } from "../drivers/device_table.m"
 import { deviceCancelOwner, deviceReap, screenReleaseOwner, serviceDevicesQuiescent } from "../drivers/service_devices.m"
 import { inputReleaseOwner } from "../drivers/input_device.m"
+import { netReleaseOwner } from "../drivers/net_device.m"
 import { ServiceStart, serviceStartValid } from "service_start.m"
 import { panic } from "../kernel/panic.m"
 import { debugPrint } from "../drivers/debug_uart.m"
@@ -28,12 +30,19 @@ import { ipcCancelTask } from "../ipc/ipc.m"
 import { Endpoint } from "../ipc/objects.m"
 import { RIGHT_SEND, IPC_MESSAGE_MAX, START_BLOCK_VA, START_BLOCK_BYTES,
     START_ROLE_SERVER, START_ROLE_STORAGE, DEVICE_UART_TX,
-    SERVICE_START_BYTES, VIDEO_IRQ, KEYBOARD_IRQ, START_ROLE_INPUT, START_ROLE_DISK,
-    START_ROLE_FILE, START_ROLE_CLIENT, START_PROTOCOL_FILE, DEVICE_INPUT, DEVICE_DISK } from "../arch/wrm081632/defs.m"
+    SERVICE_START_BYTES, START_ROLE_INPUT, START_ROLE_DISK,
+    START_ROLE_FILE, START_ROLE_CLIENT, START_PROTOCOL_FILE, DEVICE_INPUT, DEVICE_DISK,
+    LIFETIME_REPLY_RESERVE } from "../arch/wrm081632/defs.m"
 
 let SCHEDULER_QUANTUM_HZ: UWord = 100
 let MAX_TASKS: UWord = 8
 let TASK_RECOVERY_RESERVE: UWord = 2
+// Dead address spaces torn down per IRQ-excluded reaping section (G5). One root
+// is at most 1024 directory entries plus eight 1024-leaf tables.
+let TASK_REAP_STAGE_TASKS: UWord = 1
+// taskIdlePoll result meaning "a reap stage ran and more remain": the idle
+// loop opens one IRQ window and polls again instead of sleeping. Never a frame.
+let TASK_IDLE_STAGE: UWord = 1
 let IDLE_STACK_OWNER: UWord = MAX_TASKS + 1
 let TASK_EMPTY: UWord = 0 // unused slot, not a schedulable state
 let TASK_READY: UWord = 1
@@ -200,6 +209,12 @@ let taskRollback(task: *mut Task): Void {
     if !memoryBudgetClose(task.id) panic("task budget remains charged", null)
 }
 
+// Remaining admissions of a counter that never wraps. Zero means retired.
+let lifetimeLeft(generation: UWord, limit: UWord): UWord {
+    if generation >= limit return 0
+    return limit - generation
+}
+
 // Shared checked mechanism: trusted pointers only, no implicit authority.
 // Boot and runtime policy select approved ranges before reaching this entry.
 let taskConstructImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord): UWord {
@@ -209,16 +224,23 @@ let taskConstructImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord)
     let codeBytes: UWord = sourceEnd - sourceStart
     if codeBytes > PAGE_SIZE || entryOffset >= codeBytes || entryOffset % WORD_BYTES != 0 return 0
     let mut task: *mut Task = null
-    for i: UWord in 0..MAX_TASKS {
-        // Bootstrap and the sealed recovery policy may use the final two slots.
-        if currentTask != null && !currentTask.handles.factoryRecovery && i >= MAX_TASKS - TASK_RECOVERY_RESERVE continue
-        // Retired reply namespaces require replacement in a different slot.
-        // Construction and collection must never reset the reply counter.
-        if tasks[i].state == TASK_EMPTY && tasks[i].id >> 8 < TASK_GENERATION_MAX &&
-            tasks[i].ipcCallGeneration < TASK_GENERATION_MAX {
-            task = &mut tasks[i]
-            break
+    // The first pass leaves namespaces within the lifetime reserve of their
+    // limit for last, so replacing a client near the limit lands in a fresh
+    // namespace instead of the same one. The second pass is the old rule.
+    for pass: UWord in 0..2 {
+        for i: UWord in 0..MAX_TASKS {
+            // Bootstrap and the sealed recovery policy may use the final two slots.
+            if currentTask != null && !currentTask.handles.factoryRecovery && i >= MAX_TASKS - TASK_RECOVERY_RESERVE continue
+            // Retired reply namespaces require replacement in a different slot.
+            // Construction and collection must never reset the reply counter.
+            if tasks[i].state == TASK_EMPTY && tasks[i].id >> 8 < TASK_GENERATION_MAX &&
+                tasks[i].ipcCallGeneration < TASK_GENERATION_MAX {
+                if pass == 0 && lifetimeLeft(tasks[i].ipcCallGeneration, TASK_GENERATION_MAX) <= LIFETIME_REPLY_RESERVE continue
+                task = &mut tasks[i]
+                break
+            }
         }
+        if task != null break
     }
     if task == null return 0
     task.slot = ((task as UWord) - (&tasks[0] as UWord)) / sizeof(Task) + 1
@@ -355,11 +377,12 @@ let taskInstallServiceStart(id: UWord, block: *ServiceStart, diskIrq: UWord): Bo
         let bitmap: *mut Handle = handleEntry(&mut task.handles, block.bitmapEndpoint)
         let storage: *mut Endpoint = handleLookup(&mut task.handles, block.bitmapEndpoint, RIGHT_SEND)
         if bitmap == null || bitmap.rights != RIGHT_SEND || storage == null || storage.mode != ENDPOINT_SERVICE ||
-            !irqTokenValid(id, block.irq, VIDEO_IRQ) ||
-            !mmuScreenResourcesValid(task.directory, id, block.fontBytes) return false
+            !irqTokenValid(id, block.irq, deviceRoleIrq(DEVICE_ROLE_SCREEN)) ||
+            block.fontBytes != deviceRoleBlobBytes(DEVICE_ROLE_SCREEN) ||
+            !mmuResourcesValid(task.directory, id, DEVICE_ROLE_SCREEN) return false
     } else if ((block.role == START_ROLE_STORAGE || block.role == START_ROLE_DISK) &&
         !irqTokenValid(id, block.irq, diskIrq)) return false
-    else if block.role == START_ROLE_INPUT && !irqTokenValid(id, block.irq, KEYBOARD_IRQ) return false
+    else if block.role == START_ROLE_INPUT && !irqTokenValid(id, block.irq, deviceRoleIrq(DEVICE_ROLE_INPUT)) return false
     if block.role == START_ROLE_FILE || (block.role == START_ROLE_CLIENT && block.protocol == START_PROTOCOL_FILE) {
         let upstream: *mut Handle = handleEntry(&mut task.handles, block.bitmapEndpoint)
         let service: *mut Endpoint = handleLookup(&mut task.handles, block.bitmapEndpoint, RIGHT_SEND)
@@ -429,6 +452,7 @@ let taskDiscardChecked(id: UWord): Bool {
     deviceCancelOwner(id)
     screenReleaseOwner(id)
     inputReleaseOwner(id)
+    netReleaseOwner(id)
     taskRollback(task)
     task.state = TASK_EMPTY
     return true
@@ -563,7 +587,9 @@ let taskStart(clock: UWord): Void {
 }
 
 // Called on the idle stack with IE=EXL=UM=0. Single-CPU wakeup handlers
-// cannot publish Ready between this check and the assembly WFI.
+// cannot publish Ready between this check and the assembly WFI. Returns a
+// frame to dispatch, null to sleep, or TASK_IDLE_STAGE to poll again after an
+// IRQ window (staged reaping has more roots to tear down).
 let taskIdlePoll(): *TrapFrame {
     if !schedulerStarted || currentTask != &mut idleTask || idleTask.state != TASK_RUNNING ||
         mfcr(CR_STATUS) & (STATUS_IE | STATUS_EXL | STATUS_UM) != 0 ||
@@ -578,7 +604,7 @@ let taskIdlePoll(): *TrapFrame {
     }
     // Timer/device IRQs may return to this same idle frame. Reap on the safe
     // idle stack even when no context switch follows a late DMA completion.
-    taskReap()
+    if taskReap() return TASK_IDLE_STAGE as *TrapFrame
     return null
 }
 
@@ -695,6 +721,7 @@ let taskStop(task: *mut Task, code: Word, faulted: Bool, terminated: Bool): Void
     deviceCancelOwner(task.id)
     screenReleaseOwner(task.id)
     inputReleaseOwner(task.id)
+    netReleaseOwner(task.id)
     task.deviceRights = 0
     taskRecordCompletion(task, terminated)
     taskReleaseSupervisor(task.id)
@@ -740,10 +767,18 @@ let taskAbortBlocked(id: UWord, code: Word, faulted: Bool): Bool {
 // this from taskFinish: its M frames still occupy the retiring task's stack.
 // Runtime slots become Empty only after physical reclamation. Boot fixture
 // contexts remain intact; bounded diagnostic history is independent of reuse.
-let taskReap(): Void {
+//
+// Teardown is staged (G5): one call commits at most TASK_REAP_STAGE_TASKS roots,
+// so the section is bounded by one address space, not by MAX_TASKS of them. A
+// dead task keeps its root, frames, stack and charges until its own stage
+// commits `reaped`; nothing is partly released between stages. Returns true when
+// another reapable task waits, and the caller resumes at its next IRQ window
+// (idle loop) or trap return. A task blocked on a device (not quiescent) neither
+// spends the stage nor keeps the idle loop awake.
+let taskReap(): Bool {
     if !schedulerStarted || !taskIrqsDisabled() {
         panic("invalid task cleanup context", null)
-        return
+        return false
     }
     let bottomSlot: *UWord = KERNEL_STACK_BOTTOM as *UWord
     let topSlot: *UWord = KERNEL_STACK_TOP as *UWord
@@ -751,26 +786,30 @@ let taskReap(): Void {
     if sp <= *bottomSlot || sp > *topSlot ||
         currentTask == null || mfcr(CR_PTBR) != currentTask.ptbr {
         panic("invalid task cleanup stack", null)
-        return
+        return false
     }
     deviceReap()
     memoryReapOrphans()
+    let mut staged: UWord = 0
     for i: UWord in 0..MAX_TASKS {
         let task: *mut Task = &mut tasks[i]
         if task.state != TASK_DEAD || task.reaped continue
         if task == currentTask || task.queued ||
             (sp >= task.kernelStackBottom && sp <= task.kernelStackTop) {
             panic("task resources still in use", null)
-            return
+            return false
         }
         if !serviceDevicesQuiescent(task.id) continue
+        if staged == TASK_REAP_STAGE_TASKS return true
         taskRollback(task)
         task.reaped = true
         taskRecordReaped(task.id)
         debugPrint("LA/IX: task $u stopped, state=$u code=$i cause=$u epc=$h\n",
             task.id, task.state, task.exitCode, task.context.cause, task.context.epc)
         if task.reusable task.state = TASK_EMPTY
+        staged += 1
     }
+    return false
 }
 
 export { Task, tasks, idleTask, currentTask, MAX_TASKS, TASK_EMPTY, TASK_READY, TASK_RUNNING,
@@ -779,6 +818,6 @@ export { Task, tasks, idleTask, currentTask, MAX_TASKS, TASK_EMPTY, TASK_READY, 
     USER_CODE, USER_DATA, USER_STACK_BOTTOM, USER_STACK_TOP, USER_STACK_GUARD,
     taskPrepare, taskCreate, taskGet, taskStart, taskBootstrapEndpoints, taskIdlePoll, taskTransitionAllowed,
     taskCreateImage, taskInstallStart, taskPublish, taskDiscardCreated, taskInitAvailable, taskBootConstructionOpen,
-    taskInstallServiceStart, taskIrqReturn, taskSlot, TASK_SLOT_MASK, TASK_GENERATION_MAX,
+    taskInstallServiceStart, taskIrqReturn, taskSlot, TASK_SLOT_MASK, TASK_GENERATION_MAX, TASK_RECOVERY_RESERVE, lifetimeLeft,
     taskConstructImage, taskPublishChecked, taskDiscardChecked, taskTerminateChecked,
     taskSaveContext, taskOwnsTrap, taskYield, taskTick, taskBlock, taskWake, taskFinish, taskAbortBlocked, taskReap }

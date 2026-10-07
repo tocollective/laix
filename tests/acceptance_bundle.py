@@ -11,7 +11,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILES = ('uart', 'screen', 'services', 'uart-stress', 'screen-stress',
-            'memory', 'sharing', 'objects', 'supervisor', 'recovery', 'recovery-production', 'latency', 'hid', 'media')
+            'memory', 'sharing', 'objects', 'supervisor', 'soak', 'loader', 'fs', 'shell', 'net', 'recovery', 'recovery-production', 'latency', 'hid', 'media')
 SCHEMA = 1
 
 
@@ -94,6 +94,7 @@ def pack(args):
     directories = {
         'screen': ('services',), 'services': ('services',), 'media': ('services',),
         'hid': ('services',), 'uart-stress': ('services',), 'screen-stress': ('services',),
+        'loader': ('services',), 'fs': ('services',), 'shell': ('services',), 'net': ('services',),
         'memory': ('memory-user',), 'sharing': ('sharing-user',), 'objects': ('objects-user',),
         'recovery': ('recovery-user',), 'recovery-production': ('recovery-user',),
     }.get(args.profile, ())
@@ -104,6 +105,10 @@ def pack(args):
         'hid': ('input', 'disk', 'files', 'simple-application'),
         'uart-stress': ('screen', 'storage', 'application', 'stress-client'),
         'screen-stress': ('screen', 'storage', 'application', 'stress-client'),
+        'loader': ('input', 'disk', 'files', 'loader', 'hello'),
+        'fs': ('input', 'disk', 'fs', 'fsclient'),
+        'shell': ('disk', 'fs', 'exec', 'shell', 'bin-hello', 'bin-count', 'bin-spin'),
+        'net': ('netdrv', 'ip', 'netclient'),
     }
     for directory in directories:
         for path in sorted((ROOT / 'laix/build' / directory).glob('*')):
@@ -142,14 +147,26 @@ def commands(profile, emulator, rom, logs):
         'sharing': [('probe_memory_sharing_cpu.py', [])],
         'objects': [('probe_runtime_objects_cpu.py', [])],
         'supervisor': [('probe_runtime_tasks_cpu.py', [])],
+        'soak': [('probe_soak_cpu.py', [])],
+        'loader': [('probe_loader_cpu.py', [])],
+        'fs': [('probe_fs_cpu.py', [])],
+        'shell': [('probe_shell_cpu.py', [])],
+        'net': [('probe_net_cpu.py', [])],
         'recovery': [('probe_service_recovery_cpu.py', [])],
         'recovery-production': [('probe_service_recovery_cpu.py', ['--production', '--window', '512', '96'])],
-        'latency': [('probe_limits_latency_cpu.py', ['--rounds', '4'])],
+        # The same image at the largest installed RAM (4 x 32M); a third element
+        # names a suite's logs when a probe runs more than once.
+        'latency': [('probe_limits_latency_cpu.py', ['--rounds', '4']),
+                    ('probe_limits_latency_cpu.py', ['--rounds', '4', '--ram', '32M,32M,32M,32M'], 'ram128m')],
         'hid': [('probe_hid_cpu.py', [])],
         'media': [('probe_device_events_cpu.py', ['--case', 'media-removal', '--case', 'media-replacement'])],
     }
-    return [(name, [sys.executable, '-B', str(Path(__file__).parent / name), *common,
-                    '--log-dir', str(logs / name.removesuffix('.py')), *extra]) for name, extra in suites[profile]]
+    rows = []
+    for name, extra, *tag in suites[profile]:
+        label = name if not tag else name.removesuffix('.py') + '-' + tag[0] + '.py'
+        rows.append((label, [sys.executable, '-B', str(Path(__file__).parent / name), *common,
+                             '--log-dir', str(logs / label.removesuffix('.py')), *extra]))
+    return rows
 
 
 def run(args):

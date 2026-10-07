@@ -141,7 +141,9 @@ The user TCB becomes Dead and retains its exit code and fault flag.
 The scheduler selects another Ready task, or idle when the queue is empty,
 activates its root through FENCE/TLBI.ALL/PTBR and updates trusted stack slots.
 The restore epilogue first moves SP to the selected kernel stack, then calls
-`taskReap()` to release the inactive user frames, root and kernel stack.
+`taskReap()` to release the inactive user frames, root and kernel stack. Since
+G5 one call releases at most one dead task; the rest are staged on later trap
+returns and idle polls ([LIMITS_AND_LATENCY](LIMITS_AND_LATENCY.md#staged-teardown-g5)).
 The terminal TCB remains for diagnostics and cannot run again.
 Idle enters supervisor mode with IE/SS=0 and checks Ready before masked WFI;
 after WFI wakes on the timer IRQ line, it enables IE to service the event.

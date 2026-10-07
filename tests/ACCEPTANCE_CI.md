@@ -16,9 +16,10 @@ published even when the job fails. A changing source snapshot also fails.
 rejects corrupt, missing, foreign-profile and unsafe bundle inputs.
 
 [LAIX artifact acceptance](../../.github/workflows/laix-acceptance.yml) has
-separate production and no-build CPU jobs for 14 profiles: UART, Screen,
+separate production and no-build CPU jobs for 16 profiles: UART, Screen,
 Services, their UART/Screen stress fixtures, Memory, Sharing, Objects,
-Supervisor, Recovery fixture/production, Latency, HID and Media. Production
+Supervisor, Soak, Loader, Recovery fixture/production, Latency, HID and Media. Soak
+postdates the G6 campaign below (14 profiles), which did not run it. Production
 builds only LA/IX and its applications; it downloads an existing approved Linux
 `wrm081632` and `firmware.rom`, requires their explicit SHA-256 identities,
 and never invokes CMake or a WRM/firmware compiler.
@@ -52,20 +53,26 @@ From a checkout matching the recorded source manifest, no build is needed:
 
 ```sh
 python3 -B laix/tests/acceptance_bundle.py verify \
-  laix/build/acceptance/a9/complete/inputs/uart
+  laix/build/acceptance/g6/complete/inputs/uart
 python3 -B laix/tests/acceptance_bundle.py run \
-  --bundle laix/build/acceptance/a9/complete/inputs/uart \
-  --profile uart --log-dir laix/build/acceptance/a9/replay/uart
+  --bundle laix/build/acceptance/g6/complete/inputs/uart \
+  --profile uart --log-dir laix/build/acceptance/g6/replay/uart
 python3 -B laix/tests/run_source_suite.py \
-  --log-dir laix/build/acceptance/a9/replay/source
+  --log-dir laix/build/acceptance/g6/replay/source
 python3 -B laix/tools/acceptance_provenance.py --verify
 ```
 
-At the final workspace check, a concurrent edit added `putc` to
-`mc/runtime/rt.m` after the accepted run. That edit was retained and is **pending
-source/CPU validation in a new campaign**. The original checkout's `--verify`
-therefore fails deliberately, rather than certifying the later runtime source.
-The accepted sources are preserved separately, with independent git metadata
+After the A9 run, `putc` was added to `mc/runtime/rt.m`. The G6 campaign
+(2026-10-07) validated that later source with a new source suite and new LA/IX
+inputs for all 14 profiles. The checked-in provenance record now describes the
+G6 campaign (bundles and logs under `laix/build/acceptance/g6/complete/`). The
+record binds git HEAD revisions as well as file contents, so `--verify` passes
+only for the working tree and revisions it was recorded on; after new commits,
+replay needs a pinned snapshot like the A9 one below. Its `date` field reads
+`2026-10-05` because `acceptance_provenance.py` writes a constant; the campaign
+date is 2026-10-07. The record was not edited by hand.
+
+The A9 sources are preserved separately, with independent git metadata
 pinned to the recorded revisions and file hashes recorded in provenance:
 
 ```sh
@@ -99,7 +106,10 @@ with the recorded sources unchanged. Do not use it to relabel older images.
 
 [ACCEPTANCE_CI_PROVENANCE.json](ACCEPTANCE_CI_PROVENANCE.json) records the accepted
 source snapshot, image/map/ELF/font/probe/tool hashes and profile results.
-Raw bundles and logs are under `build/acceptance/a9/complete/`, outside Git.
+Raw bundles and logs are under `build/acceptance/g6/complete/` (G6, current) and
+`build/acceptance/a9/complete/` (A9, historical), outside Git. The timing and
+profile figures below are from A9; G6 reproduced the same counts (399 tests in
+526 s source time, 14 profiles / 20 suites).
 The checked-in record can verify those preserved files; it does not recreate
 missing executable artifacts. WRM and ROM were reused, not built for this work.
 The complete checked-source runner passed **399 tests** in **559.902 seconds**
@@ -124,6 +134,16 @@ All **14 CPU profiles / 20 probe suites passed** on these preserved bundles:
 | Latency | 1 | Four seven-client FIFO rounds, maximum-copy/map/reap sections and generation boundary |
 | HID | 1 | Five clients, 40 requests, 32 retained/32 dropped events, one overflow indication and 809 hardware timer IRQs |
 | Media | 1 | Actual in-flight floppy removal and same-capacity replacement, client failure and peer survival |
+
+The Latency profile also gained a second suite after this campaign (the same probe
+at 4 × 32M = 128 MiB, `ram128m`), so it now has two suites. The Loader profile (`loader`, the 16th) was also added after it: Input, Disk and Files read a child's ELF from the storage volume and `SYS_TASK_LOAD` runs it, with tampered volumes refused (see [Files-backed loading](../docs/FILES_LOADER.md)). The Soak profile was added after this campaign and is not part of the table or
+the checked-in provenance. It boots `LAIX_CONSOLE=soak` and runs 4096 child
+lifetimes (512 faults) under one user supervisor, which checks every round's
+`SYS_LIFETIME` report and completion event; `probe_soak_cpu.py` then checks the
+final kernel state (slot 2 at generation 4095, other slots unused, no live or
+leaked resources, last 32 history events). A local run (about 80 s) and a local
+`build_acceptance_bundle.sh` / `acceptance_bundle.py run` replay passed on the
+changed tree; no remote run and no new provenance record exist yet.
 
 The [checked-in provenance](ACCEPTANCE_CI_PROVENANCE.json) contains each suite's
 command, result, input hashes and the hashes/paths of all preserved reports and
@@ -185,7 +205,7 @@ and reports overflow once. Forty requests and eight seconds of timer progress
 complete with reaped clients. Physical SDL keyboard routing is a separate UI path.
 
 Explicit runtime Disk/Files replacement is implemented and accepted by Recovery's
-five-generation campaign. Fixed UART/Screen automatic restart, physical stuck
+five-generation campaign. Fixed UART/Screen boot restart (the supervised Screen of G3 is not a CI profile), physical stuck
 engine/reset acceptance, persistent storage, network services and universal
 latency guarantees remain outside these contracts. Historical test counts and
 hashes in older reports are unchanged and do not certify these new bundles.

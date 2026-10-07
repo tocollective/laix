@@ -16,13 +16,20 @@ taskKernelResume:
 .idle:
     mtcr status, r0
     call taskIdlePoll
-    bnez r1, .dispatch
+    bnez r1, .selected
     fence
     ; WRM wakes on the IRQ line even with IE=0. The level stays pending:
     ; no handler can consume it between the empty check and this WFI.
     wfi
     li r1, STATUS_IE
     mtcr status, r1                  ; service the pending IRQ, then recheck
+    j .idle
+.selected:
+    ; r1 is a frame, or 1 after a staged reap that left more roots to tear down.
+    addi r2, r1, -1
+    bnez r2, .dispatch
+    li r1, STATUS_IE
+    mtcr status, r1                  ; IRQ window between stages, no sleep
     j .idle
 .dispatch:
     j trapRestoreFrame

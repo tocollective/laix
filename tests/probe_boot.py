@@ -59,7 +59,9 @@ def ready_monitor(data, emulator, rom, timeout, full_image=False, extra_args=())
                     except ConnectionRefusedError:
                         time.sleep(0.02)
                 connection.settimeout(timeout)
-                yield Monitor(connection), process, stdout, stderr
+                monitor = Monitor(connection)
+                monitor.disk = disk  # the probe's private image; the emulator writes it in place
+                yield monitor, process, stdout, stderr
             finally:
                 if connection is not None:
                     connection.close()

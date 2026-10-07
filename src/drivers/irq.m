@@ -1,11 +1,12 @@
 // Kernel-owned level IRQ subscriptions. One CPU; callers run under EXL or
 // with IE clear. Devices remain masked until their owner explicitly rearms.
-import { PIC_LINE_COUNT, PIC_PENDING, PIC_ENABLE, TIMER_IRQ, VIDEO_IRQ, KEYBOARD_IRQ,
+import { PIC_LINE_COUNT, PIC_PENDING, PIC_ENABLE, TIMER_IRQ,
     ERRNO_EPERM, ERRNO_EINVAL, ERRNO_EBUSY, ERRNO_ETIMEDOUT, REG_RESULT } from "../arch/wrm081632/defs.m"
 import { Task, taskGet, currentTask, TASK_CREATED, TASK_BLOCKED, WAIT_IRQ,
     taskBlock, taskWake, taskSaveContext } from "../task/task.m"
 import { TrapFrame } from "../trap/trap_frame.m"
 import { objectAssertAtomic } from "../ipc/objects.m"
+import { deviceIrqAllowed } from "device_table.m"
 import { panic } from "../kernel/panic.m"
 import { TimerCount, timerDeadline, timerReadCount, timerDeadlineReached } from "timer.m"
 
@@ -27,7 +28,7 @@ let irqMask(line: UWord): Void {
     fence()
 }
 
-// Boot may grant keyboard, video or the selected disk line, never the timer.
+// Boot may grant a line some device-table row names, never the timer.
 let irqGrant(owner: UWord, line: UWord): UWord {
     objectAssertAtomic()
     if irqSealed return 0
@@ -39,7 +40,7 @@ let irqIssue(owner: UWord, line: UWord): UWord {
     objectAssertAtomic()
     let task: *mut Task = taskGet(owner)
     if task == null || task.state != TASK_CREATED ||
-        (line != KEYBOARD_IRQ && line != VIDEO_IRQ && line != 3 && line != 4 && line != 6) return 0
+        !deviceIrqAllowed(line) return 0
     let grant: *mut IrqGrant = &mut irqGrants[line]
     if grant.owner != 0 || grant.generation == 0x7FFFFF return 0
     irqMask(line)
@@ -50,6 +51,14 @@ let irqIssue(owner: UWord, line: UWord): UWord {
     grant.waiting = false
     grant.timed = false
     return grant.generation << 8 | (line + 1)
+}
+
+let irqRetiredCount(): UWord {
+    let mut count: UWord = 0
+    for line: UWord in 0..PIC_LINE_COUNT {
+        if irqGrants[line].generation == 0x7FFFFF count += 1
+    }
+    return count
 }
 
 let irqSeal(): Void { irqSealed = true }
@@ -188,5 +197,5 @@ let irqReleaseTask(owner: UWord): Void {
     }
 }
 
-export { irqIssue, irqPollComplete, irqGrant, irqSeal, irqTokenValid, irqNotify, irqWait, irqComplete,
+export { irqRetiredCount, irqIssue, irqPollComplete, irqGrant, irqSeal, irqTokenValid, irqNotify, irqWait, irqComplete,
     irqTimerTick, irqReleaseTask }

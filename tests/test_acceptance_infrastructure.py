@@ -109,8 +109,9 @@ class AcceptanceInfrastructureTests(unittest.TestCase):
         for profile in bundle.PROFILES:
             commands = bundle.commands(profile, Path('/existing/emulator'), Path('/existing/rom'), Path('/logs'))
             self.assertTrue(commands, profile)
+            self.assertEqual(len({name for name, _ in commands}), len(commands), profile)
             for name, command in commands:
-                self.assertTrue((LAIX / 'tests' / name).is_file(), name)
+                self.assertTrue(Path(command[2]).is_file(), command[2])
                 self.assertNotIn('build.sh', ' '.join(command))
                 self.assertIn('--log-dir', command)
 

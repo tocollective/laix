@@ -85,14 +85,14 @@ let screenHandle(request: *UByte, size: UWord, response: *mut UWord): Void {
     }
 }
 
-let screenMain(start: *ServiceStart, bytes: UWord): Void {
-    if ((start as UWord) != START_BLOCK_VA || bytes != SERVICE_START_BYTES ||
-        !serviceStartValid(start) || start.role != START_ROLE_SERVER) exit(1)
-    if !loadFont(start.fontIndex as *UByte, start.fontBytes) || videoInit(start.irq) != 0 exit(1)
-    cacheInit(start.bitmapEndpoint)
+// Shared by the fixed bootstrap service and the supervised one; only the startup
+// record that supplies these five values differs.
+let screenServe(endpoint: UWord, bitmap: UWord, irq: UWord, fontIndex: UWord, fontBytes: UWord): Void {
+    if !loadFont(fontIndex as *UByte, fontBytes) || videoInit(irq) != 0 exit(1)
+    cacheInit(bitmap)
     let mut accepted: AcceptResult
     while true {
-        let size: Word = accept(start.endpoint, &mut screenRequest[0], 32, &mut accepted)
+        let size: Word = accept(endpoint, &mut screenRequest[0], 32, &mut accepted)
         if size < 0 exit(1)
         screenHandle(&screenRequest[0], size as UWord, &mut screenResponse[0])
         let sent: Word = reply(accepted.replyToken, &screenResponse[0] as *UByte, 12)
@@ -100,4 +100,10 @@ let screenMain(start: *ServiceStart, bytes: UWord): Void {
     }
 }
 
-export { screenMain, screenHandle }
+let screenMain(start: *ServiceStart, bytes: UWord): Void {
+    if ((start as UWord) != START_BLOCK_VA || bytes != SERVICE_START_BYTES ||
+        !serviceStartValid(start) || start.role != START_ROLE_SERVER) exit(1)
+    screenServe(start.endpoint, start.bitmapEndpoint, start.irq, start.fontIndex, start.fontBytes)
+}
+
+export { screenMain, screenServe, screenHandle }

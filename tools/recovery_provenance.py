@@ -28,6 +28,13 @@ def artifacts():
               for name in ('echo','disk','files','policy') for suffix in ('elf','map')]
     return {str(path.relative_to(ROOT)): digest(path) for path in paths}
 
+def fixtures():
+    """True for the service-fault fixtures, False for production, "lifetime" for
+    the G4 scenario. Probes test with `is True` / `is False`, so the string
+    matches neither of the older profiles."""
+    mode = os.environ.get("LAIX_RECOVERY_FIXTURES", "0")
+    return "lifetime" if mode == "lifetime" else mode == "1"
+
 if __name__ == '__main__':
     (LAIX/'build/recovery.provenance.json').write_text(json.dumps(
-        dict(fixtures=os.environ.get("LAIX_RECOVERY_FIXTURES", "0") == "1", sources=source_manifest(), artifacts=artifacts()), indent=2, sort_keys=True)+'\n')
+        dict(fixtures=fixtures(), sources=source_manifest(), artifacts=artifacts()), indent=2, sort_keys=True)+'\n')

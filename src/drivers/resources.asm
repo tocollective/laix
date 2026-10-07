@@ -1,4 +1,4 @@
     .rodata
     .align 4
-approvedStorageBytes:
+approvedStorageRoot:
     .incbin "../../fonts/storage-extent.bin"

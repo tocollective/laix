@@ -46,6 +46,7 @@ The WRMB sector count still describes only the kernel payload; the first
 bitmap sector is at `BootInfo.imageSize / 512`. Glyph i belongs to bitmap
 sector i / 16 at byte offset (i % 16) × 32. The user Screen service caches glyphs in its exclusive VRAM grant. Font index
 validation and glyph-to-byte translation run in user space. The generic kernel
-broker consumes `storage-extent.bin`, a four-byte little-endian bitmap byte
-length issued by the build resource producer, without parsing LAF. User resource
+broker consumes `storage-extent.bin`, a 16-byte storage root (`WSR1`, version,
+byte length, flags; see `tools/storage_root.py`) issued by the build resource
+producer, without parsing LAF. User resource
 managers can select approved subranges through the generic device contract.

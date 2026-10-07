@@ -12,7 +12,7 @@ does not certify every future workload or a different executable artifact.
 | 3 | [User task and syscall](03_USER_TASK_SYSCALLS.md) | User entry, syscall/exit and local faults accepted; runtime construction/configuration/publication/collection adds scoped reusable lifecycles; [A1](../tests/RUNTIME_TASKS_ACCEPTANCE.md) |
 | 4 | [Scheduler, timer and IRQ](04_SCHEDULER_IRQ.md) | Round-robin scheduling, idle WFI and generation-bearing device notifications implemented; [historical 20,000-switch campaign](../tests/SCHEDULER_ACCEPTANCE.md), current A9 timer/IRQ workloads |
 | 5 | [IPC and object rights](05_IPC_RIGHTS.md) | Raw and Service transport, scoped runtime factories/transfer, finite reply generations, cancellation/deadlines and explicit reconnection implemented; [current acceptance](../tests/ACCEPTANCE_CI.md) |
-| 6 | [User services and drivers](06_USER_SERVICES.md) | UART/Screen/Input/Disk/Files and failure containment implemented. Runtime Disk/Files recovery is explicit; fixed UART/Screen automatic restart remains unsupported. [A5](../tests/SERVICE_RECOVERY_ACCEPTANCE.md), [A7](../tests/DEVICE_BOUNDARY_ACCEPTANCE.md), [A9](../tests/ACCEPTANCE_CI.md) |
+| 6 | [User services and drivers](06_USER_SERVICES.md) | UART/Screen/Input/Disk/Files and failure containment implemented. Runtime Disk/Files recovery and a supervised Screen ([G3](GAP_03_FIXED_SERVICE_RESTART.md)) are explicit; the fixed UART/Screen bootstraps are not restarted. [A5](../tests/SERVICE_RECOVERY_ACCEPTANCE.md), [A7](../tests/DEVICE_BOUNDARY_ACCEPTANCE.md), [A9](../tests/ACCEPTANCE_CI.md) |
 
 ## Implemented milestones
 

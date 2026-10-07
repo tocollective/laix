@@ -7,16 +7,16 @@ import { ServiceStart } from "../task/service_start.m"
 import { serviceEndpoint } from "service_policy.m"
 import { mmuGrantResource } from "../mm/mmu.m"
 import { irqGrant } from "../drivers/irq.m"
+import { DEVICE_ROLE_SCREEN, DEVICE_ROW_COUNT, deviceRoleMapping, deviceRoleMappingCount,
+    deviceRowVirtual, deviceRowPhysical, deviceRowBytes, deviceRowPermissions, deviceRoleIrq,
+    deviceRoleBlobBytes, DEVICE_NONE } from "../drivers/device_table.m"
 import { serviceDiskIrq, serviceDevicesInit, serviceDevicesRollback } from "../drivers/service_devices.m"
 import { kernelBootInfo } from "boot.m"
-import { fontData, fontDataEnd } from "../console/font/data.m"
 import { panic } from "panic.m"
 import { START_MAGIC, SERVICE_START_VERSION, SERVICE_START_BYTES, START_DATA_VA,
     START_ROLE_SERVER, START_ROLE_STORAGE, START_ROLE_CLIENT, START_PROTOCOL_SCREEN,
     START_PROTOCOL_FONT, RIGHT_RECEIVE, RIGHT_SEND, DEVICE_SCREEN, DEVICE_FONT,
-    PAGE_SIZE, PAGE_MASK, IPC_MESSAGE_MAX, PTE_U, PTE_RO, PTE_RW, VIDEO_BASE,
-    VRAM_BASE, SCREEN_VRAM_VA, SCREEN_VIDEO_VA, SCREEN_FONT_VA,
-    SCREEN_VRAM_BYTES, VIDEO_IRQ } from "../arch/wrm081632/defs.m"
+    PAGE_SIZE, IPC_MESSAGE_MAX, SCREEN_FONT_VA } from "../arch/wrm081632/defs.m"
 
 extern let screenImage: UByte
 extern let screenImageEnd: UByte
@@ -53,7 +53,7 @@ let serviceInstall(id: UWord, role: UWord, endpoint: UWord, bitmap: UWord, irq: 
     block.irq = irq
     if role == START_ROLE_SERVER {
         block.fontIndex = SCREEN_FONT_VA
-        block.fontBytes = (&fontDataEnd as UWord) - (&fontData as UWord)
+        block.fontBytes = deviceRoleBlobBytes(DEVICE_ROLE_SCREEN)
     } else if role == START_ROLE_STORAGE {
         block.devices = DEVICE_FONT
         block.protocol = START_PROTOCOL_FONT
@@ -82,15 +82,18 @@ let bootstrapScreenInit(): Bool {
         return serviceRollback(screen, storage, client)
     }
     let screenTask: *mut Task = taskGet(screen)
-    let fontStart: UWord = &fontData as UWord
-    let fontBytes: UWord = ((&fontDataEnd as UWord) - fontStart + PAGE_MASK) & ~PAGE_MASK
-    if !mmuGrantResource(screenTask.directory, screen, SCREEN_VRAM_VA, VRAM_BASE,
-        SCREEN_VRAM_BYTES, PTE_RW | PTE_U) ||
-        !mmuGrantResource(screenTask.directory, screen, SCREEN_VIDEO_VA, VIDEO_BASE, PAGE_SIZE, PTE_RO | PTE_U) ||
-        !mmuGrantResource(screenTask.directory, screen, SCREEN_FONT_VA, fontStart, fontBytes, PTE_RO | PTE_U) {
-        return serviceRollback(screen, storage, client)
+    // Resources are the screen role's device-table rows, not constants here.
+    let rows: UWord = deviceRoleMappingCount(DEVICE_ROLE_SCREEN)
+    if rows == 0 return serviceRollback(screen, storage, client)
+    for index: UWord in 0..rows {
+        let row: UWord = deviceRoleMapping(DEVICE_ROLE_SCREEN, index)
+        if row == DEVICE_ROW_COUNT || !mmuGrantResource(screenTask.directory, screen,
+            deviceRowVirtual(row), deviceRowPhysical(row), deviceRowBytes(row),
+            deviceRowPermissions(row)) return serviceRollback(screen, storage, client)
     }
-    let screenIrq: UWord = irqGrant(screen, VIDEO_IRQ)
+    let screenLine: UWord = deviceRoleIrq(DEVICE_ROLE_SCREEN)
+    if screenLine == DEVICE_NONE return serviceRollback(screen, storage, client)
+    let screenIrq: UWord = irqGrant(screen, screenLine)
     let storageIrq: UWord = irqGrant(storage, serviceDiskIrq(kernelBootInfo.disk))
     if screenIrq == 0 || storageIrq == 0 ||
         !serviceInstall(screen, START_ROLE_SERVER, screenReceive, storageSend, screenIrq) ||

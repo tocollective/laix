@@ -268,7 +268,7 @@ class RuntimeTaskAcceptanceTests(unittest.TestCase):
         vm, tokens = boot(irq=True, dma=True)
         vm.run(2)
         vm.invoke(25, vm.irq)
-        self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
+        self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1, 0), 0)
         vm.invoke(24, vm.irq, 5)
         vm.run(1)
         root = vm.field('directory', 2)

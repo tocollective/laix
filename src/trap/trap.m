@@ -9,7 +9,7 @@ import { ipcCallTimed, ipcSendMode, ipcReceiveMode, ipcAcceptMode,
     ipcSupervisorCancel, ipcSleep } from "../ipc/ipc.m"
 import { SYS_ENDPOINT_CREATE, SYS_TASK_DEVICES } from "../arch/wrm081632/defs.m"
 import { ipcCreate } from "../ipc/ipc.m"
-import { taskRuntimeDevices, taskRuntimeExtent } from "../task/control.m"
+import { taskRuntimeDevices, taskRuntimeExtent, taskRuntimeLifetime } from "../task/control.m"
 import { SYS_MEM_GRANT, SYS_MEM_GRANT_MAP, SYS_MEM_GRANT_CLOSE } from "../arch/wrm081632/defs.m"
 import { memoryCreateGrant, memoryMapGrant, memoryCloseGrant } from "../mm/sharing.m"
 import { SYS_MEM_SPACE, SYS_MEM_ALLOC, SYS_MEM_RELEASE, SYS_MEM_MAP,
@@ -17,8 +17,8 @@ import { SYS_MEM_SPACE, SYS_MEM_ALLOC, SYS_MEM_RELEASE, SYS_MEM_MAP,
 import { memoryOpenSpace, memoryCloseSpace, memoryAllocate, memoryRelease,
     memoryMap, memoryEdit, memoryPopulate } from "../mm/runtime.m"
 import { SYS_TASK_CREATE, SYS_TASK_CONFIGURE, SYS_TASK_PUBLISH, SYS_TASK_INSPECT,
-    SYS_TASK_TERMINATE, SYS_TASK_COLLECT } from "../arch/wrm081632/defs.m"
-import { taskRuntimeCreate, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
+    SYS_TASK_TERMINATE, SYS_TASK_COLLECT, SYS_TASK_LOAD } from "../arch/wrm081632/defs.m"
+import { taskRuntimeCreate, taskRuntimeLoad, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
     taskRuntimeTerminate } from "../task/control.m"
 import { STACK_CANARY, KERNEL_STACK_BOTTOM, KERNEL_STACK_TOP, CAUSE_BREAKPOINT, CAUSE_SYSCALL, CAUSE_INTERRUPT,
     INSTRUCTION_BYTES, REG_RESULT, REG_SYSCALL, ERRNO_ENOSYS, ERRNO_EINVAL,
@@ -30,11 +30,12 @@ import { panic } from "../kernel/panic.m"
 import { currentTask, taskSaveContext, taskOwnsTrap, taskFinish, taskYield, taskTick } from "../task/task.m"
 import { timerInterrupt } from "../drivers/timer.m"
 import { irqWait, irqComplete } from "../drivers/irq.m"
-import { screenControl, diskInfo, deviceSubmit, deviceFinish, deviceCancel } from "../drivers/service_devices.m"
+import { netInfo, netSend, netRecv } from "../drivers/net_device.m"
+import { screenControl, diskInfo, diskFlags, deviceSubmit, deviceFinish, deviceCancel } from "../drivers/service_devices.m"
 import { inputRead } from "../drivers/input_device.m"
 import { SYS_INPUT_READ, DEVICE_INPUT, DEVICE_DISK, DEVICE_FONT,
     SYS_DEVICE_INFO, SYS_DEVICE_SUBMIT, SYS_DEVICE_FINISH, SYS_DEVICE_CANCEL,
-    SYS_DEVICE_EXTENT } from "../arch/wrm081632/defs.m"
+    SYS_DEVICE_EXTENT, SYS_DEVICE_FLAGS, SYS_LIFETIME, SYS_NET_INFO, SYS_NET_SEND, SYS_NET_RECV, DEVICE_NET } from "../arch/wrm081632/defs.m"
 import { taskIrqReturn } from "../task/task.m"
 import { SYS_IRQ_WAIT, SYS_IRQ_COMPLETE, SYS_SCREEN_CONTROL, DEVICE_SCREEN } from "../arch/wrm081632/defs.m"
 import { debugPutChar } from "../drivers/debug_uart.m"
@@ -170,6 +171,8 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
             return deviceResult(frame, serviceConfigure(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4], frame.regs[5]))
         case SYS_TASK_CREATE:
             return deviceResult(frame, taskRuntimeCreate(frame.regs[1]))
+        case SYS_TASK_LOAD:
+            return deviceResult(frame, taskRuntimeLoad(frame.regs[1], frame.regs[2]))
         case SYS_TASK_CONFIGURE:
             return deviceResult(frame, taskRuntimeConfigure(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4]))
         case SYS_TASK_PUBLISH:
@@ -195,7 +198,7 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
             return deviceResult(frame, diskInfo(currentTask.id))
         case SYS_DEVICE_SUBMIT:
             if currentTask.deviceRights != DEVICE_DISK && currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
-            return deviceResult(frame, deviceSubmit(currentTask.id, frame.regs[1], frame.regs[2], frame.regs[3]))
+            return deviceResult(frame, deviceSubmit(currentTask.id, frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4]))
         case SYS_DEVICE_FINISH:
             if currentTask.deviceRights != DEVICE_DISK && currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
             return deviceResult(frame, deviceFinish(currentTask.id, frame.regs[1], frame.regs[2]))
@@ -203,7 +206,21 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
             if currentTask.deviceRights != DEVICE_DISK && currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
             return deviceResult(frame, deviceCancel(currentTask.id, frame.regs[1]))
         case SYS_DEVICE_EXTENT:
-            return deviceResult(frame, taskRuntimeExtent(frame.regs[1], frame.regs[2], frame.regs[3]))
+            return deviceResult(frame, taskRuntimeExtent(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4]))
+        case SYS_DEVICE_FLAGS:
+            if currentTask.deviceRights != DEVICE_DISK && currentTask.deviceRights != DEVICE_FONT return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, diskFlags(currentTask.id))
+        case SYS_NET_INFO:
+            if currentTask.deviceRights != DEVICE_NET return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, netInfo(currentTask.id, frame.regs[1]))
+        case SYS_NET_SEND:
+            if currentTask.deviceRights != DEVICE_NET return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, netSend(currentTask.id, frame.regs[1], frame.regs[2]))
+        case SYS_NET_RECV:
+            if currentTask.deviceRights != DEVICE_NET return deviceResult(frame, -ERRNO_EPERM)
+            return deviceResult(frame, netRecv(currentTask.id, frame.regs[1], frame.regs[2]))
+        case SYS_LIFETIME:
+            return deviceResult(frame, taskRuntimeLifetime(frame.regs[1], frame.regs[2]))
         default:
             return deviceResult(frame, -ERRNO_ENOSYS)
     }

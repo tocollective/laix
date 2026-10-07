@@ -4,7 +4,11 @@
 
 Date: 2026-10-04. Priority: **P3 (optional)**.
 
-These checklists describe proposed work, not completed implementation.
+Selection recorded on 2026-10-07 in the
+[optional-extensions record](OPTIONAL_EXTENSIONS.md): every extension is
+deferred and none is implemented. Checked boxes below cover only the selection
+and scope items; conditional items stay unchecked because their extension was
+not selected, and they remain proposed work.
 
 ## Dependencies
 
@@ -42,7 +46,10 @@ user services without redefining microkernel completeness.
 
 ## Implementation checklist
 
-- [ ] Choose the intended workload and explicitly mark shared memory, threads, paging, priorities and SMP as selected or deferred.
+Items after the first are conditional on selection. Their entry contracts are
+recorded in the [selection record](OPTIONAL_EXTENSIONS.md#contracts-a-selected-extension-must-define-first).
+
+- [x] Choose the intended workload and explicitly mark shared memory, threads, paging, priorities and SMP as selected or deferred. (All deferred; see the [selection table](OPTIONAL_EXTENSIONS.md#selection).)
 - [ ] For bulk I/O, define shared-region/grant ownership, mapping authority, synchronization and maximum transfer size.
 - [ ] Define revocation and reclamation of bulk buffers independently of IPC completion and device DMA lifetime.
 - [ ] If workers/threads are selected, separate process address-space/handle lifetime from thread context, stack, wait and scheduling lifetime.
@@ -53,9 +60,13 @@ user services without redefining microkernel completeness.
 - [ ] If priorities are selected, define inheritance/donation through nested IPC and how cancellation restores scheduling state.
 - [ ] If kernel fault recovery/preemption is selected, replace static trap scratch assumptions with a verified nesting-safe protocol.
 - [ ] If SMP is selected, design per-CPU entry/scheduler state, locks, memory ordering and remote TLB invalidation as a separate architecture milestone.
-- [ ] Keep POSIX, networking, shell and full-filesystem requirements in the OS-service roadmap rather than expanding the kernel mandate.
+- [x] Keep POSIX, networking, shell and full-filesystem requirements in the OS-service roadmap rather than expanding the kernel mandate.
 
 ## Acceptance checklist
+
+Only the last item applies while everything is deferred. Observable and
+failure scenarios for each extension are drafted in the selection record and
+must be run when that extension is selected.
 
 - [ ] For each selected extension, record an observable user scenario and a failure/teardown scenario before implementation.
 - [ ] For shared grants, race revocation with IPC/device completion without premature physical reuse.
@@ -63,11 +74,16 @@ user services without redefining microkernel completeness.
 - [ ] For fault/pager protocols, deny unauthorized resume and keep unrelated applications progressing after pager failure.
 - [ ] For scheduling extensions, measure the stated latency/fairness contract under dependency chains and cancellation.
 - [ ] For SMP, validate cross-CPU ownership changes, queue synchronization and stale-TLB prevention on a supported multi-CPU target.
-- [ ] Keep deferred items visibly optional; completion of the single-CPU lifecycle baseline must not depend on implementing every extension.
+- [x] Keep deferred items visibly optional; completion of the single-CPU lifecycle baseline must not depend on implementing every extension.
 
 ## Completion record
 
-When work is accepted, link each completed requirement to its tests and record
+The A10 selection is complete; the extensions are not. No kernel source,
+test, image or CPU acceptance changed, so no new evidence level is claimed.
+The deferred rows are listed in the [readiness matrix](READINESS_MATRIX.md).
+Reselecting an extension reopens its conditional items above.
+
+When a later extension is accepted, link each completed requirement to its tests and record
 the source and image provenance, remaining limitations and CPU acceptance
 results. A checked box must not imply a stronger evidence level than the linked
 record establishes.

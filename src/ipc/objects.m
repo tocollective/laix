@@ -144,6 +144,16 @@ let endpointRelease(object: *mut Endpoint): Void {
     else object.state = ENDPOINT_EMPTY
 }
 
+// Rows that can never be allocated again; a lifetime report, not an allocator.
+let endpointRetiredCount(): UWord {
+    let mut count: UWord = 0
+    for i: UWord in 0..MAX_ENDPOINTS {
+        if endpoints[i].state == ENDPOINT_RETIRED || (endpoints[i].state == ENDPOINT_EMPTY &&
+            endpoints[i].generation == WORD_MASK) count += 1
+    }
+    return count
+}
+
 let handleDrop(entry: *mut Handle): Void {
     let object: *mut Endpoint = entry.object
     if object.generation != entry.objectGeneration || object.references == 0 {
@@ -322,4 +332,4 @@ export { Endpoint, Handle, HandleTable, MAX_ENDPOINTS, MAX_HANDLES,
     ENDPOINT_RAW, ENDPOINT_SERVICE, ENDPOINT_FACTORY_QUOTA, ENDPOINT_RECOVERY_RESERVE,
     endpointFactoryBootstrap, endpointFactoryCreate,
     HANDLE_GENERATION_MAX, ENDPOINT_WAIT_CAPACITY, handleInstallAt, handleEntry, endpointRelease, handleLookup, handleClose, handleCopyCheck, handleCopy, endpointDestroy,
-    endpointBootstrap, endpointBootstrapService, endpointSealBootstrap, handlesReleaseTask, objectAssertAtomic }
+    endpointRetiredCount, endpointBootstrap, endpointBootstrapService, endpointSealBootstrap, handlesReleaseTask, objectAssertAtomic }

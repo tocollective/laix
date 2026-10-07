@@ -1,9 +1,10 @@
 // Keyboard authority stays in this broker; user services receive events only.
-import { KEYBOARD_BASE, KEYBOARD_IRQ, PTE_W, ERRNO_EPERM, ERRNO_EFAULT,
+import { KEYBOARD_BASE, PTE_W, ERRNO_EPERM, ERRNO_EFAULT,
     ERRNO_EBUSY, ERRNO_EINVAL } from "../arch/wrm081632/defs.m"
 import { Task, taskGet, TASK_CREATED, TASK_DEAD } from "../task/task.m"
 import { mmuUserBufferValid, copyToUser } from "../mm/mmu.m"
 import { irqTokenValid, irqPollComplete } from "irq.m"
+import { DEVICE_ROLE_INPUT, deviceRoleIrq } from "device_table.m"
 import { objectAssertAtomic } from "../ipc/objects.m"
 
 let mut inputOwner: UWord
@@ -14,7 +15,7 @@ let inputDevicesInit(owner: UWord, token: UWord): Bool {
     objectAssertAtomic()
     let task: *mut Task = taskGet(owner)
     if inputOwner != 0 || task == null || task.state != TASK_CREATED ||
-        !irqTokenValid(owner, token, KEYBOARD_IRQ) return false
+        !irqTokenValid(owner, token, deviceRoleIrq(DEVICE_ROLE_INPUT)) return false
     let registers: *volatile mut UWord = KEYBOARD_BASE as *volatile mut UWord
     registers[2] = 1 // start with an empty event generation
     fence()
@@ -35,7 +36,7 @@ let inputRead(owner: UWord, destination: UWord, capacity: UWord): Word {
     if owner == 0 || owner != inputOwner return -ERRNO_EPERM
     let task: *mut Task = taskGet(owner)
     if task == null || task.state == TASK_DEAD ||
-        !irqTokenValid(owner, inputToken, KEYBOARD_IRQ) return -ERRNO_EPERM
+        !irqTokenValid(owner, inputToken, deviceRoleIrq(DEVICE_ROLE_INPUT)) return -ERRNO_EPERM
     if capacity == 0 || capacity > 32 return -ERRNO_EINVAL
     let bytes: UWord = 8 + capacity * 4
     if !mmuUserBufferValid(task.directory, owner, destination, bytes, PTE_W) return -ERRNO_EFAULT

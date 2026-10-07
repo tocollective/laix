@@ -208,8 +208,11 @@ class TimerIRQTests(unittest.TestCase):
         parser = parse_asm(LAIX / "src/task/task.asm")
         begin = next(i for i, st in enumerate(parser.stmts) if "taskKernelResume" in st.labels)
         end = next(i for i, st in enumerate(parser.stmts) if "userCodeStart" in st.labels)
+        # Sleep path (WFI, then an IE window), the staged-reap branch (an IE
+        # window without sleeping, G5) and the dispatch jump.
         self.assertEqual([st.op for st in parser.stmts[begin:end] if st.op],
-                         ["mtcr", "call", "bnez", "fence", "wfi", "li", "mtcr", "j", "j"])
+                         ["mtcr", "call", "bnez", "fence", "wfi", "li", "mtcr", "j",
+                          "addi", "bnez", "li", "mtcr", "j", "j"])
 
     def test_timer_in_active_supervisor_task_is_rejected(self):
         vm = self.vm(count=1)

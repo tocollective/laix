@@ -114,9 +114,11 @@ See [console acceptance](../tests/CONSOLE_SERVICE_ACCEPTANCE.md), the historical
 [service request/reply](IPC_REQUEST_REPLY.md). Screen migration and bounded
 IRQ/DMA mechanisms are implemented in [Screen](SCREEN_IRQ_DMA.md) and
 [the device contract](DEVICE_CONTRACT.md). Explicit runtime Disk/Files recovery
-is accepted in [A5](../tests/SERVICE_RECOVERY_ACCEPTANCE.md). Fixed UART/Screen
-automatic restart remains unsupported; the [readiness matrix](READINESS_MATRIX.md)
-separates that limit from completed containment and current stress evidence.
+is accepted in [A5](../tests/SERVICE_RECOVERY_ACCEPTANCE.md). The fixed UART/Screen
+bootstraps are not restarted; a supervised Screen is the separate
+[G3 profile](SERVICE_RECOVERY.md#supervised-display-screen-and-bitmap-storage). The
+[readiness matrix](READINESS_MATRIX.md) separates these limits from completed
+containment and current stress evidence.
 
 ## Runtime extension
 

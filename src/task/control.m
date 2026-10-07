@@ -1,30 +1,34 @@
-import { taskConstructProgram } from "program.m"
+import { taskConstructProgram, taskConstructBuffer, taskProgramValid } from "program.m"
 import { serviceReleaseSupervisor, serviceDependencyLive } from "recovery.m"
-import { irqIssue, irqReleaseTask } from "../drivers/irq.m"
-import { diskDevicesCheck, diskDevicesRegrant, serviceDiskIrq, deviceExtentConfigure } from "../drivers/service_devices.m"
+import { irqIssue, irqReleaseTask, irqRetiredCount } from "../drivers/irq.m"
+import { diskDevicesCheck, diskDevicesRegrant, serviceDiskIrq, deviceExtentConfigure,
+    screenDevicesCheck, screenDevicesRegrant } from "../drivers/service_devices.m"
 import { kernelBootInfo } from "../kernel/boot.m"
 import { inputDevicesInit } from "../drivers/input_device.m"
-import { DEVICE_UART_TX, DEVICE_INPUT, DEVICE_DISK, KEYBOARD_IRQ } from "../arch/wrm081632/defs.m"
+import { DEVICE_UART_TX, DEVICE_INPUT, DEVICE_DISK, DEVICE_FONT, DEVICE_SCREEN } from "../arch/wrm081632/defs.m"
+import { DEVICE_ROLE_INPUT, DEVICE_ROLE_SCREEN, deviceRoleIrq } from "../drivers/device_table.m"
 // Bounded, nontransferable task capabilities and completion mailboxes.
 // References select records; only the kernel-recorded owner grants authority.
 import { Task, currentTask, taskGet, taskConstructImage, taskPublishChecked,
     taskDiscardChecked, taskTerminateChecked, taskSaveContext, taskOwnsTrap,
+    tasks, MAX_TASKS, TASK_GENERATION_MAX, TASK_RECOVERY_RESERVE, lifetimeLeft,
     TASK_CREATED, TASK_DEAD, USER_DATA } from "task.m"
-import { RuntimeStart, TaskEvent } from "runtime_start.m"
+import { RuntimeStart, TaskEvent, LifetimeReport } from "runtime_start.m"
 import { TrapFrame } from "../trap/trap_frame.m"
-import { PAGE_NONE, PAGE_USER, allocPage } from "../mm/memory.m"
-import { mapPage, copyToUser } from "../mm/mmu.m"
+import { PAGE_NONE, PAGE_USER, PAGE_KERNEL, allocPage, allocPageRun, freePage,
+    memoryFreePages, MEMORY_RESERVE_PAGES } from "../mm/memory.m"
+import { mapPage, copyToUser, copyFromUser } from "../mm/mmu.m"
 import { handleCopy, handleLookup } from "../ipc/objects.m"
-import { objectAssertAtomic } from "../ipc/objects.m"
+import { objectAssertAtomic, endpointRetiredCount, MAX_HANDLES, HANDLE_GENERATION_MAX } from "../ipc/objects.m"
 import { serviceDevicesQuiescent } from "../drivers/service_devices.m"
 import { panic } from "../kernel/panic.m"
 import { TASK_RIGHT_CONFIGURE, TASK_RIGHT_PUBLISH, TASK_RIGHT_INSPECT,
     TASK_RIGHT_TERMINATE, TASK_RIGHT_COLLECT, TASK_RIGHT_ALL,
     TASK_EVENT_FAULT, TASK_EVENT_TERMINATED, TASK_EVENT_RECLAIMED,
     TASK_EVENT_QUARANTINED, RUNTIME_START_MAGIC, RUNTIME_START_VERSION,
-    RUNTIME_START_BYTES, START_BLOCK_VA, PAGE_SIZE, PTE_RO, PTE_U,
+    RUNTIME_START_BYTES, START_BLOCK_VA, PAGE_SIZE, PAGE_MASK, PTE_RO, PTE_U,
     RIGHT_ALL, ERRNO_EPERM, ERRNO_ESRCH, ERRNO_EINVAL, ERRNO_ENFILE,
-    ERRNO_EAGAIN, ERRNO_EBUSY } from "../arch/wrm081632/defs.m"
+    ERRNO_EAGAIN, ERRNO_EBUSY, TASK_LOAD_BYTES, IMAGE_LOAD_AUTHORITY } from "../arch/wrm081632/defs.m"
 
 let MAX_TASK_CONTROLS: UWord = 16 // also bounds uncollected completion events
 let TASK_DOMAIN_QUOTA: UWord = 4 // includes uncollected child completion records
@@ -47,16 +51,40 @@ let mut taskHistoryCount: UWord
 extern let runtimeApprovedStart: UByte
 extern let runtimeApprovedEnd: UByte
 
-// Immutable boot catalog: registration closes with task-control sealing.
-let mut runtimeImageStart: UWord[5]
-let mut runtimeImageEnd: UWord[5]
+// Immutable boot catalog: registration closes with task-control sealing. Image 1
+// is the kernel's approved self-test fixture; IDs 2.. are build-issued ELF rows
+// (ImageRow) loaded in order. The kernel owns no list of image names.
+let IMAGE_CATALOG_MAX: UWord = 16 // IDs 1..16; also the width of Task.createImages
+type ImageRow {
+    start: UWord,
+    end: UWord,
+}
+let mut runtimeImageStart: UWord[IMAGE_CATALOG_MAX]
+let mut runtimeImageEnd: UWord[IMAGE_CATALOG_MAX]
+let taskImageRowValid(image: UWord, start: UWord, end: UWord): Bool {
+    return !taskControlsSealed && image >= 2 && image <= IMAGE_CATALOG_MAX && start != 0 &&
+        end > start && runtimeImageStart[image - 1] == 0
+}
 let taskRegisterImage(image: UWord, start: UWord, end: UWord): Bool {
     objectAssertAtomic()
-    if taskControlsSealed || image < 2 || image > 5 || start == 0 || end <= start ||
-        runtimeImageStart[image - 1] != 0 return false
+    if !taskImageRowValid(image, start, end) return false
     runtimeImageStart[image - 1] = start
     runtimeImageEnd[image - 1] = end
     return true
+}
+// Registers rows as images 2..count+1 all-or-nothing and returns the creation
+// mask covering image 1 and the loaded rows, or zero when any row is rejected.
+let taskCatalogLoad(rows: *ImageRow, count: UWord): UWord {
+    objectAssertAtomic()
+    if rows == null || count == 0 || count >= IMAGE_CATALOG_MAX return 0
+    for i: UWord in 0..count {
+        if !taskImageRowValid(i + 2, rows[i].start, rows[i].end) return 0
+    }
+    for i: UWord in 0..count {
+        runtimeImageStart[i + 1] = rows[i].start
+        runtimeImageEnd[i + 1] = rows[i].end
+    }
+    return (1 << (count + 1)) - 1
 }
 
 let taskControlLookup(reference: UWord, rights: UWord): *mut TaskControl {
@@ -103,13 +131,10 @@ let taskControlBootstrapSelf(reference: UWord): Bool {
 let taskControlLookupBootOpen(): Bool { return !taskControlsSealed }
 let taskControlSeal(): Void { taskControlsSealed = true }
 
-// Image IDs are catalog choices, never addresses. Creation authority is an
-// image mask on the caller; the new per-object capability controls only child.
-let taskRuntimeCreate(image: UWord): Word {
-    objectAssertAtomic()
-    if currentTask == null || image == 0 || image > 5 ||
-        currentTask.createImages & (1 << (image - 1)) == 0 ||
-        (image != 1 && runtimeImageStart[image - 1] == 0) return -ERRNO_EPERM
+// Reserves the next completion row for the caller, or null when its child quota
+// or the table is full. The row is taken before any fallible allocation: no task
+// can exit without completion storage, even when the supervisor is slow.
+let taskRuntimeReserve(): *mut TaskControl {
     let mut charged: UWord = 0
     let mut control: *mut TaskControl = null
     for i: UWord in 0..MAX_TASK_CONTROLS {
@@ -118,15 +143,16 @@ let taskRuntimeCreate(image: UWord): Word {
         if !currentTask.handles.factoryRecovery && i >= MAX_TASK_CONTROLS - TASK_CONTROL_RESERVE continue
         if control == null && row.reference == 0 control = row
     }
-    if ((!currentTask.handles.factoryRecovery && charged >= TASK_DOMAIN_QUOTA) || control == null) return -ERRNO_ENFILE
-    // Reserve a mailbox before any fallible resource allocation. No task can
-    // exit without its completion storage, even when the supervisor is slow.
+    if ((!currentTask.handles.factoryRecovery && charged >= TASK_DOMAIN_QUOTA) || control == null) return null
     control.owner = currentTask.id
     control.rights = TASK_RIGHT_ALL
     control.done = false
-    let mut reference: UWord = 0
-    if image == 1 reference = taskConstructImage(&runtimeApprovedStart as UWord, &runtimeApprovedEnd as UWord, 0)
-    else reference = taskConstructProgram(runtimeImageStart[image - 1], runtimeImageEnd[image - 1])
+    return control
+}
+
+// Shared tail of catalog creation and image loading: the constructed child is
+// recorded in the reserved row and owned by the caller.
+let taskRuntimeAdopt(control: *mut TaskControl, reference: UWord): Word {
     if reference == 0 {
         control.owner = 0
         control.rights = 0
@@ -137,6 +163,62 @@ let taskRuntimeCreate(image: UWord): Word {
     task.reusable = true
     task.resolverOwner = currentTask.id
     return reference as Word
+}
+
+// Image IDs are catalog choices, never addresses. Creation authority is an
+// image mask on the caller; the new per-object capability controls only child.
+let taskRuntimeCreate(image: UWord): Word {
+    objectAssertAtomic()
+    if currentTask == null || image == 0 || image > IMAGE_CATALOG_MAX ||
+        currentTask.createImages & (1 << (image - 1)) == 0 ||
+        (image != 1 && runtimeImageStart[image - 1] == 0) return -ERRNO_EPERM
+    let control: *mut TaskControl = taskRuntimeReserve()
+    if control == null return -ERRNO_ENFILE
+    let mut reference: UWord = 0
+    if image == 1 reference = taskConstructImage(&runtimeApprovedStart as UWord, &runtimeApprovedEnd as UWord, 0)
+    else reference = taskConstructProgram(runtimeImageStart[image - 1], runtimeImageEnd[image - 1])
+    return taskRuntimeAdopt(control, reference)
+}
+
+// Reserved kernel identity (beside the DMA bounce and MMU owners): it owns the
+// snapshot frames of one SYS_TASK_LOAD call and nothing else, and never outlives it.
+let LOAD_STAGE_OWNER: UWord = 0xFFFFFFFD
+
+// With the snapshot frames in `stage`: copy the caller's image, check it, and
+// build the child. Everything the call allocated here is released on failure.
+let taskRuntimeLoadStaged(stage: UWord, source: UWord, length: UWord): Word {
+    let copied: Word = copyFromUser(currentTask.directory, currentTask.id, stage as *mut UByte, source, length)
+    if copied != 0 return copied
+    if !taskProgramValid(stage, stage + length) return -ERRNO_EINVAL
+    let control: *mut TaskControl = taskRuntimeReserve()
+    if control == null return -ERRNO_ENFILE
+    return taskRuntimeAdopt(control, taskConstructBuffer(stage, stage + length))
+}
+
+// Loads an ELF image from the caller's memory instead of the catalog. It needs
+// the nontransferable IMAGE_LOAD_AUTHORITY bit, spends the same child quota and
+// completion row as a catalog creation, applies the catalog's image checks and
+// resource limits, and returns a Created child with the same control rights.
+// The kernel works on a private snapshot held in contiguous free frames for the
+// duration of this call only: the syscall runs with IRQs excluded on one CPU, so
+// the user cannot change the bytes between the checks and their use, and no
+// static kernel memory is spent on it. The 16-frame progress reserve is kept.
+// EINVAL: length out of range or not an acceptable image. EFAULT: unreadable
+// buffer. ENFILE: no frames for the snapshot, or quota, rows or construction
+// resources exhausted (all rolled back).
+let taskRuntimeLoad(source: UWord, length: UWord): Word {
+    objectAssertAtomic()
+    if currentTask == null || currentTask.id == 0 || currentTask.createImages & IMAGE_LOAD_AUTHORITY == 0 return -ERRNO_EPERM
+    if length < 52 || length > TASK_LOAD_BYTES return -ERRNO_EINVAL
+    let pages: UWord = (length + PAGE_MASK) / PAGE_SIZE
+    if memoryFreePages < pages + MEMORY_RESERVE_PAGES return -ERRNO_ENFILE
+    let stage: UWord = allocPageRun(LOAD_STAGE_OWNER, PAGE_KERNEL, pages)
+    if stage == PAGE_NONE return -ERRNO_ENFILE
+    let result: Word = taskRuntimeLoadStaged(stage, source, length)
+    for page: UWord in 0..pages {
+        if !freePage(stage + page * PAGE_SIZE, LOAD_STAGE_OWNER, PAGE_KERNEL) panic("could not release load snapshot", null)
+    }
+    return result
 }
 
 let taskRuntimeDiscard(control: *mut TaskControl): Word {
@@ -194,13 +276,17 @@ let taskInstallRuntimeStart(reference: UWord, token: UWord, rights: UWord, argum
     return true
 }
 
-// Scoped brokers: UART TX, raw keyboard batches and approved read-only extents.
-// Screen resource issuance remains boot-only; display policy lives in user mode.
+// Scoped brokers: UART TX, raw keyboard batches, approved read-only extents
+// (generic Disk or the font-bitmap reader) and the display. The display grant
+// installs exactly the Screen role's device-table rows into the unpublished
+// child; a manager picks no address, size or permission. Display policy lives in
+// user mode. Disk, bitmap storage and display are each issued alone.
 let taskRuntimeDevices(reference: UWord, devices: UWord): Word {
     objectAssertAtomic()
     if currentTask == null || devices == 0 ||
-        devices & ~(DEVICE_UART_TX | DEVICE_INPUT | DEVICE_DISK) != 0 ||
-        (devices & DEVICE_DISK != 0 && devices != DEVICE_DISK) ||
+        devices & ~(DEVICE_UART_TX | DEVICE_INPUT | DEVICE_DISK | DEVICE_FONT | DEVICE_SCREEN) != 0 ||
+        (devices & (DEVICE_DISK | DEVICE_FONT | DEVICE_SCREEN) != 0 &&
+            devices != DEVICE_DISK && devices != DEVICE_FONT && devices != DEVICE_SCREEN) ||
         currentTask.deviceFactory & devices != devices return -ERRNO_EPERM
     if taskControlLookup(reference, TASK_RIGHT_CONFIGURE) == null return -ERRNO_EPERM
     let child: *mut Task = taskGet(reference)
@@ -208,14 +294,25 @@ let taskRuntimeDevices(reference: UWord, devices: UWord): Word {
         child.deviceRights != 0 return -ERRNO_EBUSY
     let mut token: UWord = 0
     if devices & DEVICE_INPUT != 0 {
-        token = irqIssue(reference, KEYBOARD_IRQ)
+        token = irqIssue(reference, deviceRoleIrq(DEVICE_ROLE_INPUT))
         if token == 0 return -ERRNO_EBUSY
         if !inputDevicesInit(reference, token) {
             irqReleaseTask(reference)
             return -ERRNO_EBUSY
         }
     }
-    if devices == DEVICE_DISK {
+    if devices == DEVICE_SCREEN {
+        let available: Word = screenDevicesCheck()
+        if available != 0 return available
+        token = irqIssue(reference, deviceRoleIrq(DEVICE_ROLE_SCREEN))
+        if token == 0 return -ERRNO_EBUSY
+        let result: Word = screenDevicesRegrant(reference)
+        if result != 0 {
+            irqReleaseTask(reference)
+            return result
+        }
+    }
+    if devices == DEVICE_DISK || devices == DEVICE_FONT {
         let available: Word = diskDevicesCheck(kernelBootInfo.disk)
         if available != 0 return available
         token = irqIssue(reference, serviceDiskIrq(kernelBootInfo.disk))
@@ -232,13 +329,13 @@ let taskRuntimeDevices(reference: UWord, devices: UWord): Word {
 
 // A manager may select a subextent of its approved boot resource only for
 // its own unpublished child. Possession of the child reference is insufficient.
-let taskRuntimeExtent(reference: UWord, offset: UWord, bytes: UWord): Word {
+let taskRuntimeExtent(reference: UWord, offset: UWord, bytes: UWord, flags: UWord): Word {
     objectAssertAtomic()
     if currentTask == null || currentTask.deviceFactory & DEVICE_DISK == 0 ||
         taskControlLookup(reference, TASK_RIGHT_CONFIGURE) == null return -ERRNO_EPERM
     let child: *mut Task = taskGet(reference)
     if child == null || child.deviceRights != DEVICE_DISK return -ERRNO_EPERM
-    return deviceExtentConfigure(reference, offset, bytes)
+    return deviceExtentConfigure(reference, offset, bytes, flags)
 }
 
 let taskRuntimePublish(reference: UWord): Word {
@@ -348,6 +445,61 @@ let taskRuntimeRead(reference: UWord, destination: UWord, collect: Bool): Word {
     return 0
 }
 
+// Read-only report for a creating supervisor; no counter changes. The caller
+// needs creation authority. A nonzero reference also needs INSPECT on that
+// child (until collection) and selects its reply namespace, task slot and
+// handle table. A never-used slot still owns generation zero.
+let taskRuntimeLifetime(reference: UWord, destination: UWord): Word {
+    objectAssertAtomic()
+    if currentTask == null || currentTask.id == 0 || currentTask.createImages == 0 return -ERRNO_EPERM
+    let mut selected: *mut Task = null
+    if reference != 0 {
+        if taskControlLookup(reference, TASK_RIGHT_INSPECT) == null return -ERRNO_EPERM
+        selected = taskGet(reference)
+        if selected == null return -ERRNO_ESRCH
+    }
+    let mut report: LifetimeReport
+    report.bytes = sizeof(LifetimeReport)
+    report.limit = TASK_GENERATION_MAX
+    report.replySelected = 0
+    report.replyTotal = 0
+    report.replyOpen = 0
+    report.taskSelected = 0
+    report.handleSelected = 0
+    report.retiredTasks = 0
+    report.retiredHandles = 0
+    for i: UWord in 0..MAX_TASKS {
+        let task: *mut Task = &mut tasks[i]
+        let replies: UWord = lifetimeLeft(task.ipcCallGeneration, TASK_GENERATION_MAX)
+        let mut references: UWord = TASK_GENERATION_MAX + 1
+        if task.id != 0 references = lifetimeLeft(task.id >> 8, TASK_GENERATION_MAX)
+        for j: UWord in 0..MAX_HANDLES {
+            if task.handles.entries[j].generation >= HANDLE_GENERATION_MAX report.retiredHandles += 1
+        }
+        if replies == 0 || references == 0 {
+            report.retiredTasks += 1
+            continue
+        }
+        // The same two slots the constructor withholds from ordinary callers.
+        if !currentTask.handles.factoryRecovery && i >= MAX_TASKS - TASK_RECOVERY_RESERVE continue
+        report.replyOpen += 1
+        report.replyTotal += replies
+    }
+    if selected != null {
+        report.replySelected = lifetimeLeft(selected.ipcCallGeneration, TASK_GENERATION_MAX)
+        report.taskSelected = lifetimeLeft(selected.id >> 8, TASK_GENERATION_MAX)
+        report.handleSelected = HANDLE_GENERATION_MAX
+        for j: UWord in 0..MAX_HANDLES {
+            let left: UWord = lifetimeLeft(selected.handles.entries[j].generation, HANDLE_GENERATION_MAX)
+            if left < report.handleSelected report.handleSelected = left
+        }
+    }
+    report.retiredEndpoints = endpointRetiredCount()
+    report.retiredIrqs = irqRetiredCount()
+    return copyToUser(currentTask.directory, currentTask.id, destination,
+        &report as *UByte, sizeof(LifetimeReport))
+}
+
 let taskRuntimeTerminate(frame: *mut TrapFrame, reference: UWord, code: Word): *TrapFrame {
     let control: *mut TaskControl = taskControlLookup(reference, TASK_RIGHT_TERMINATE)
     let mut result: Word = -ERRNO_EPERM
@@ -374,5 +526,5 @@ let taskRuntimeTerminate(frame: *mut TrapFrame, reference: UWord, code: Word): *
 
 export { taskControlLookup, TaskControl, taskControls, taskHistory, taskHistoryHead, taskHistoryCount,
     MAX_TASK_CONTROLS, TASK_HISTORY_SIZE, taskControlBootstrapSelf, taskControlBootstrap, taskControlSeal, taskInstallRuntimeStart,
-    taskControlLookupBootOpen, taskRegisterImage, taskRuntimeDiscard, taskRuntimeDevices, taskRuntimeExtent, taskRuntimeCreate, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
-    taskRuntimeTerminate, taskRecordCompletion, taskRecordReaped, taskReleaseSupervisor }
+    taskControlLookupBootOpen, taskRegisterImage, taskCatalogLoad, ImageRow, IMAGE_CATALOG_MAX, taskRuntimeDiscard, taskRuntimeDevices, taskRuntimeExtent, taskRuntimeCreate, taskRuntimeLoad, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
+    taskRuntimeTerminate, taskRuntimeLifetime, taskRecordCompletion, taskRecordReaped, taskReleaseSupervisor }

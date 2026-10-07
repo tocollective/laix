@@ -126,13 +126,13 @@ class DeviceSafetyTests(unittest.TestCase):
     def test_dma_rejects_overflow_sector_crossing_and_extent_before_submission(self):
         vm = kernel_fixture()
         free = vm.free_pages()
-        for offset, length in ((0, 0), (0, 513), (608, 1), (607, 2),
-                               (511, 2), (0xFFFFFFFF, 1), (0xFFFFFFF8, 16), (0, 0xFFFFFFFF)):
-            self.assertEqual(vm.call('deviceSubmit', 2, offset, length, 1), error(22))
-        self.assertEqual(vm.call('deviceSubmit', 1, 0, 16, 1), error(1))
+        for offset, length in ((0, 0), (608, 1), (607, 2), (0, 609),
+                               (0xFFFFFFFF, 1), (0xFFFFFFF8, 16), (0, 0xFFFFFFFF)):
+            self.assertEqual(vm.call('deviceSubmit', 2, offset, length, 1, 0), error(22))
+        self.assertEqual(vm.call('deviceSubmit', 1, 0, 16, 1, 0), error(1))
         self.assertEqual(vm.free_pages(), free)
         self.assertEqual(vm.memory.commands, [])
-        self.assertGreater(vm.call('deviceSubmit', 2, 607, 1, 1), 0)
+        self.assertGreater(vm.call('deviceSubmit', 2, 607, 1, 1, 0), 0)
         vm.memory.complete()
         self.assertEqual(vm.call('deviceFinish', 2, vm.operation_instance(), USER_DATA), 1)
 
@@ -151,7 +151,7 @@ class DeviceSafetyTests(unittest.TestCase):
                     for offset in range(4096):
                         vm.memory[physical + offset] = 0xAA
                 before = {a: vm.memory[a] for p in (own, foreign) for a in range(p, p + 4096)}
-                self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
+                self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1, 0), 0)
                 bounce = vm.globals['deviceBounce']
                 vm.memory.complete()
                 self.assertEqual(vm.call('deviceFinish', 2, vm.operation_instance(), destination), error(14))
@@ -160,7 +160,7 @@ class DeviceSafetyTests(unittest.TestCase):
 
     def test_early_finish_and_repeated_reap_keep_busy_dma_pinned(self):
         vm = kernel_fixture()
-        self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
+        self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1, 0), 0)
         bounce = vm.globals['deviceBounce']
         self.assertEqual(vm.call('deviceFinish', 1, vm.operation_instance(), USER_DATA), error(1))
         self.assertEqual(vm.call('deviceFinish', 2, vm.operation_instance(), USER_DATA), error(5))

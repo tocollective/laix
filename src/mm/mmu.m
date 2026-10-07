@@ -11,9 +11,7 @@ import { PAGE_SIZE, PAGE_MASK, PAGE_TABLE_ENTRIES, SUPERPAGE_SIZE, BOOT_INFO,
     BOOT_INFO_END, BOOT_LOAD, KERNEL_STACK_BYTES, PTE_V, PTE_R, PTE_W, PTE_X, PTE_U, PTE_RWX_BITS,
     PTE_RW, PTE_RX, PTE_RO, CR_PTBR, PTBR_ENABLE, TLBI_ALL, VRAM_BASE, IO_BASE, WORD_BITS,
     ERRNO_EFAULT } from "../arch/wrm081632/defs.m"
-import { SCREEN_VRAM_VA, SCREEN_VIDEO_VA, SCREEN_FONT_VA, SCREEN_VRAM_BYTES,
-    VIDEO_BASE } from "../arch/wrm081632/defs.m"
-import { fontData, fontDataEnd } from "../console/font/data.m"
+import { deviceGrantAllowed, deviceRoleMappingCount } from "../drivers/device_table.m"
 
 let USER_VA_START: UWord = 0x40000000
 let USER_VA_END: UWord = 0xC0000000 // exclusive; all other VA belongs to the kernel
@@ -37,7 +35,7 @@ let mut spaceInitialized: UWord[MAX_PAGES / WORD_BITS]
 
 // Frame quotas alone do not bound teardown: aliases need no new data frames.
 // Charge ordinary leaves and private user tables independently. Bootstrap
-// resources have three fixed descriptors; their tables still spend this quota.
+// resources are descriptor rows; their tables still spend this quota.
 let MAX_SPACE_BUDGETS: UWord = 32
 let MMU_MAPPING_LIMIT: UWord = 128
 let MMU_TABLE_LIMIT: UWord = 8
@@ -59,8 +57,8 @@ let mmuMappingAllows(directory: *mut UWord, owner: UWord, count: UWord): Bool {
 }
 
 // Immutable bootstrap grants, separate from allocator-backed RAM aliases.
-// No syscall exposes this constructor. Only the three fixed screen resources
-// can be installed; a directory cannot impersonate a different owner.
+// No syscall exposes this constructor. Only exact device-table rows can be
+// installed; a directory cannot impersonate a different owner.
 type ResourceGrant {
     directory: UWord,
     owner: UWord,
@@ -69,7 +67,7 @@ type ResourceGrant {
     bytes: UWord,
     permissions: UWord,
 }
-let MAX_RESOURCE_GRANTS: UWord = 3
+let MAX_RESOURCE_GRANTS: UWord = 8 // capacity; the device table decides how many are used
 let mut resourceGrants: ResourceGrant[MAX_RESOURCE_GRANTS]
 let mut resourcesSealed: Bool
 
@@ -83,19 +81,29 @@ let mmuResourceLeaf(directory: *mut UWord, owner: UWord, virtual: UWord, leaf: U
     return false
 }
 
+// True while no live directory holds this physical range. A dead owner keeps
+// its grant until the task reaper destroys its directory, so this is also the
+// observable "old owner fully reclaimed" check before a runtime regrant.
+let mmuResourceFree(physical: UWord): Bool {
+    for i: UWord in 0..MAX_RESOURCE_GRANTS {
+        if resourceGrants[i].directory != 0 && resourceGrants[i].physical == physical return false
+    }
+    return true
+}
+
+// Boot-time constructor: closed by sealing. Runtime regrant of a role's rows
+// goes through mmuInstallResource, which only the checked device factory calls.
 let mmuGrantResource(directory: *mut UWord, owner: UWord, virtual: UWord,
     physical: UWord, bytes: UWord, permissions: UWord): Bool {
+    if resourcesSealed return false
+    return mmuInstallResource(directory, owner, virtual, physical, bytes, permissions)
+}
+
+let mmuInstallResource(directory: *mut UWord, owner: UWord, virtual: UWord,
+    physical: UWord, bytes: UWord, permissions: UWord): Bool {
     let status: UWord = memoryLock()
-    let fontStart: UWord = &fontData as UWord
-    let fontBytes: UWord = ((&fontDataEnd as UWord) - fontStart + PAGE_MASK) & ~PAGE_MASK
-    let valid: Bool = (virtual == SCREEN_VRAM_VA && physical == VRAM_BASE &&
-        bytes == SCREEN_VRAM_BYTES && permissions == (PTE_RW | PTE_U)) ||
-        (virtual == SCREEN_VIDEO_VA && physical == VIDEO_BASE && bytes == PAGE_SIZE &&
-        permissions == (PTE_RO | PTE_U)) ||
-        (virtual == SCREEN_FONT_VA && physical == fontStart && bytes == fontBytes &&
-        permissions == (PTE_RO | PTE_U) && fontStart >= (&__start_rodata as UWord) &&
-        fontStart < (&__stop_rodata as UWord) && fontBytes <= (&__stop_rodata as UWord) - fontStart)
-    if resourcesSealed || !valid || !mmuSpaceOwned(directory, owner) || bytes == 0 ||
+    let valid: Bool = deviceGrantAllowed(virtual, physical, bytes, permissions)
+    if !valid || !mmuSpaceOwned(directory, owner) || bytes == 0 ||
         virtual & PAGE_MASK != 0 || physical & PAGE_MASK != 0 || bytes & PAGE_MASK != 0 ||
         !mmuUserByteRangeValid(virtual, bytes) || bytes > SUPERPAGE_SIZE ||
         virtual / SUPERPAGE_SIZE != (virtual + bytes - 1) / SUPERPAGE_SIZE {
@@ -140,8 +148,8 @@ let mmuGrantResource(directory: *mut UWord, owner: UWord, virtual: UWord,
 
 let mmuSealResources(): Void { resourcesSealed = true }
 
-let mmuScreenResourcesValid(directory: *mut UWord, owner: UWord, fontBytes: UWord): Bool {
-    if fontBytes != (&fontDataEnd as UWord) - (&fontData as UWord) return false
+// The owner must hold exactly the mapping rows of its role, each installed once.
+let mmuResourcesValid(directory: *mut UWord, owner: UWord, role: UWord): Bool {
     let mut count: UWord = 0
     for i: UWord in 0..MAX_RESOURCE_GRANTS {
         let grant: *ResourceGrant = &resourceGrants[i]
@@ -154,7 +162,7 @@ let mmuScreenResourcesValid(directory: *mut UWord, owner: UWord, fontBytes: UWor
         }
         count += 1
     }
-    return count == MAX_RESOURCE_GRANTS
+    return count == deviceRoleMappingCount(role)
 }
 
 let kernelLayoutValid(): Bool {
@@ -884,7 +892,7 @@ let mmuDestroyAddressSpace(directory: *mut UWord, owner: UWord): Bool {
 }
 
 export { USER_VA_START, USER_VA_END, mmuUserRangeValid, mmuInit, mmuUserLeaf,
-    mmuGrantResource, mmuSealResources, mmuScreenResourcesValid,
+    mmuGrantResource, mmuInstallResource, mmuResourceFree, mmuSealResources, mmuResourcesValid,
     mmuUserByteRangeValid, mmuUserBufferValid, copyFromUser, copyToUser,
     mmuInitAddressSpace, mmuCreateAddressSpace, mapPage, unmapPage,
     setPagePermissions, mmuSplitSuperpage, mmuSwitchAddressSpace,

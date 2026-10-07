@@ -46,15 +46,13 @@ let storageHandle(request: *UWord, size: UWord, response: *mut UWord, irq: UWord
     response[1] = status as UWord
 }
 
-let storageMain(start: *ServiceStart, bytes: UWord): Void {
-    if ((start as UWord) != START_BLOCK_VA || bytes != SERVICE_START_BYTES ||
-        !serviceStartValid(start) || start.role != START_ROLE_STORAGE) exit(1)
-    if irqComplete(start.irq) != 0 exit(1)
+let storageServe(endpoint: UWord, irq: UWord): Void {
+    if irqComplete(irq) != 0 exit(1)
     let mut accepted: AcceptResult
     while true {
-        let size: Word = accept(start.endpoint, &mut storageRequest[0] as *mut UByte, 32, &mut accepted)
+        let size: Word = accept(endpoint, &mut storageRequest[0] as *mut UByte, 32, &mut accepted)
         if size < 0 exit(1)
-        storageHandle(&storageRequest[0], size as UWord, &mut storageResponse[0], start.irq)
+        storageHandle(&storageRequest[0], size as UWord, &mut storageResponse[0], irq)
         let sent: Word = reply(accepted.replyToken, &storageResponse[0] as *UByte, 32)
         if sent > 32 exit(1)
         // A revoked medium or failed/late DMA is terminal for this generation.
@@ -63,4 +61,10 @@ let storageMain(start: *ServiceStart, bytes: UWord): Void {
     }
 }
 
-export { storageMain, storageHandle }
+let storageMain(start: *ServiceStart, bytes: UWord): Void {
+    if ((start as UWord) != START_BLOCK_VA || bytes != SERVICE_START_BYTES ||
+        !serviceStartValid(start) || start.role != START_ROLE_STORAGE) exit(1)
+    storageServe(start.endpoint, start.irq)
+}
+
+export { storageMain, storageServe, storageHandle }

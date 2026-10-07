@@ -25,6 +25,8 @@ Neither form of number conveys authority by itself.
 
 Creation authority is a nontransferable image mask in the caller's kernel TCB
 (`createImages`). Bootstrap grants the supervisor bit 0 for catalog image 1.
+Images 2–16 are build-issued data rows (`ImageRow`: start, end) that boot loads
+with `taskCatalogLoad`; the creation mask comes from the rows loaded.
 A child inherits no creation authority. Image 1 is the bounded embedded
 `runtimeApprovedStart`/`runtimeApprovedEnd` image: its argument is an exit code;
 `0xDEAD` requests an intentional unaligned-read fault. Syscalls never accept
@@ -48,6 +50,8 @@ termination; this does not grant foreign control.
 | 40 terminate | reference, final exit code | TERMINATE (8) | 0; self termination does not resume |
 | 41 collect | reference, writable `TaskEvent*` | COLLECT (16) | 0 and final event; capability consumed |
 | 59 cancel wait | reference | CANCEL (32) | 0 or `-EAGAIN`; current IPC/sleep wait only |
+| 76 load | user address, byte length of an ELF image | caller's `IMAGE_LOAD_AUTHORITY` bit | positive child reference; [Files-backed loading](FILES_LOADER.md) |
+| 75 lifetime | reference or 0, writable `LifetimeReport*` | caller's catalog image bit; reference also INSPECT (4) | 0 and report; [lifetime contract](LIMITS_AND_LATENCY.md#remaining-lifetime-report-g4) |
 
 Creation grants all six child-control rights (63), including the independent
 `TASK_RIGHT_CANCEL=32` from [A4 liveness](IPC_LIVENESS.md); it grants no rights over
@@ -136,7 +140,9 @@ and another task or idle is selected before teardown.
 
 The assembly restore path moves SP to the selected kernel stack before calling
 the reaper. The reaper checks that stack and selected PTBR, rejects current or
-queued victims, and the MMU teardown rejects an active victim root. The broker
+queued victims, and the MMU teardown rejects an active victim root. It commits
+one dead root per call (G5); a dead task keeps everything until its own stage,
+and `RECLAIMED` appears in its completion only then. The broker
 must report physical quiescence before stack, mappings or task slot can be
 released. A BUSY disk DMA keeps the task Dead and quarantined, even if its
 completion has already been collected. Late IRQs cannot revive the old task.

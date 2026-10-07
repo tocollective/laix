@@ -1,5 +1,12 @@
 # A8 limits and latency acceptance
 
+> **Superseded in part by G5 (2026-10-08).** The tables below are the A8
+> record and keep their original numbers, image hashes and the 500 ms budget.
+> Reaping is now staged one root per section and the budget is 2,560,000 cycles
+> (20 ms); see [the G5 addendum](#g5-staged-teardown-addendum). "Final EXIT and
+> eight-task cleanup" no longer describes one section, and "Interruption/
+> cancellation between split stages: not applicable" no longer holds.
+
 Accepted on 2026-10-05 for the [published contract](../docs/LIMITS_AND_LATENCY.md).
 [Source, compiler, executable and CPU provenance](LIMITS_LATENCY_PROVENANCE.json).
 WRM and ROM were reused unchanged; only LA/IX images were built.
@@ -127,3 +134,31 @@ are separate future work, governed by the contract's measurement/staging rules.
 A checked A8 box means the scoped evidence above, including explicitly
 inapplicable conditional features, rather than an indefinite RPC lifetime or
 universal latency guarantee.
+
+## G5 staged teardown addendum
+
+Date 2026-10-08. Local runs on the changed tree, outside any identified bundle,
+with the existing WRM binary and ROM. The checked-in
+[provenance](LIMITS_LATENCY_PROVENANCE.json) is the A8 record and was not
+regenerated; it describes different images.
+
+| Requirement | Evidence |
+|---|---|
+| Staged, resumable teardown | `taskReap` commits at most one dead root per call and returns whether another waits; the idle loop resumes it after an IRQ window ([contract](../docs/LIMITS_AND_LATENCY.md#staged-teardown-g5)) |
+| Interruption between stages | [test_staged_reap](test_staged_reap.py): timer IRQ in the idle window, creation between stages, idle assembly polling before it sleeps |
+| Cancellation between stages | Same file: termination mid-teardown, second terminate, early collect, BUSY-DMA task skipped without spending a stage |
+| No partial mapping exposed | Per-stage page ownership: a committed task holds nothing, every other dead task is byte-identical until its own stage |
+| CPU timing | `probe_limits_latency_cpu.py`: EXIT section stages exactly one root, then seven idle stages; same maxima at 32 MiB and 128 MiB |
+| Regression guard | `SECTION_BUDGET` 2,560,000 cycles, `KIND_CEILINGS` per kind, timer gap within the budget plus one quantum; [test_staged_reap](test_staged_reap.py) keeps probe constants and documents in agreement |
+
+| Measured section | Maximum cycles | At 128 MHz | A8 |
+|---|---:|---:|---:|
+| Staged reap on the idle stack (7 samples) | 1,550,591 | 12.11 ms | n/a |
+| Final EXIT (one root committed) | 1,555,589 | 12.15 ms | 12,144,655 (94.88 ms, eight roots) |
+| Timer IRQ / context switch | 10,099 | 0.079 ms | 10,091 |
+| Allocate 16 / map 16 / unmap 16 pages | 325,268 / 101,395 / 538,123 | 2.54 / 0.79 / 4.20 ms | unchanged |
+| Populate 64 KiB | 1,753,847 | 13.70 ms | unchanged |
+| Longest timer-to-timer gap | 3,177,135 | 24.82 ms | 12,224,903 (95.51 ms) |
+
+Reproduce with the commands above, with the budget now taken from the probe.
+The `latency` profile runs the 32 MiB and the 4 x 32 MiB case.

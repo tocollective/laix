@@ -130,7 +130,7 @@ campaigns. [A9](ACCEPTANCE_CI.md) supplies separately identified evidence for:
 
 Those results belong to A9's bundles, rather than the original hashes above.
 Screen replacement between bitmap halves, before cache-hit validation, and
-fixed Screen automatic restart remain separate extensions. Explicit runtime
+fixed Screen boot restart remain separate extensions; a supervised Screen is recorded in [G3 acceptance](SCREEN_RECOVERY_ACCEPTANCE.md). Explicit runtime
 Disk/Files replacement has its own [recovery record](SERVICE_RECOVERY_ACCEPTANCE.md).
 
 The failure CPU cases use an untrusted screen task without unrestricted DMA

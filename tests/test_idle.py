@@ -91,6 +91,8 @@ class IdleMachine(EntryMachine):
                 self.control["ptbr"] = self.vm.ptbr
             elif op == "li":
                 self.put(a[0], self.constant(a[1]))
+            elif op == "addi":
+                self.put(a[0], (self.get(a[1]) + self.constant(a[2])) & 0xFFFFFFFF)
             elif op == "bnez":
                 if self.get(a[0]):
                     self.pc = self.labels[self.parser.qualify(a[1], st.scope)]

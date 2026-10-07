@@ -5,6 +5,7 @@ import { taskInitAvailable, taskInstallServiceStart,
 import { ServiceStart } from "../task/service_start.m"
 import { serviceEndpoint } from "service_policy.m"
 import { irqGrant } from "../drivers/irq.m"
+import { DEVICE_ROLE_INPUT, deviceRoleIrq } from "../drivers/device_table.m"
 import { inputDevicesInit } from "../drivers/input_device.m"
 import { diskDevicesInit, serviceDevicesRollback, serviceDiskIrq } from "../drivers/service_devices.m"
 import { kernelBootInfo } from "boot.m"
@@ -13,7 +14,7 @@ import { START_MAGIC, SERVICE_START_VERSION, SERVICE_START_BYTES, START_DATA_VA,
     START_ROLE_INPUT, START_ROLE_DISK, START_ROLE_FILE, START_ROLE_CLIENT,
     START_PROTOCOL_INPUT, START_PROTOCOL_DISK, START_PROTOCOL_FILE,
     DEVICE_INPUT, DEVICE_DISK, RIGHT_RECEIVE, RIGHT_SEND, IPC_MESSAGE_MAX,
-    PAGE_SIZE, KEYBOARD_IRQ } from "../arch/wrm081632/defs.m"
+    PAGE_SIZE } from "../arch/wrm081632/defs.m"
 extern let inputImage: UByte
 extern let inputImageEnd: UByte
 extern let diskImage: UByte
@@ -80,7 +81,7 @@ let bootstrapSimpleInit(): Bool {
     if !serviceEndpoint(ids[0], ids[3], &mut inputReceive, &mut inputSend) ||
         !serviceEndpoint(ids[1], ids[2], &mut diskReceive, &mut diskSend) ||
         !serviceEndpoint(ids[2], ids[3], &mut fileReceive, &mut fileSend) return simpleRollback(&ids[0])
-    let inputIrq: UWord = irqGrant(ids[0], KEYBOARD_IRQ)
+    let inputIrq: UWord = irqGrant(ids[0], deviceRoleIrq(DEVICE_ROLE_INPUT))
     let diskIrq: UWord = irqGrant(ids[1], serviceDiskIrq(kernelBootInfo.disk))
     if inputIrq == 0 || diskIrq == 0 || !inputDevicesInit(ids[0], inputIrq) ||
         !diskDevicesInit(ids[1], kernelBootInfo.disk, kernelBootInfo.imageSize) ||

@@ -198,11 +198,11 @@ class ScreenSecurityTests(unittest.TestCase):
 
     def test_dma_is_physical_pinned_bounded_and_copies_only_after_completion(self):
         vm = kernel_fixture()
-        self.assertEqual(vm.call('deviceSubmit', 1, 0, 16, 1), error(1))
-        for offset, length in [(608, 16), (0xFFFFFFFF, 16), (0, 513), (0, 0xFFFFFFFF)]:
-            self.assertEqual(vm.call('deviceSubmit', 2, offset, length, 1), error(22))
+        self.assertEqual(vm.call('deviceSubmit', 1, 0, 16, 1, 0), error(1))
+        for offset, length in [(608, 16), (0xFFFFFFFF, 16), (0, 609), (0, 0xFFFFFFFF)]:
+            self.assertEqual(vm.call('deviceSubmit', 2, offset, length, 1, 0), error(22))
         self.assertEqual(vm.memory.commands, [])
-        self.assertGreater(vm.call('deviceSubmit', 2, 592, 16, 1), 0)
+        self.assertGreater(vm.call('deviceSubmit', 2, 592, 16, 1, 0), 0)
         physical = vm.globals['deviceBounce']
         self.assertEqual(vm.memory.commands, [(1, physical, 3, 1)])
         self.assertEqual(physical & 4095, 0)
@@ -218,14 +218,14 @@ class ScreenSecurityTests(unittest.TestCase):
 
     def test_dma_cancel_quarantines_until_late_completion_and_outlives_task(self):
         vm = kernel_fixture()
-        self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
+        self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1, 0), 0)
         physical = vm.globals['deviceBounce']
         vm.call('deviceCancelOwner', 2)
         self.assertFalse(vm.call('physicalPageAvailable', physical))
         self.assertEqual(vm.call('physicalPageReferences', physical), 1)
         self.assertTrue(vm.call('taskDiscardCreated', 2))
         self.assertFalse(vm.call('physicalPageAvailable', physical))
-        self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, 1), error(32))
+        self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, 1, 0), error(32))
         vm.memory.complete()
         vm.call('deviceReap')
         self.assertTrue(vm.call('physicalPageAvailable', physical))
@@ -241,7 +241,7 @@ class ScreenSecurityTests(unittest.TestCase):
                 for i in range(16):
                     vm.memory[target + i] = 0xAA
                 before = [vm.memory[target + i] for i in range(16)]
-                self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
+                self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1, 0), 0)
                 vm.memory.complete(code, changed)
                 self.assertEqual(vm.call('deviceFinish', 2, vm.operation_instance(), destination), error(expected))
                 self.assertEqual([vm.memory[target + i] for i in range(16)], before)
@@ -315,9 +315,9 @@ class ScreenSecurityTests(unittest.TestCase):
             self.assertEqual(vm.field('deviceRights', id), devices)
             self.assertEqual(vm.field('state', id), 1)
         root = vm.field('directory')
-        self.assertTrue(vm.call('mmuScreenResourcesValid', root, 1, 184))
-        self.assertFalse(vm.call('mmuScreenResourcesValid', root, 1, 183))
-        self.assertFalse(vm.call('mmuScreenResourcesValid', vm.field('directory', 2), 2, 184))
+        self.assertTrue(vm.call('mmuResourcesValid', root, 1, 1))
+        self.assertFalse(vm.call('mmuResourcesValid', root, 1, 3))  # role without rows holds none
+        self.assertFalse(vm.call('mmuResourcesValid', vm.field('directory', 2), 2, 1))
         for fail in range(1, 16):
             vm = fixture(fail)
             free = vm.free_pages()

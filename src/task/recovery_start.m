@@ -15,6 +15,8 @@ type RecoveryStart {
     irq: UWord,
     generation: UWord,
     supervisor: UWord,
+    blob: UWord, // read-only device-table blob mapped for this task, else zero
+    blobBytes: UWord,
 }
 type ServiceResolution {
     handle: UWord,

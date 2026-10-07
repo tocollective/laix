@@ -3,7 +3,7 @@ import { SYS_DEBUG_PUT_CHAR, SYS_EXIT, SYS_YIELD, SYS_HANDLE_CLOSE, SYS_HANDLE_C
     SYS_ENDPOINT_DESTROY, SYS_IPC_SEND, SYS_IPC_RECEIVE, SYS_IPC_CALL, SYS_IPC_REPLY } from "../src/arch/wrm081632/defs.m"
 import { SYS_IRQ_WAIT, SYS_IRQ_COMPLETE, SYS_SCREEN_CONTROL, DISK_READ,
     GLYPH_BYTES, ERRNO_EINVAL, SYS_DEVICE_INFO, SYS_DEVICE_SUBMIT,
-    SYS_DEVICE_FINISH, SYS_DEVICE_CANCEL, SYS_DEVICE_EXTENT } from "../src/arch/wrm081632/defs.m"
+    SYS_DEVICE_FINISH, SYS_DEVICE_CANCEL, SYS_DEVICE_EXTENT, SYS_DEVICE_FLAGS, DISK_WRITE, DISK_FLUSH } from "../src/arch/wrm081632/defs.m"
 
 type AcceptResult {
     length: Word,
@@ -90,15 +90,39 @@ export { irqWait, irqComplete, screenControl, fontBegin, fontFinish, fontCancel,
 import { SYS_INPUT_READ } from "../src/arch/wrm081632/defs.m"
 let inputRead(destination: *mut UByte, capacity: UWord): Word { return syscall(SYS_INPUT_READ, destination, capacity) }
 let diskInfo(): Word { return syscall(SYS_DEVICE_INFO) }
-let diskBegin(offset: UWord, bytes: UWord): Word { return syscall(SYS_DEVICE_SUBMIT, offset, bytes, DISK_READ) }
+let diskBegin(offset: UWord, bytes: UWord): Word { return syscall(SYS_DEVICE_SUBMIT, offset, bytes, DISK_READ, 0) }
+// WRITE moves whole sectors (offset and bytes multiples of 512, at most 4096)
+// from `source`; the kernel copies them before it issues the command.
+let diskWriteBegin(offset: UWord, bytes: UWord, source: *UByte): Word {
+    return syscall(SYS_DEVICE_SUBMIT, offset, bytes, DISK_WRITE, source)
+}
+let diskFlushBegin(): Word { return syscall(SYS_DEVICE_SUBMIT, 0, 0, DISK_FLUSH, 0) }
+let diskFlags(): Word { return syscall(SYS_DEVICE_FLAGS) }
 let diskFinish(instance: UWord, destination: *mut UByte): Word { return syscall(SYS_DEVICE_FINISH, instance, destination) }
 let diskCancel(instance: UWord): Word { return syscall(SYS_DEVICE_CANCEL, instance) }
-let grantDeviceExtent(reference: UWord, offset: UWord, bytes: UWord): Word {
-    return syscall(SYS_DEVICE_EXTENT, reference, offset, bytes)
+let grantDeviceExtent(reference: UWord, offset: UWord, bytes: UWord, flags: UWord): Word {
+    return syscall(SYS_DEVICE_EXTENT, reference, offset, bytes, flags)
 }
 export { grantDeviceExtent }
 
-export { inputRead, diskInfo, diskBegin, diskFinish, diskCancel }
+import { SYS_LIFETIME } from "../src/arch/wrm081632/defs.m"
+import { LifetimeReport } from "../src/task/runtime_start.m"
+// Reference 0 reports only global retirement; a child reference (INSPECT) also
+// selects that child's remaining reply, task and handle generations.
+let lifetimeReport(reference: UWord, report: *mut LifetimeReport): Word {
+    return syscall(SYS_LIFETIME, reference, report)
+}
+export { lifetimeReport }
+
+import { SYS_NET_INFO, SYS_NET_SEND, SYS_NET_RECV } from "../src/arch/wrm081632/defs.m"
+// The Ethernet broker (device right NET): 16 bytes of address and counters, one
+// whole frame out, one whole frame in (capacity at least 1,514).
+let netDeviceInfo(destination: *mut UByte): Word { return syscall(SYS_NET_INFO, destination) }
+let netDeviceSend(frame: *UByte, length: UWord): Word { return syscall(SYS_NET_SEND, frame, length) }
+let netDeviceReceive(destination: *mut UByte, capacity: UWord): Word { return syscall(SYS_NET_RECV, destination, capacity) }
+export { netDeviceInfo, netDeviceSend, netDeviceReceive }
+
+export { inputRead, diskInfo, diskBegin, diskWriteBegin, diskFlushBegin, diskFlags, diskFinish, diskCancel }
 
 import { SYS_TASK_CREATE, SYS_TASK_CONFIGURE, SYS_TASK_PUBLISH, SYS_TASK_INSPECT,
     SYS_TASK_TERMINATE, SYS_TASK_COLLECT } from "../src/arch/wrm081632/defs.m"
@@ -111,7 +135,11 @@ let publishTask(reference: UWord): Word { return syscall(SYS_TASK_PUBLISH, refer
 let inspectTask(reference: UWord, event: *mut TaskEvent): Word { return syscall(SYS_TASK_INSPECT, reference, event) }
 let terminateTask(reference: UWord, code: Word): Word { return syscall(SYS_TASK_TERMINATE, reference, code) }
 let collectTask(reference: UWord, event: *mut TaskEvent): Word { return syscall(SYS_TASK_COLLECT, reference, event) }
-export { createTask, configureTask, publishTask, inspectTask, terminateTask, collectTask }
+// Loads a child from an ELF image in the caller's memory (needs the load
+// authority). Result: a reference like createTask, or -EINVAL/-EFAULT/-ENFILE.
+import { SYS_TASK_LOAD } from "../src/arch/wrm081632/defs.m"
+let loadTask(image: *UByte, bytes: UWord): Word { return syscall(SYS_TASK_LOAD, image, bytes) }
+export { createTask, loadTask, configureTask, publishTask, inspectTask, terminateTask, collectTask }
 
 import { SYS_MEM_SPACE, SYS_MEM_ALLOC, SYS_MEM_RELEASE, SYS_MEM_MAP,
     SYS_MEM_UNMAP, SYS_MEM_PROTECT, SYS_MEM_POPULATE, SYS_MEM_CLOSE } from "../src/arch/wrm081632/defs.m"

@@ -3,14 +3,14 @@
 set -eu
 laix_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 # Profiles select their own mains, resources and fixture policy.
-unset LAIX_MAIN LAIX_CONSOLE LAIX_FONT LAIX_ACCEPTANCE_INPUT LAIX_RECOVERY_FIXTURES
+unset LAIX_MAIN LAIX_CONSOLE LAIX_FONT LAIX_ACCEPTANCE_INPUT LAIX_ACCEPTANCE_FILEREAD LAIX_RECOVERY_FIXTURES
 profile=$1
 destination=$2
 emulator=$3
 rom=$4
 case "$profile" in
     uart) sh "$laix_dir/build.sh" ;;
-    screen|services|memory|sharing|objects|supervisor)
+    screen|services|memory|sharing|objects|supervisor|soak|loader|fs|shell|net)
         LAIX_CONSOLE=$profile sh "$laix_dir/build.sh" ;;
     recovery) LAIX_CONSOLE=recovery LAIX_RECOVERY_FIXTURES=1 sh "$laix_dir/build.sh" ;;
     recovery-production) LAIX_CONSOLE=recovery LAIX_RECOVERY_FIXTURES=0 sh "$laix_dir/build.sh" ;;

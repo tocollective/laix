@@ -168,8 +168,9 @@ until successful rearm, including after a blocked wait consumed the first one.
    in the level-triggered PIC. No automatic unserviced redelivery occurs.
 
 Owner death masks the line, cancels its wait and retires its grant. Old or
-foreign tokens return `-EPERM`. Bootstrap grants are sealed; automatic
-service restart/regrant is not implemented.
+foreign tokens return `-EPERM`. The bootstrap grants of this fixed boot are
+sealed and are never regranted; a restartable Screen is the separate
+[supervised display](SERVICE_RECOVERY.md#supervised-display-screen-and-bitmap-storage).
 
 | Syscall | Operation |
 | --- | --- |

@@ -119,11 +119,11 @@ source/compiler/probe manifest to every image, map, ELF, font, emulator, ROM and
 Local verification uses existing WRM and ROM bytes; neither was rebuilt.
 The final source suite passed **399 tests**; all **14 CPU profiles / 20 probe
 suites passed**. Detailed results and hashes are recorded in the linked
-provenance and acceptance report. A concurrent `mc/runtime/rt.m` edit appeared after acceptance and was left intact.
-It is validation-pending: preflight rejects the later working tree. A separate
-content-verified source snapshot with pinned revisions replays the accepted
-inputs, and full provenance verification passes there. Commands and both runtime
-hashes are recorded in the acceptance report.
+provenance and acceptance report. A concurrent `mc/runtime/rt.m` edit appeared after
+acceptance; it was validated by the G6 campaign (2026-10-07, 399 source tests, 14
+CPU profiles / 20 suites). A separate content-verified source snapshot with pinned
+revisions still replays the original A9 inputs, and full provenance verification
+passes there. Commands and both runtime hashes are recorded in the acceptance report.
 Earlier failed/interrupted attempts remain
 separate and are not counted as acceptance.
 
@@ -136,7 +136,7 @@ jobs and their tested contracts, rather than a claim of a completed remote run.
 
 The stress claim covers repeated IPC/timer progress, task teardown/reuse and the
 explicit five-generation Disk/Files recovery workload. It does not implement fixed
-UART/Screen automatic restart, permanently BUSY hardware reset, or Screen medium
+fixed UART/Screen boot restart (a supervised Screen exists: G3), permanently BUSY hardware reset, or Screen medium
 swaps between bitmap halves/cache-hit validation. Those scoped limitations remain
 visible in the matrix. Historical source counts and artifact hashes do not certify
 new images, and source fixtures do not substitute for CPU/device timing evidence.

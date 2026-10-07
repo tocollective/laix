@@ -409,7 +409,7 @@ let SYS_SERVICE_RESOLVE: UWord = 62
 let SYS_SERVICE_ALLOW: UWord = 63
 let SYS_SERVICE_WITHDRAW: UWord = 64
 let SYS_SERVICE_CONFIGURE: UWord = 65
-let RECOVERY_START_BYTES: UWord = 56
+let RECOVERY_START_BYTES: UWord = 64
 let SERVICE_RESOLUTION_BYTES: UWord = 16
 export { SYS_SERVICE_PUBLISH, SYS_SERVICE_RESOLVE, SYS_SERVICE_ALLOW, SYS_SERVICE_WITHDRAW, SYS_SERVICE_CONFIGURE, RECOVERY_START_BYTES, SERVICE_RESOLUTION_BYTES }
 
@@ -427,3 +427,124 @@ let SYS_DEVICE_FINISH: UWord = 72
 let SYS_DEVICE_CANCEL: UWord = 73
 let SYS_DEVICE_EXTENT: UWord = 74
 export { SYS_DEVICE_INFO, SYS_DEVICE_SUBMIT, SYS_DEVICE_FINISH, SYS_DEVICE_CANCEL, SYS_DEVICE_EXTENT }
+
+// Write and flush on the block path (G7), specified in DEVICE_CONTRACT. An
+// operation moves at most DISK_BOUNCE_SECTORS sectors through one bounce page.
+// SYS_DEVICE_FLAGS reports the extent flags; SYS_DEVICE_EXTENT carries a flags
+// word whose EXTENT_WRITE bit asks for write authority; SYS_DEVICE_SUBMIT takes
+// the user source address of a WRITE as its fourth argument.
+let DISK_STATUS_READONLY: UWord = 1 << 1
+let DISK_WRITE: UWord = 2
+let DISK_FLUSH: UWord = 3
+let DISK_BOUNCE_SECTORS: UWord = 8
+let EXTENT_WRITE: UWord = 1
+let EXTENT_DIRTY: UWord = 2
+let EXTENT_DIRTY_AT_REGRANT: UWord = 4
+let SYS_DEVICE_FLAGS: UWord = 77
+let ERRNO_EROFS: Word = 30
+// Disk service sector-stage requests (writable block path). The service keeps
+// one 512-byte stage: LOAD fills it from a sector, PEEK/POKE move 16 bytes of it
+// through the 32-byte IPC message, STORE writes it to a sector, SYNC flushes and
+// FLAGS reports the extent flags. Only the filesystem uses them.
+let DISK_LOAD_HEADER: UWord = 0x000C0401
+let DISK_PEEK_HEADER: UWord = 0x000C0501
+let DISK_POKE_HEADER: UWord = 0x001C0601
+let DISK_STORE_HEADER: UWord = 0x000C0701
+let DISK_SYNC_HEADER: UWord = 0x000C0801
+let DISK_FLAGS_HEADER: UWord = 0x000C0901
+let DISK_STAGE_BYTES: UWord = 512
+export { DISK_STATUS_READONLY, DISK_WRITE, DISK_FLUSH, DISK_BOUNCE_SECTORS, EXTENT_WRITE,
+    EXTENT_DIRTY, EXTENT_DIRTY_AT_REGRANT, SYS_DEVICE_FLAGS, ERRNO_EROFS,
+    DISK_LOAD_HEADER, DISK_PEEK_HEADER, DISK_POKE_HEADER, DISK_STORE_HEADER, DISK_SYNC_HEADER,
+    DISK_FLAGS_HEADER, DISK_STAGE_BYTES }
+
+// Writable flat filesystem (WFS1, docs/FILESYSTEM.md). Requests are at most 32
+// bytes; the variable-length FS_WRITE carries 1..16 data bytes after 16 bytes of
+// header words. A file is addressed by an id (serial << 5 | slot) that goes stale
+// when the file is deleted or replaced.
+let FS_OPEN_HEADER: UWord = 0x001C1001
+let FS_STAT_HEADER: UWord = 0x000C1101
+let FS_READ_HEADER: UWord = 0x00101201
+let FS_WRITE_HEADER: UWord = 0x001C1301
+let FS_SYNC_HEADER: UWord = 0x000C1401
+let FS_DELETE_HEADER: UWord = 0x001C1501
+let FS_LIST_HEADER: UWord = 0x000C1601
+let FS_INFO_HEADER: UWord = 0x000C1701
+let FS_RESPONSE_HEADER: UWord = 0x001C0201
+let FS_CREATE: UWord = 1
+let FS_EXCL: UWord = 2
+let FS_TRUNC: UWord = 4
+let FS_NAME_BYTES: UWord = 16
+let FS_MAX_FILES: UWord = 31
+let FS_META_SECTORS: UWord = 2
+let FS_DATA_START: UWord = 4
+let FS_MAGIC: UWord = 0x31534657
+let ERRNO_ENOSPC: Word = 28
+let ERRNO_EEXIST: Word = 17
+let ERRNO_ENODEV: Word = 19
+export { FS_OPEN_HEADER, FS_STAT_HEADER, FS_READ_HEADER, FS_WRITE_HEADER, FS_SYNC_HEADER,
+    FS_DELETE_HEADER, FS_LIST_HEADER, FS_INFO_HEADER, FS_RESPONSE_HEADER, FS_CREATE, FS_EXCL,
+    FS_TRUNC, FS_NAME_BYTES, FS_MAX_FILES, FS_META_SECTORS, FS_DATA_START, FS_MAGIC,
+    ERRNO_ENOSPC, ERRNO_EEXIST, ERRNO_ENODEV }
+
+// Exec service (general loader) and the start handle list. A task constructed by
+// boot policy with a runtime start record gets its endpoint handles in the first
+// words of its data page: magic, count, then the handles in an order that the
+// profile documents (docs/SHELL.md).
+let EXEC_RUN_HEADER: UWord = 0x001C2001
+let EXEC_RESPONSE_HEADER: UWord = 0x001C0201
+let EXEC_FAULTED: UWord = 1
+let START_HANDLES_MAGIC: UWord = 0x4C444E48
+let START_HANDLES_MAX: UWord = 6
+export { EXEC_RUN_HEADER, EXEC_RESPONSE_HEADER, EXEC_FAULTED, START_HANDLES_MAGIC, START_HANDLES_MAX }
+
+// Ethernet card broker (G7). The kernel owns the descriptor rings and every
+// frame buffer; the one owner (a user driver) hands over and takes back whole
+// frames by copy. See docs/NETWORK.md.
+let ETH_BASE: UWord = IO_BASE + 11 * PAGE_SIZE
+let ETH_IRQ: UWord = 8
+let DEVICE_NET: UWord = 32
+let SYS_NET_INFO: UWord = 78
+let SYS_NET_SEND: UWord = 79
+let SYS_NET_RECV: UWord = 80
+let NET_FRAME_MIN: UWord = 14
+let NET_FRAME_MAX: UWord = 1514
+let NET_INFO_BYTES: UWord = 16
+export { ETH_BASE, ETH_IRQ, DEVICE_NET, SYS_NET_INFO, SYS_NET_SEND, SYS_NET_RECV, NET_FRAME_MIN,
+    NET_FRAME_MAX, NET_INFO_BYTES }
+
+// Network driver service: frames cross IPC in 16-byte pieces through one send
+// and one receive staging buffer. IP service: ping and name resolution.
+let NETDRV_INFO_HEADER: UWord = 0x000C3001
+let NETDRV_PUT_HEADER: UWord = 0x001C3101
+let NETDRV_SEND_HEADER: UWord = 0x000C3201
+let NETDRV_POLL_HEADER: UWord = 0x000C3301
+let NETDRV_GET_HEADER: UWord = 0x000C3401
+let NETDRV_DONE_HEADER: UWord = 0x000C3501
+let IP_INFO_HEADER: UWord = 0x000C4001
+let IP_PING_HEADER: UWord = 0x000C4101
+let IP_NAME_HEADER: UWord = 0x001C4201
+let IP_RESOLVE_HEADER: UWord = 0x000C4301
+let NET_RESPONSE_HEADER: UWord = 0x001C0201
+let ERRNO_EHOSTUNREACH: Word = 113
+let ERRNO_ENETDOWN: Word = 100
+export { NETDRV_INFO_HEADER, NETDRV_PUT_HEADER, NETDRV_SEND_HEADER, NETDRV_POLL_HEADER,
+    NETDRV_GET_HEADER, NETDRV_DONE_HEADER, IP_INFO_HEADER, IP_PING_HEADER, IP_NAME_HEADER,
+    IP_RESOLVE_HEADER, NET_RESPONSE_HEADER, ERRNO_EHOSTUNREACH, ERRNO_ENETDOWN }
+
+// Supervisor-readable finite-lifetime report (G4). Read-only; resets nothing.
+let SYS_LIFETIME: UWord = 75
+let LIFETIME_REPORT_BYTES: UWord = 44
+// Construction picks a namespace with more reply calls left than this when one
+// exists; a supervisor replaces a client once its namespace is at or below it.
+let LIFETIME_REPLY_RESERVE: UWord = 4096
+export { SYS_LIFETIME, LIFETIME_REPORT_BYTES, LIFETIME_REPLY_RESERVE }
+
+// Files-backed loading (G1): a creator holding IMAGE_LOAD_AUTHORITY, a bit above
+// the catalog IDs 1..16 in Task.createImages, hands the kernel a complete ELF
+// image of at most TASK_LOAD_BYTES. The kernel snapshots it, applies the same
+// checks as for a catalog image and returns a Created child.
+let SYS_TASK_LOAD: UWord = 76
+let TASK_LOAD_BYTES: UWord = 65536
+let IMAGE_LOAD_AUTHORITY: UWord = 0x10000
+export { SYS_TASK_LOAD, TASK_LOAD_BYTES, IMAGE_LOAD_AUTHORITY }

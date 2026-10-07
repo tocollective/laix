@@ -77,7 +77,7 @@ These priorities describe completeness, not CVE severity:
 | A7 | A general device interface with less service policy in the kernel | P2 |
 | A8 | [Accepted](../tests/LIMITS_LATENCY_ACCEPTANCE.md): resource/lifetime budgets, reply retirement/replacement and measured CPU latency | P2 |
 | A9 | [Accepted locally; CI configured](AUDIT_09_ACCEPTANCE_AND_CI.md): maintained artifact-based CPU/stress profiles, source CI and current readiness/provenance | P2 |
-| A10 | Optional shared memory, threads, pager and scheduler extensions | P3 |
+| A10 | [Selection recorded](OPTIONAL_EXTENSIONS.md): shared memory, threads, pager, priorities and SMP all deferred | P3 |
 
 ## Detailed work items
 
@@ -95,6 +95,8 @@ above. A10 is an optional feature-selection checklist.
 - [A8: Limits and execution latency](../docs/AUDIT_08_LIMITS_AND_LATENCY.md)
 - [A9: Acceptance and CI need to follow the current architecture](../docs/AUDIT_09_ACCEPTANCE_AND_CI.md)
 - [A10: Extensions after the lifecycle baseline](../docs/AUDIT_10_OPTIONAL_EXTENSIONS.md)
+
+Residual limits after A1–A10 and a proposed fix checklist are in [GAPS_CHECKLIST.md](GAPS_CHECKLIST.md).
 
 ## Recommended implementation order
 

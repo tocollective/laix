@@ -43,6 +43,17 @@ def fixture(devices=False, catalog=False):
     return vm
 
 
+def catalog_rows(vm, rows, base=0x30000):
+    for i, (start, end) in enumerate(rows):
+        vm.memory[base + 8 * i] = start
+        vm.memory[base + 8 * i + 4] = end
+    return base
+
+
+def catalog_image(vm, image):
+    return tuple(vm.memory[vm.addresses[name] + 4 * (image - 1)] for name in ('runtimeImageStart', 'runtimeImageEnd'))
+
+
 def client(vm, mask=15):
     ref = create(vm, configure=False, publish=False)
     assert vm.call('serviceAllow', ref, mask) == 0
@@ -189,7 +200,7 @@ class RecoveryTests(unittest.TestCase):
         caller = client(vm)
         ref, root, rx, old_irq = replacement(vm, 1, devices=C['DEVICE_DISK'])
         vm.run(ref)
-        self.assertGreater(vm.call('deviceSubmit', ref, 0, 16, 1), 0)
+        self.assertGreater(vm.call('deviceSubmit', ref, 0, 16, 1, 0), 0)
         bounce = vm.globals['deviceBounce']
         vm.run(1)
         vm.invoke(C['SYS_TASK_TERMINATE'], ref, 0)
@@ -335,3 +346,47 @@ class RecoveryTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ImageCatalogDataTests(unittest.TestCase):
+    def test_rows_register_ids_in_order_and_return_the_creation_mask(self):
+        vm = ObjectsM()
+        rows = catalog_rows(vm, [(0x20000, 0x20100), (0x21000, 0x21200), (0x22000, 0x22040)])
+        self.assertEqual(vm.call('taskCatalogLoad', rows, 3), 15)
+        self.assertEqual([catalog_image(vm, i) for i in (1, 2, 3, 4)],
+                         [(0, 0), (0x20000, 0x20100), (0x21000, 0x21200), (0x22000, 0x22040)])
+        # Slots are write-once: a second load or manual registration cannot replace a row.
+        self.assertEqual(vm.call('taskCatalogLoad', rows, 1), 0)
+        self.assertFalse(vm.call('taskRegisterImage', 2, 0x23000, 0x23100))
+        self.assertTrue(vm.call('taskRegisterImage', 5, 0x23000, 0x23100))
+
+    def test_invalid_rows_are_all_or_nothing(self):
+        for bad in ((0, 0x100), (0x20000, 0x20000), (0x20100, 0x20000)):
+            vm = ObjectsM()
+            rows = catalog_rows(vm, [(0x20000, 0x20100), bad])
+            self.assertEqual(vm.call('taskCatalogLoad', rows, 2), 0)
+            self.assertEqual([catalog_image(vm, i) for i in (2, 3)], [(0, 0), (0, 0)])
+        vm = ObjectsM()
+        self.assertEqual(vm.call('taskCatalogLoad', 0, 1), 0)
+        self.assertEqual(vm.call('taskCatalogLoad', 0x30000, 0), 0)
+
+    def test_capacity_is_the_table_width_not_a_fixed_image_count(self):
+        vm = ObjectsM()
+        full = [(0x20000 + 0x1000 * i, 0x20100 + 0x1000 * i) for i in range(15)]
+        self.assertEqual(vm.call('taskCatalogLoad', catalog_rows(vm, full), 15), 0xFFFF)
+        self.assertEqual(catalog_image(vm, 16), full[14])
+        vm = ObjectsM()
+        self.assertEqual(vm.call('taskCatalogLoad', catalog_rows(vm, full + [(0x40000, 0x40100)]), 16), 0)
+        self.assertEqual(catalog_image(vm, 2), (0, 0))
+        self.assertFalse(vm.call('taskRegisterImage', 17, 0x40000, 0x40100))
+
+    def test_sealed_catalog_rejects_rows_and_unregistered_ids_cannot_create(self):
+        vm = fixture(catalog=True)
+        vm.call('taskControlSeal')
+        rows = catalog_rows(vm, [(0x24000, 0x24100)])
+        self.assertEqual(vm.call('taskCatalogLoad', rows, 1), 0)
+        self.assertFalse(vm.call('taskRegisterImage', 3, 0x24000, 0x24100))
+        vm.memory[vm.field_address('createImages')] = 0xFFFF
+        for image in (3, 16, 17, 0):
+            vm.invoke(C['SYS_TASK_CREATE'], image)
+            self.assertEqual(vm.result(vm.current())[0], error(1))

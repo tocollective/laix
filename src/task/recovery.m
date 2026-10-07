@@ -1,5 +1,8 @@
 import { irqTokenValid } from "../drivers/irq.m"
-import { DEVICE_DISK, DEVICE_INPUT, KEYBOARD_IRQ } from "../arch/wrm081632/defs.m"
+import { DEVICE_DISK, DEVICE_INPUT, DEVICE_FONT, DEVICE_SCREEN } from "../arch/wrm081632/defs.m"
+import { DEVICE_ROLE_INPUT, DEVICE_ROLE_SCREEN, deviceRoleIrq, deviceRoleBlobBytes,
+    deviceRoleBlobVirtual } from "../drivers/device_table.m"
+import { mmuResourcesValid } from "../mm/mmu.m"
 import { serviceDiskIrq } from "../drivers/service_devices.m"
 import { panic } from "../kernel/panic.m"
 import { kernelBootInfo } from "../kernel/boot.m"
@@ -189,8 +192,12 @@ let serviceConfigure(reference: UWord, root: UWord, dependency: UWord, generatio
         let block: *RecoveryStart = peer.bootPage as *RecoveryStart
         if block.bytes != RECOVERY_START_BYTES || block.generation != generation return -ERRNO_EINVAL
     }
-    if ((task.deviceRights == DEVICE_DISK && !irqTokenValid(reference, irq, serviceDiskIrq(kernelBootInfo.disk))) ||
-        (task.deviceRights == DEVICE_INPUT && !irqTokenValid(reference, irq, KEYBOARD_IRQ)) ||
+    // A screen child must hold exactly its role's mappings plus its own line.
+    if (((task.deviceRights == DEVICE_DISK || task.deviceRights == DEVICE_FONT) &&
+            !irqTokenValid(reference, irq, serviceDiskIrq(kernelBootInfo.disk))) ||
+        (task.deviceRights == DEVICE_INPUT && !irqTokenValid(reference, irq, deviceRoleIrq(DEVICE_ROLE_INPUT))) ||
+        (task.deviceRights == DEVICE_SCREEN && (!irqTokenValid(reference, irq, deviceRoleIrq(DEVICE_ROLE_SCREEN)) ||
+            !mmuResourcesValid(task.directory, reference, DEVICE_ROLE_SCREEN))) ||
         (task.deviceRights == 0 && irq != 0)) return -ERRNO_EINVAL
     let received: Word = handleCopy(&mut currentTask.handles, root, &mut task.handles,
         currentTask.id, reference, RIGHT_RECEIVE)
@@ -209,6 +216,12 @@ let serviceConfigure(reference: UWord, root: UWord, dependency: UWord, generatio
     block.irq = irq
     block.generation = generation
     block.supervisor = currentTask.id
+    block.blob = 0
+    block.blobBytes = 0
+    if task.deviceRights == DEVICE_SCREEN {
+        block.blob = deviceRoleBlobVirtual(DEVICE_ROLE_SCREEN)
+        block.blobBytes = deviceRoleBlobBytes(DEVICE_ROLE_SCREEN)
+    }
     task.context.regs[2] = RECOVERY_START_BYTES
     return 0
 }

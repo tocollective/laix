@@ -25,18 +25,18 @@ class DeviceBoundaryTests(unittest.TestCase):
         self.assertGreater(vm.call('taskRuntimeDevices', child, C['DEVICE_DISK']), 0)
         before = record(vm, 'deviceExtent', 'generation')
         for offset, length in ((1, 16), (512, 97), (608, 1), (0xFFFFFE00, 16), (0, 0)):
-            self.assertEqual(vm.call('taskRuntimeExtent', child, offset, length), error(22))
+            self.assertEqual(vm.call('taskRuntimeExtent', child, offset, length, 0), error(22))
         self.assertEqual(record(vm, 'deviceExtent', 'generation'), before)
         vm.memory[vm.field_address('deviceFactory', 1)] = 0
-        self.assertEqual(vm.call('taskRuntimeExtent', child, 512, 96), error(1))
+        self.assertEqual(vm.call('taskRuntimeExtent', child, 512, 96, 0), error(1))
         vm.memory[vm.field_address('deviceFactory', 1)] = C['DEVICE_DISK']
-        self.assertEqual(vm.call('taskRuntimeExtent', child ^ 256, 512, 96), error(1))
-        self.assertEqual(vm.call('taskRuntimeExtent', child, 512, 96), 0)
+        self.assertEqual(vm.call('taskRuntimeExtent', child ^ 256, 512, 96, 0), error(1))
+        self.assertEqual(vm.call('taskRuntimeExtent', child, 512, 96, 0), 0)
         self.assertEqual(vm.call('diskInfo', child), 96)
-        token = vm.call('deviceSubmit', child, 0, 96, 1)
+        token = vm.call('deviceSubmit', child, 0, 96, 1, 0)
         self.assertGreater(token, 0)
         self.assertEqual(vm.memory.commands[-1][2:], (3, 1))
-        self.assertEqual(vm.call('taskRuntimeExtent', child, 0, 16), error(16))
+        self.assertEqual(vm.call('taskRuntimeExtent', child, 0, 16, 0), error(16))
         vm.memory.complete()
         self.assertEqual(vm.call('deviceFinish', child, token, USER_DATA), 96)
 
@@ -46,24 +46,62 @@ class DeviceBoundaryTests(unittest.TestCase):
         vm.memory[vm.addresses['fontData']] = 0
         self.assertTrue(vm.call('deviceExtentInit', 1, 2, C['DISK0_BASE'], 7, 700))
         self.assertEqual(vm.call('diskInfo', 2), 700)
-        token = vm.call('deviceSubmit', 2, 512, 188, 1)
+        token = vm.call('deviceSubmit', 2, 512, 188, 1, 0)
         self.assertEqual(vm.memory.commands[-1][2], 8)
         vm.memory.complete()
         self.assertEqual(vm.call('deviceFinish', 2, token, USER_DATA), 188)
 
+    def test_storage_root_is_validated_and_producer_neutral(self):
+        root = 0x15000
+        good = (0x31525357, 1, 608, 0)
+        for words in ((0x31525358, 1, 608, 0), (0x31525357, 0, 608, 0), (0x31525357, 2, 608, 0),
+                      (0x31525357, 1, 0, 0), (0x31525357, 1, 0x80000000, 0), (0x31525357, 1, 608, 1)):
+            vm = kernel_fixture(root=None)
+            vm.call('serviceDevicesRollback')
+            for i, word in enumerate(words):
+                vm.memory[root + 4 * i] = word
+            self.assertEqual(vm.call('approvedStorageBytes'), 0)
+            self.assertFalse(vm.call('serviceDevicesInit', 1, 2, C['DISK0_BASE'], 1024))
+            self.assertEqual(vm.globals['devicesInitialized'], 0)
+            for i, word in enumerate(good):
+                vm.memory[root + 4 * i] = word
+            self.assertTrue(vm.call('serviceDevicesInit', 1, 2, C['DISK0_BASE'], 1024))
+        # The covered bytes (font or otherwise) are never read: only the framing is.
+        vm = kernel_fixture()
+        self.assertEqual(vm.call('approvedStorageBytes'), 608)
+        self.assertEqual(vm.call('diskInfo', 2), 608)
+
+    def test_storage_root_tool_matches_kernel_framing(self):
+        import sys
+        sys.path.insert(0, str(LAIX / 'tools'))
+        import storage_root
+        data = storage_root.pack(700)
+        self.assertEqual(len(data), 16)
+        self.assertEqual(storage_root.unpack(data), 700)
+        for bad in (0, 0x80000000, -1):
+            with self.assertRaises(ValueError):
+                storage_root.pack(bad)
+        for corrupt in (b'WSR2' + data[4:], data[:4] + b'\x02' + data[5:], data[:12] + b'\x01' + data[13:], data[:-1]):
+            with self.assertRaises(ValueError):
+                storage_root.unpack(corrupt)
+        self.assertGreater(storage_root.unpack((LAIX / 'fonts/storage-extent.bin').read_bytes()), 0)
+
     def test_unsafe_commands_and_address_injection_issue_no_dma(self):
         vm = kernel_fixture()
         free = vm.free_pages()
-        for command in (0, 2, 3, 4, 0x101, 0xFFFFFFFF):
-            self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, command), error(22))
+        for command in (0, 4, 0x101, 0xFFFFFFFF):
+            self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, command, 0), error(22))
+        # WRITE and FLUSH exist, but a read-only extent issues nothing.
+        for command in (2, 3):
+            self.assertEqual(vm.call('deviceSubmit', 2, 0, 512 if command == 2 else 0, command, USER_DATA), error(30))
         for offset in (USER_DATA, C['DISK0_BASE'], 0xFFFFFFFF):
-            self.assertEqual(vm.call('deviceSubmit', 2, offset, 16, 1), error(22))
+            self.assertEqual(vm.call('deviceSubmit', 2, offset, 16, 1, 0), error(22))
         self.assertEqual(vm.memory.commands, [])
         self.assertEqual(vm.free_pages(), free)
 
     def test_instance_tokens_and_exactly_once_completion(self):
         vm = kernel_fixture()
-        first = vm.call('deviceSubmit', 2, 0, 512, 1)
+        first = vm.call('deviceSubmit', 2, 0, 512, 1, 0)
         bounce = vm.globals['deviceBounce']
         self.assertEqual(vm.call('deviceFinish', 1, first, USER_DATA), error(1))
         self.assertEqual(vm.call('deviceCancel', 2, first + 1), error(22))
@@ -73,7 +111,7 @@ class DeviceBoundaryTests(unittest.TestCase):
         self.assertEqual(vm.call('deviceFinish', 2, first, USER_DATA), 512)
         self.assertEqual(vm.call('deviceFinish', 2, first, USER_DATA), error(22))
         self.assertTrue(vm.call('physicalPageAvailable', bounce))
-        second = vm.call('deviceSubmit', 2, 0, 16, 1)
+        second = vm.call('deviceSubmit', 2, 0, 16, 1, 0)
         self.assertGreater(second, first)
         self.assertEqual(vm.call('deviceFinish', 2, first, USER_DATA), error(22))
         self.assertEqual(vm.call('deviceCancel', 2, first), error(22))
@@ -82,7 +120,7 @@ class DeviceBoundaryTests(unittest.TestCase):
 
     def test_cancel_canaries_and_immutable_owner_survive_late_dma(self):
         vm = kernel_fixture()
-        token = vm.call('deviceSubmit', 2, 0, 512, 1)
+        token = vm.call('deviceSubmit', 2, 0, 512, 1, 0)
         bounce = vm.globals['deviceBounce']
         for address in (bounce - 4, bounce + 512, bounce + 4092):
             vm.memory[address] = 0xC0FFEE
@@ -93,7 +131,7 @@ class DeviceBoundaryTests(unittest.TestCase):
         for _ in range(12):
             vm.call('deviceReap')
             self.assertFalse(vm.call('serviceDevicesQuiescent', 2))
-            self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, 1), error(32))
+            self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, 1, 0), error(32))
             self.assertNotIn(bounce, vm.free_pages())
             self.assertEqual(vm.call('physicalPageReferences', bounce), 1)
         self.assertEqual(vm.free_pages(), free)
@@ -109,7 +147,7 @@ class DeviceBoundaryTests(unittest.TestCase):
     def test_instance_exhaustion_never_wraps_or_allocates(self):
         vm = kernel_fixture()
         record(vm, 'deviceOperation', 'instance', 0x7FFFFFFF)
-        self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, 1), error(75))
+        self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, 1, 0), error(75))
         self.assertEqual(vm.globals['deviceBounce'], 0)
         self.assertEqual(vm.memory.commands, [])
 
@@ -141,7 +179,7 @@ class DeviceBoundaryTests(unittest.TestCase):
 
     def test_cancelled_dma_reaps_on_idle_without_a_ready_task(self):
         vm = kernel_fixture(start=True)
-        token = vm.call('deviceSubmit', 2, 0, 16, 1)
+        token = vm.call('deviceSubmit', 2, 0, 16, 1, 0)
         bounce = vm.globals['deviceBounce']
         self.assertEqual(vm.call('deviceCancel', 2, token), 0)
         for owner in (1, 2, 3):
@@ -187,7 +225,7 @@ class DeviceBoundaryTests(unittest.TestCase):
         disk, _, _, _ = replacement(vm, 1, name=3, devices=C['DEVICE_DISK'])
         peer, _, rx, _ = replacement(vm, 1, name=1)
         vm.run(disk)
-        self.assertGreater(vm.call('deviceSubmit', disk, 0, 16, 1), 0)
+        self.assertGreater(vm.call('deviceSubmit', disk, 0, 16, 1, 0), 0)
         bounce = vm.globals['deviceBounce']
         vm.run(1)
         vm.invoke(C['SYS_TASK_TERMINATE'], disk, 0)
@@ -248,7 +286,7 @@ class DeviceBoundaryTests(unittest.TestCase):
             self.assertEqual(vm.call('fontBegin', glyph, chunk), error(22))
         self.assertEqual(vm.calls, [])
         self.assertEqual(vm.call('fontBegin', 18, 1), 17)
-        self.assertEqual(vm.calls, [(C['SYS_DEVICE_SUBMIT'], 592, 16, 1)])
+        self.assertEqual(vm.calls, [(C['SYS_DEVICE_SUBMIT'], 592, 16, 1, 0)])
 
 
 if __name__ == '__main__':

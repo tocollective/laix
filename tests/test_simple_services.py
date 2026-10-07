@@ -172,10 +172,10 @@ class SimpleKernelTests(unittest.TestCase):
 
     def test_disk_extent_cross_sector_overflow_and_exact_copy_length(self):
         vm = kernel_fixture()
-        for offset, count in ((608, 1), (0xFFFFFFFF, 1), (607, 2), (511, 2), (0, 0), (0, 513), (0, 0xFFFFFFFF)):
-            self.assertEqual(vm.call('deviceSubmit', 2, offset, count, 1), error(22))
+        for offset, count in ((608, 1), (0xFFFFFFFF, 1), (607, 2), (0, 0), (0, 609), (0, 0xFFFFFFFF)):
+            self.assertEqual(vm.call('deviceSubmit', 2, offset, count, 1, 0), error(22))
         self.assertEqual(vm.memory.commands, [])
-        self.assertGreater(vm.call('deviceSubmit', 2, 511, 1, 1), 0)
+        self.assertGreater(vm.call('deviceSubmit', 2, 511, 1, 1, 0), 0)
         physical = vm.globals['deviceBounce']
         self.assertEqual(vm.call('physicalPageReferences', physical), 1)
         vm.memory.complete()
@@ -199,7 +199,7 @@ class SimpleKernelTests(unittest.TestCase):
             vm.call('ipcAccept', vm.field_address('context', 2), rx, USER_DATA, 32)
             vm.call('taskYield', vm.field_address('context', 2))
             vm.call('ipcCall', vm.field_address('context', 3), tx[3], USER_DATA, 0, USER_DATA, 32)
-            self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1), 0)
+            self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1, 0), 0)
             physical, directory = vm.globals['deviceBounce'], vm.field('directory', 2)
             pages = vm.pages(2)
             vm.call('taskFinish', vm.field_address('context', 2), 9, faulted)
@@ -208,7 +208,7 @@ class SimpleKernelTests(unittest.TestCase):
                 self.assertEqual(vm.memory[vm.field_address('context', id) + C['TF_R1']], error(32))
                 self.assertEqual(vm.field('ipcEndpoint', id), 0)
             self.assertEqual(vm.call('irqComplete', 2, vm.disk_irq), error(1))
-            self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, 1), error(32))
+            self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, 1, 0), error(32))
             current = (vm.globals['currentTask'] - vm.addresses['tasks']) // vm.task_type.size + 1
             vm.cpu_sp = vm.field('kernelStackTop', current) - 64
             vm.call('taskReap')

@@ -16,7 +16,10 @@ This profile runs a supervisor, stateless Echo, read-only Disk, Files and a
 consenting client. Existing UART/screen/simple profiles retain their startup
 ABIs and policies. The recovery image catalog consists of Echo (2), Disk (3),
 Files (4) and the supervisor/client image (5); legacy approved child image 1
-remains available under its separate mask. Images are validated embedded ELF
+remains available under its separate mask. These IDs are the order of the rows in
+`recoveryCatalog` ([recovery_main.asm](../src/kernel/recovery_main.asm)), loaded
+all-or-nothing by `taskCatalogLoad`; the kernel names no image. The catalog holds
+IDs 1–16 and the creation mask is derived from the rows loaded. Images are validated embedded ELF
 segments, never user addresses or arbitrary executable bytes. Catalog
 registration and private supervisor-root issuance close with task-control
 sealing. Children inherit neither the catalog mask nor factory rights.
@@ -31,9 +34,11 @@ sealing. Children inherit neither the catalog mask nor factory rights.
 | Resource generation | Positive supervisor-issued incarnation, shared by a Disk/Files pair; incremented for replacement, never reused under that supervisor/name |
 | Endpoint / handle / IRQ / reply token | Separate existing generation-bearing authority; none can be rebound to another instance |
 
-`RecoveryStart` is 56 bytes. Its first ten words are the unchanged
-`RuntimeStart` layout, with `bytes=56`; the additional words are dependency
-send handle, IRQ token, resource generation and supervisor reference. The
+`RecoveryStart` is 64 bytes. Its first ten words are the unchanged
+`RuntimeStart` layout, with `bytes=64`; the additional words are dependency
+send handle, IRQ token, resource generation, supervisor reference and, for a
+supervised display only, the virtual address and unrounded length of its
+read-only font index (zero for every other service). The
 startup page is private RO/NX. Its instance identity is `reference`, distinct
 from `generation`. Generic runtime children still receive the 40-byte record;
 legacy simple services retain their 64-byte `ServiceStart`.
@@ -60,7 +65,7 @@ select records; kernel-owned capabilities authorize operations.
 | 63 `allowServices` | owned Created child, name mask | CONFIGURE plus supervisor root; enroll before startup configuration/publication |
 | 64 `withdrawService` | name, negative status | Supervisor-only; `-EAGAIN` means recovering, `-EPIPE` means unavailable/quarantined |
 | 65 `configureService` | child, receive root, dependency root or 0, generation, IRQ | Supervisor plus CONFIGURE; installs attenuated handles and private startup transactionally |
-| 54 `grantTaskDevices` | owned Created child, device mask | Existing factory now additionally permits exclusive read-only Disk under an explicitly granted DISK bit |
+| 54 `grantTaskDevices` | owned Created child, device mask | Existing factory now additionally permits exclusive read-only Disk under an explicitly granted DISK bit. The `SCREEN` and `FONT` bits add the display and the font-extent reader ([supervised display](#supervised-display-screen-and-bitmap-storage)); each of Disk, Font and Screen is issued alone |
 
 There are eight private registry rows, four names per supervisor, eight sealed
 supervisor roots, eight concurrent task slots and the existing endpoint,
@@ -141,8 +146,9 @@ reported as successful recovery or allocator leakage.
 Disk factory preflight checks the old owner is dead/retired and observes DMA
 quiescence before issuing a new IRQ generation. It never acknowledges medium
 CHANGED to make replacement appear valid. Medium removal/change permanently
-invalidates this boot resource. Screen/font device reassignment remains under
-its separate boot policy; this profile grants no arbitrary MMIO/DMA authority.
+invalidates this boot resource. Display and font-extent reassignment is the
+separate [supervised display](#supervised-display-screen-and-bitmap-storage)
+profile; neither profile grants arbitrary MMIO/DMA authority.
 
 Owner death masks/revokes communication and IRQ authority immediately. The
 bounce-buffer allocator pin survives BUSY, including late completions. BUSY
@@ -155,3 +161,60 @@ the pin to fake progress.
 
 See [acceptance and provenance](../tests/SERVICE_RECOVERY_ACCEPTANCE.md) for the
 requirement-by-requirement evidence and explicit source/CPU boundaries.
+
+## Supervised display (Screen and bitmap storage)
+
+The fixed [Screen boot](SCREEN_IRQ_DMA.md) seals its device grants and has no
+supervisor, so a dead Screen leaves clients with `EPIPE` until reboot. The
+`screenrecovery` profile runs the same Screen and bitmap-storage code under the
+runtime supervisor instead ([G3](GAP_03_FIXED_SERVICE_RESTART.md)):
+
+```sh
+LAIX_CONSOLE=screenrecovery sh laix/build.sh
+LAIX_CONSOLE=screenrecovery sh laix/run.sh
+```
+
+It is a separate profile because the disk broker has one owner at a time: bitmap
+storage and Disk/Files cannot both own the approved extent. The supervisor
+(`user/recovery/screen_supervisor.m`) holds image creation for Echo (2), bitmap
+storage (3), Screen (4) and itself/client (5) and the `SCREEN` and `FONT` device
+factories. Names are 1 Screen, 2 bitmap storage, 3 Echo; the client is enrolled
+for 1 and 3 only.
+
+**Grant and preflight.** `grantTaskDevices(child, SCREEN)` installs exactly the
+rows of the Screen role in the device table (VRAM window RW/NX, read-only video
+register page, read-only font index) into the unpublished child, issues the video
+IRQ and records the child as display owner. A manager chooses no address, size or
+permission. The preflight runs first and changes nothing on failure:
+
+1. the display is not the sealed boot-time one;
+2. there is no live display owner;
+3. every Screen-role range is free in the resource ledger, which is the
+   observable proof that a dead owner's directory has been destroyed and its
+   aliases revoked;
+4. the video engine is not BUSY.
+
+`FONT` takes the same path as `DISK` (quiescence, no CHANGED acknowledgement,
+fresh IRQ generation) and leaves the Screen owner alone. Screen holds no DMA
+authority: it writes VRAM with CPU stores and cannot issue video commands, so
+unlike Disk there is no pin to wait for. Owner death stops scanout and clears
+video status; the replacement reprograms mode, palette and scanout itself.
+`serviceConfigure` additionally requires a Screen child to hold exactly its
+role's mappings and its own video IRQ token. If installation fails after the
+preflight (page-table exhaustion) the child holds no owner, IRQ or rights, and
+the supervisor discards it like any failed construction.
+
+**Policy.** Screen consumes bitmap storage and shares its resource generation, so
+they are replaced together by the same chain rule as Files/Disk
+(`recoverChain`): retire Screen, retire storage (waiting for DMA quiescence),
+back off 1, 2, 4, 8 s, launch storage, then launch Screen with a fresh send
+handle to it. Five constructions per boot; exhaustion or a failed launch marks
+both unavailable and leaves Echo and unrelated tasks running.
+
+**Clients.** The Screen wire protocol is unchanged. A client observes `-EPIPE`,
+`-ETIMEDOUT` or `-EPROTO`, reports the resource generation to the supervisor
+over its private control endpoint, closes the handle and resolves name 1 again;
+nothing rebinds a handle. Calls carry an 8 second deadline. A replacement Screen
+starts with an empty frame, an empty glyph cache and the cursor at the origin, so
+text shown by its predecessor is gone and the client redraws. Writes are not
+retried automatically: a screen write is not idempotent.

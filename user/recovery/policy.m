@@ -1,11 +1,11 @@
 // Private supervisor policy: Echo and Disk -> Files, four replacements per boot.
 // Deadlines and sleep bound watchdog work; no registry entry pins a stale root.
-import { TaskEvent } from "../../src/task/runtime_start.m"
+import { TaskEvent, LifetimeReport } from "../../src/task/runtime_start.m"
 import { createTask, createEndpoint, configureService, publishService,
     withdrawService, grantTaskDevices, grantDeviceExtent, closeHandle, terminateTask, inspectTask,
-    collectTask, sleep } from "../syscalls.m"
-import { ENDPOINT_MODE_SERVICE, DEVICE_DISK, TASK_EVENT_RECLAIMED,
-    ERRNO_EAGAIN, ERRNO_EPIPE, ERRNO_EBUSY, ERRNO_ESRCH } from "../../src/arch/wrm081632/defs.m"
+    collectTask, sleep, lifetimeReport } from "../syscalls.m"
+import { ENDPOINT_MODE_SERVICE, DEVICE_DISK, DEVICE_SCREEN, DEVICE_FONT, TASK_EVENT_RECLAIMED,
+    ERRNO_EAGAIN, ERRNO_EPIPE, ERRNO_EBUSY, ERRNO_ESRCH, LIFETIME_REPLY_RESERVE } from "../../src/arch/wrm081632/defs.m"
 
 type ManagedService {
     reference: UWord,
@@ -17,6 +17,8 @@ type ManagedService {
 // User manager configuration: zero bytes retains the complete approved root.
 // Nonzero windows are checked relative byte ranges, with sector-aligned offset.
 let mut recoveryDiskOffset: UWord
+// EXTENT_WRITE asks for a writable window; zero keeps the default read-only extent.
+let mut recoveryDiskFlags: UWord
 let mut recoveryDiskBytes: UWord
 let mut recoveryEvent: TaskEvent
 
@@ -36,7 +38,7 @@ let launchService(service: *mut ManagedService, image: UWord, name: UWord,
         if devices != 0 irq = grantTaskDevices(child as UWord, devices)
         if irq < 0 result = irq
         if result == 0 && devices == DEVICE_DISK && recoveryDiskBytes != 0 {
-            result = grantDeviceExtent(child as UWord, recoveryDiskOffset, recoveryDiskBytes)
+            result = grantDeviceExtent(child as UWord, recoveryDiskOffset, recoveryDiskBytes, recoveryDiskFlags)
         }
         if result == 0 result = configureService(child as UWord, root as UWord,
             dependency, generation, irq as UWord)
@@ -102,6 +104,36 @@ let retireService(service: *mut ManagedService, name: UWord): Word {
     return -ERRNO_EBUSY
 }
 
+// Planned maintenance for a finite reply namespace (G4). Returns one when the
+// child has at most `reserve` admitted calls left, zero when it has more, or a
+// negative errno. Construction already prefers a fresh namespace, so replacing
+// a due child moves its replacement away from the nearly spent one. After
+// replacing, check the replacement too: when it is still due, no fresh
+// namespace is left and the supervisor must stop replacing and plan a restart.
+let mut lifetimeSnapshot: LifetimeReport
+let lifetimeDue(reference: UWord, reserve: UWord): Word {
+    let read: Word = lifetimeReport(reference, &mut lifetimeSnapshot)
+    if read != 0 return read
+    if lifetimeSnapshot.replySelected <= reserve return 1
+    return 0
+}
+
+// Drain step of the procedure: the child is terminated, reclaimed and its
+// completion collected. The caller closes its own handles and constructs the
+// replacement explicitly; no outstanding wait or old reply token survives.
+let retireClient(reference: UWord): Word {
+    let stopped: Word = terminateTask(reference, -ERRNO_EPIPE)
+    if stopped != 0 && stopped != -ERRNO_ESRCH return stopped
+    for wait: UWord in 0..5 {
+        let status: Word = inspectTask(reference, &mut recoveryEvent)
+        if status != 0 return status
+        if recoveryEvent.flags & TASK_EVENT_RECLAIMED != 0 return collectTask(reference, &mut recoveryEvent)
+        let paused: Word = sleep(1)
+        if paused != 0 return paused
+    }
+    return -ERRNO_EBUSY
+}
+
 // Bounded exponential backoff: 1, 2, 4, 8 seconds; lifetime attempt budget.
 let recoveryBackoff(attempt: UWord): Word {
     if attempt >= 5 return -ERRNO_EPIPE
@@ -109,7 +141,7 @@ let recoveryBackoff(attempt: UWord): Word {
     if shift > 3 shift = 3
     return sleep(1 << shift)
 }
-export { ManagedService, launchService, retireService, recoveryBackoff }
+export { ManagedService, launchService, retireService, recoveryBackoff, lifetimeDue, retireClient }
 
 // Poll completion/fault events once per watchdog tick. A liveness report from
 // a consenting client may force the same bounded path for a stalled live task.
@@ -133,28 +165,40 @@ let recoverService(service: *mut ManagedService, image: UWord, name: UWord,
     if paused != 0 return paused
     return launchService(service, image, name, dependency, service.generation + 1, devices)
 }
-let recoverFilesDisk(disk: *mut ManagedService, files: *mut ManagedService): Word {
-    // Reconstruct all volatile state. Never reuse a downstream dependency handle.
-    let downstream: Word = retireService(files, 2)
+// A consumer and the producer it holds a send handle to share one resource
+// generation and are replaced together. Consumers retire before producers
+// (the producer's device may need quiescence); producers launch first.
+// Reconstruct all volatile state. Never reuse a downstream dependency handle.
+let recoverChain(consumer: *mut ManagedService, consumerName: UWord, consumerImage: UWord, consumerDevices: UWord,
+    producer: *mut ManagedService, producerName: UWord, producerImage: UWord, producerDevices: UWord): Word {
+    let downstream: Word = retireService(consumer, consumerName)
     if downstream != 0 return downstream
-    let upstream: Word = retireService(disk, 3)
+    let upstream: Word = retireService(producer, producerName)
     if upstream != 0 return upstream
-    if disk.attempts >= 5 || files.attempts >= 5 {
-        let disabled: Word = recoveryUnavailable(disk, 3)
+    if producer.attempts >= 5 || consumer.attempts >= 5 {
+        let disabled: Word = recoveryUnavailable(producer, producerName)
         if disabled != -ERRNO_EPIPE return disabled
-        return recoveryUnavailable(files, 2)
+        return recoveryUnavailable(consumer, consumerName)
     }
-    let paused: Word = recoveryBackoff(disk.attempts - 1)
+    let paused: Word = recoveryBackoff(producer.attempts - 1)
     if paused != 0 return paused
-    let generation: UWord = disk.generation + 1
-    let started: Word = launchService(disk, 3, 3, 0, generation, DEVICE_DISK)
+    let generation: UWord = producer.generation + 1
+    let started: Word = launchService(producer, producerImage, producerName, 0, generation, producerDevices)
     if started != 0 {
-        let disabled: Word = recoveryUnavailable(disk, 3)
+        let disabled: Word = recoveryUnavailable(producer, producerName)
         if disabled != -ERRNO_EPIPE return disabled
-        return recoveryUnavailable(files, 2)
+        return recoveryUnavailable(consumer, consumerName)
     }
-    let consumer: Word = launchService(files, 4, 2, disk.root, generation, 0)
-    if consumer != 0 return recoveryUnavailable(files, 2)
+    let attached: Word = launchService(consumer, consumerImage, consumerName, producer.root, generation, consumerDevices)
+    if attached != 0 return recoveryUnavailable(consumer, consumerName)
     return 0
 }
-export { serviceFailed, recoverService, recoverFilesDisk, recoveryUnavailable }
+let recoverFilesDisk(disk: *mut ManagedService, files: *mut ManagedService): Word {
+    return recoverChain(files, 2, 4, 0, disk, 3, 3, DEVICE_DISK)
+}
+// Screen consumes the bitmap storage service. Names and images are the screen
+// profile's: Screen is name 1/image 4, bitmap storage name 2/image 3.
+let recoverScreenBitmap(bitmap: *mut ManagedService, screen: *mut ManagedService): Word {
+    return recoverChain(screen, 1, 4, DEVICE_SCREEN, bitmap, 2, 3, DEVICE_FONT)
+}
+export { serviceFailed, recoverService, recoverChain, recoverFilesDisk, recoverScreenBitmap, recoveryUnavailable }

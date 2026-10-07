@@ -23,7 +23,10 @@ class TaskEntered(Exception):
 class TaskM(SourceM):
     def __init__(self, ram=0x100000, root=None):
         super().__init__(root or LAIX / "src/trap/trap.m")
-        self.globals["approvedStorageBytes"] = 608  # Build-issued fixture resource, independent of LAF bytes.
+        # Build-issued fixture storage root, independent of LAF bytes.
+        self.addresses["approvedStorageRoot"] = 0x15000
+        for i, word in enumerate((0x31525357, 1, 608, 0)):
+            self.memory[0x15000 + 4 * i] = word
         self.task_type = self.decls["tasks"].sym.type.elem
         self.addresses.update(userCodeStart=0x14000, userCodeEnd=0x1401C,
                               kernelStackBottom=0x91000, taskKernelResume=0x14100)

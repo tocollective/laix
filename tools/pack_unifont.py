@@ -5,6 +5,8 @@ import argparse
 from pathlib import Path
 import struct
 
+from storage_root import pack as pack_storage_root
+
 MAGIC = b'LAF1'
 HEADER = struct.Struct('<4s7I')
 ENTRY = struct.Struct('<II')
@@ -51,13 +53,13 @@ def main():
     parser.add_argument('source', type=Path, help='Unifont HEX file')
     parser.add_argument('output', type=Path, help='indexed binary font (.laf)')
     parser.add_argument('--index', type=Path, help='also write the read-only header and index resource')
-    parser.add_argument('--extent', type=Path, help='write the approved bitmap byte extent manifest')
+    parser.add_argument('--extent', type=Path, help='write the approved bitmap extent as a storage root')
     args = parser.parse_args()
     try:
         data = pack(args.source.read_text(encoding='utf-8'))
         args.output.write_bytes(data)
         if args.extent is not None:
-            args.extent.write_bytes(struct.pack('<I', len(data) - HEADER.unpack_from(data)[4]))
+            args.extent.write_bytes(pack_storage_root(len(data) - HEADER.unpack_from(data)[4]))
         if args.index is not None:
             pixels_offset = HEADER.unpack_from(data)[4]
             args.index.write_bytes(data[:pixels_offset])

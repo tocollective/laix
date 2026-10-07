@@ -17,3 +17,13 @@ recoveryFilesEnd:
 recoveryPolicyImage:
     .incbin "../../build/recovery-user/policy.elf"
 recoveryPolicyEnd:
+    .align 4
+; Catalog rows {start, end} become images 2.. in this order; the kernel holds no
+; per-image names. Adding an image is a row here, not a kernel code change.
+    .globl recoveryCatalog, recoveryCatalogEnd
+recoveryCatalog:
+    .word recoveryEchoImage, recoveryEchoEnd
+    .word recoveryDiskImage, recoveryDiskEnd
+    .word recoveryFilesImage, recoveryFilesEnd
+    .word recoveryPolicyImage, recoveryPolicyEnd
+recoveryCatalogEnd:

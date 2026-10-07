@@ -90,6 +90,7 @@ source, tests, measurements and explicit conditional scope in
 [LIMITS_LATENCY_PROVENANCE.json](../tests/LIMITS_LATENCY_PROVENANCE.json) records
 source/compiler and image hashes, unchanged WRM/ROM, logical source results and
 separate executed CPU measurements. The largest measured section is 94.880117 ms
-at 128 MHz for EXIT plus all eight maximally charged tasks' cleanup. The record
+at 128 MHz for EXIT plus all eight maximally charged tasks' cleanup (superseded
+by staged teardown, [G5](GAP_05_KERNEL_LATENCY.md): 12.2 ms at most). The record
 retains finite reply lifetime, explicit replacement, 2/32 MiB workload scope and
 the distinction between measured regression budgets and universal WCET.

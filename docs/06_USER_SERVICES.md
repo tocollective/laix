@@ -11,8 +11,9 @@ items below: separate user components, exclusive NX grants, notification-based
 wait/rearm and a narrow trusted physical-DMA broker. The
 [screen/IRQ/DMA contract](SCREEN_IRQ_DMA.md) describes the implementation;
 [acceptance](../tests/SCREEN_IRQ_DMA_ACCEPTANCE.md) records 17 dedicated source
-checks, 14 screen CPU cases and the 11-case UART regression. Fixed UART/Screen automatic restart remains disabled. Explicit runtime
-Disk/Files recovery is accepted in [A5](../tests/SERVICE_RECOVERY_ACCEPTANCE.md).
+checks, 14 screen CPU cases and the 11-case UART regression. The fixed UART/Screen bootstraps are not restarted (sealed grants); explicit runtime
+Disk/Files recovery is accepted in [A5](../tests/SERVICE_RECOVERY_ACCEPTANCE.md), and a
+supervised, restartable Screen in [G3](GAP_03_FIXED_SERVICE_RESTART.md).
 The subsequent [simple-service milestone](SIMPLE_SERVICES.md)
 adds input, a read-only disk extent and an immutable file endpoint, with
 quiescent DMA-owner destruction and independent failure acceptance.
