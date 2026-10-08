@@ -50,10 +50,9 @@ What changed:
 
 ## Remaining limits
 
-- **The CPU run is local, not an identified bundle.** It ran on the working tree
-  ([record](../tests/LIFETIME_ACCEPTANCE.md)) and is not packaged under the G6
-  rules; the `lifetime` profile is not in the CI profiles. Other CPU profiles
-  have not been rerun on this kernel.
+- **The CPU run is packaged, not remote.** The `lifetime` profile ran in the G7
+  campaign ([record](../tests/LIFETIME_ACCEPTANCE.md)) and is in the CI matrix;
+  all other profiles were rerun on the same kernel there. No remote run exists.
 - One scenario only: a single client, the fallback to a nearly spent namespace
   is covered in source only.
 - The production supervisors (`recovery`, `screenrecovery`) do not call the new

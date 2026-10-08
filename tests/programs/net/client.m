@@ -2,9 +2,11 @@
 // the gateway twice, resolves a name that exists and one that does not, and
 // prints what it found through the console, so the CPU probe can read the UART.
 // Its exit code names a step that failed outright: 0 when every step behaved.
+// A resolver that answers every name (a wildcard upstream) is accepted for the
+// missing name; only a timeout or a damaged answer fails.
 import { RuntimeStart } from "../../../src/task/runtime_start.m"
 import { START_BLOCK_VA, RUNTIME_START_BYTES, RUNTIME_START_MAGIC, RUNTIME_START_VERSION,
-    ERRNO_ENOENT, ERRNO_ETIMEDOUT } from "../../../src/arch/wrm081632/defs.m"
+    ERRNO_ENOENT } from "../../../src/arch/wrm081632/defs.m"
 import { exit } from "../../../user/syscalls.m"
 import { startHandle } from "../../../user/starthandles.m"
 import { textStart, textFlush, textChar, textString, textLine, textNumber, textSigned } from "../../../user/text.m"
@@ -80,7 +82,7 @@ let ncMain(ip: UWord): Word {
     }
     textLine()
     textFlush()
-    if missing != -ERRNO_ENOENT && missing != -ERRNO_ETIMEDOUT return 21
+    if missing != 0 && missing != -ERRNO_ENOENT return 21
     textString("network ok")
     textLine()
     textFlush()

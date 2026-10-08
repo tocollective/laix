@@ -11,8 +11,18 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILES = ('uart', 'screen', 'services', 'uart-stress', 'screen-stress',
-            'memory', 'sharing', 'objects', 'supervisor', 'soak', 'loader', 'fs', 'shell', 'net', 'recovery', 'recovery-production', 'latency', 'hid', 'media')
+            'memory', 'sharing', 'objects', 'supervisor', 'soak', 'loader', 'fs', 'shell', 'net', 'recovery', 'recovery-production', 'lifetime',
+            'screenrecovery', 'screenrecovery-watchdog', 'screenrecovery-production',
+            'latency', 'hid', 'media')
 SCHEMA = 1
+# Profiles whose image is not named after them.
+IMAGES = {'uart': 'laix', 'uart-stress': 'laix', 'screen-stress': 'laix', 'hid': 'laix', 'latency': 'laix',
+          'media': 'services', 'recovery-production': 'recovery', 'lifetime': 'recovery',
+          'screenrecovery-watchdog': 'screenrecovery', 'screenrecovery-production': 'screenrecovery'}
+# Build-time provenance records the probes compare with the current sources.
+PROVENANCE = {'recovery': 'recovery', 'recovery-production': 'recovery', 'lifetime': 'recovery',
+              'screenrecovery': 'screenrecovery', 'screenrecovery-watchdog': 'screenrecovery',
+              'screenrecovery-production': 'screenrecovery'}
 
 
 def digest(path):
@@ -56,8 +66,7 @@ def verify(bundle, profile=None, match_source=True):
     if match_source and record['source'] != source_state():
         raise ValueError('build source/compiler/probe manifest does not match checkout')
     files = record['files']
-    image = {'uart': 'laix', 'uart-stress': 'laix', 'screen-stress': 'laix', 'hid': 'laix',
-             'latency': 'laix', 'media': 'services', 'recovery-production': 'recovery'}.get(record['profile'], record['profile'])
+    image = IMAGES.get(record['profile'], record['profile'])
     required = {'tools/wrm081632', 'tools/firmware.rom',
                 f'laix/build/{image}.img', f'laix/build/{image}.map',
                 'laix/fonts/unifont-console.laf', 'laix/fonts/unifont-index.laf', 'laix/fonts/storage-extent.bin'}
@@ -86,8 +95,7 @@ def pack(args):
         files[name] = dict(bytes=target.stat().st_size, sha256=digest(target))
     copy(args.emulator, 'tools/wrm081632')
     copy(args.rom, 'tools/firmware.rom')
-    image_name = {'uart': 'laix', 'uart-stress': 'laix', 'screen-stress': 'laix',
-                  'latency': 'laix', 'hid': 'laix', 'media': 'services', 'recovery-production': 'recovery'}.get(args.profile, args.profile)
+    image_name = IMAGES.get(args.profile, args.profile)
     for suffix in ('img', 'map'):
         copy(ROOT / f'laix/build/{image_name}.{suffix}', f'laix/build/{image_name}.{suffix}')
     # Keep maps and ELFs together; probes decode executable instructions/ABI.
@@ -96,7 +104,9 @@ def pack(args):
         'hid': ('services',), 'uart-stress': ('services',), 'screen-stress': ('services',),
         'loader': ('services',), 'fs': ('services',), 'shell': ('services',), 'net': ('services',),
         'memory': ('memory-user',), 'sharing': ('sharing-user',), 'objects': ('objects-user',),
-        'recovery': ('recovery-user',), 'recovery-production': ('recovery-user',),
+        'recovery': ('recovery-user',), 'recovery-production': ('recovery-user',), 'lifetime': ('recovery-user',),
+        'screenrecovery': ('screen-recovery-user',), 'screenrecovery-watchdog': ('screen-recovery-user',),
+        'screenrecovery-production': ('screen-recovery-user',),
     }.get(args.profile, ())
     service_names = {
         'screen': ('screen', 'storage', 'application'),
@@ -117,8 +127,9 @@ def pack(args):
     for path in sorted((ROOT / 'laix/fonts').glob('*.laf')):
         copy(path, str(path.relative_to(ROOT)))
     copy(ROOT / 'laix/fonts/storage-extent.bin', 'laix/fonts/storage-extent.bin')
-    if args.profile.startswith('recovery'):
-        copy(ROOT / 'laix/build/recovery.provenance.json', 'laix/build/recovery.provenance.json')
+    if args.profile in PROVENANCE:
+        record_name = f'laix/build/{PROVENANCE[args.profile]}.provenance.json'
+        copy(ROOT / record_name, record_name)
     if source != source_state():
         raise ValueError('sources changed while packaging')
     record = dict(schema=SCHEMA, profile=args.profile, source=source, files=files,
@@ -131,8 +142,7 @@ def pack(args):
 
 def commands(profile, emulator, rom, logs):
     build = ROOT / 'laix/build'
-    image = {'uart': 'laix', 'uart-stress': 'laix', 'screen-stress': 'laix', 'latency': 'laix', 'hid': 'laix', 'media': 'services',
-             'recovery-production': 'recovery'}.get(profile, profile)
+    image = IMAGES.get(profile, profile)
     common = [str(build / (image + '.img')), str(build / (image + '.map')),
               '--emulator', str(emulator), '--rom', str(rom)]
     suites = {
@@ -154,6 +164,10 @@ def commands(profile, emulator, rom, logs):
         'net': [('probe_net_cpu.py', [])],
         'recovery': [('probe_service_recovery_cpu.py', [])],
         'recovery-production': [('probe_service_recovery_cpu.py', ['--production', '--window', '512', '96'])],
+        'lifetime': [('probe_lifetime_cpu.py', [])],
+        'screenrecovery': [('probe_screen_recovery_cpu.py', [])],
+        'screenrecovery-watchdog': [('probe_screen_recovery_cpu.py', ['--watchdog'])],
+        'screenrecovery-production': [('probe_screen_recovery_cpu.py', ['--production'])],
         # The same image at the largest installed RAM (4 x 32M); a third element
         # names a suite's logs when a probe runs more than once.
         'latency': [('probe_limits_latency_cpu.py', ['--rounds', '4']),

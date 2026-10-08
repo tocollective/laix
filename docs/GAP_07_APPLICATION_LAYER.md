@@ -17,12 +17,12 @@ not kernel features.
   sector stage, and the WFS1 service is a flat, crash-consistent filesystem. It
   runs in the `fs` profile only; Files remains a read-only service for the font
   and for the one-program loader volume. The `fs` profile is source accepted and
-  has not run on a CPU.
+  CPU accepted (G7 packaging campaign).
 - Program loading from storage exists ([FILES_LOADER.md](FILES_LOADER.md)), but it
   reads from Files, which serves one file, so there is one program per volume;
   choosing by name needs the loader to read from the filesystem service.
 - There is a shell ([SHELL.md](SHELL.md)) and a networking path ([NETWORK.md](NETWORK.md)),
-  both source accepted and not run on a CPU, in separate boot profiles (the task
+  both source accepted and CPU accepted in the G7 packaging campaign, in separate boot profiles (the task
   table has room for one or the other). No POSIX layer.
 - No bulk-data path beyond 32-byte IPC chunks. Shared grants exist but are
   not used for I/O ([OPTIONAL_EXTENSIONS.md](OPTIONAL_EXTENSIONS.md)).

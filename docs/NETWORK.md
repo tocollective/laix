@@ -2,12 +2,16 @@
 
 [G7](GAP_07_APPLICATION_LAYER.md) · [Device contract](DEVICE_CONTRACT.md) · [Shell](SHELL.md)
 
-Date: 2026-10-08. Status: **implemented; source accepted; the `net` profile and its
-probe are written but have not been run on a CPU, are not in CI and not in the
-checked-in provenance.**
+Date: 2026-10-08. Status: **implemented; source accepted; CPU accepted in the G7 packaging campaign (2026-10-08, gateway pinged twice, two names resolved, link-down run). The `net` profile is in the CI matrix and the checked-in provenance; no remote CI run.**
+
+The first CPU run found a defect in the acceptance client, not in the stack: the
+emulator's DNS upstream answered `no-such-host.invalid` with an address, and the
+client treated anything but `-ENOENT`/`-ETIMEDOUT` as a failure while printing a
+result the probe accepts. The client now accepts an address or "no such name"
+for the missing name and fails on a timeout or a damaged answer.
 
 ```sh
-LAIX_CONSOLE=net sh laix/build.sh              # builds the image; not run by the author
+LAIX_CONSOLE=net sh laix/build.sh              # builds the image
 LAIX_CONSOLE=net sh laix/run.sh                # the client prints to the UART
 python3 laix/tests/probe_net_cpu.py laix/build/net.img laix/build/net.map
 ```

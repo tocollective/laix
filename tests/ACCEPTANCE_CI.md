@@ -16,10 +16,12 @@ published even when the job fails. A changing source snapshot also fails.
 rejects corrupt, missing, foreign-profile and unsafe bundle inputs.
 
 [LAIX artifact acceptance](../../.github/workflows/laix-acceptance.yml) has
-separate production and no-build CPU jobs for 16 profiles: UART, Screen,
+separate production and no-build CPU jobs for 23 profiles: UART, Screen,
 Services, their UART/Screen stress fixtures, Memory, Sharing, Objects,
-Supervisor, Soak, Loader, Recovery fixture/production, Latency, HID and Media. Soak
-postdates the G6 campaign below (14 profiles), which did not run it. Production
+Supervisor, Soak, Loader, Fs, Shell, Net, Recovery fixture/production,
+Lifetime, the three Screen recovery profiles (scenario, watchdog, production),
+Latency, HID and Media. The G6 campaign below had 14 of them; the G7 packaging
+campaign ran all 23. Production
 builds only LA/IX and its applications; it downloads an existing approved Linux
 `wrm081632` and `firmware.rom`, requires their explicit SHA-256 identities,
 and never invokes CMake or a WRM/firmware compiler.
@@ -53,24 +55,24 @@ From a checkout matching the recorded source manifest, no build is needed:
 
 ```sh
 python3 -B laix/tests/acceptance_bundle.py verify \
-  laix/build/acceptance/g6/complete/inputs/uart
+  laix/build/acceptance/g7/complete/inputs/uart
 python3 -B laix/tests/acceptance_bundle.py run \
-  --bundle laix/build/acceptance/g6/complete/inputs/uart \
-  --profile uart --log-dir laix/build/acceptance/g6/replay/uart
+  --bundle laix/build/acceptance/g7/complete/inputs/uart \
+  --profile uart --log-dir laix/build/acceptance/g7/replay/uart
 python3 -B laix/tests/run_source_suite.py \
-  --log-dir laix/build/acceptance/g6/replay/source
+  --log-dir laix/build/acceptance/g7/replay/source
 python3 -B laix/tools/acceptance_provenance.py --verify
 ```
 
 After the A9 run, `putc` was added to `mc/runtime/rt.m`. The G6 campaign
 (2026-10-07) validated that later source with a new source suite and new LA/IX
-inputs for all 14 profiles. The checked-in provenance record now describes the
-G6 campaign (bundles and logs under `laix/build/acceptance/g6/complete/`). The
-record binds git HEAD revisions as well as file contents, so `--verify` passes
-only for the working tree and revisions it was recorded on; after new commits,
-replay needs a pinned snapshot like the A9 one below. Its `date` field reads
-`2026-10-05` because `acceptance_provenance.py` writes a constant; the campaign
-date is 2026-10-07. The record was not edited by hand.
+inputs for 14 profiles; its bundles stay under `laix/build/acceptance/g6/complete/`.
+The G7 packaging campaign (below) then replaced the checked-in provenance record
+and ran 23 profiles. The record binds git HEAD revisions as well as file
+contents, so `--verify` passes only for the working tree and revisions it was
+recorded on; after new commits, replay needs a pinned snapshot like the A9 one
+below. Its `date` field reads `2026-10-05` because `acceptance_provenance.py`
+writes a constant. The record was not edited by hand.
 
 The A9 sources are preserved separately, with independent git metadata
 pinned to the recorded revisions and file hashes recorded in provenance:
@@ -102,11 +104,59 @@ separate LA/IX artifact producer. The destination must be new. Its explicit
 source-binding assertion is valid only immediately after that LA/IX production,
 with the recorded sources unchanged. Do not use it to relabel older images.
 
+## G7 packaging campaign (2026-10-08)
+
+The checked-in [provenance](ACCEPTANCE_CI_PROVENANCE.json) now describes this
+campaign (bundles and logs under `laix/build/acceptance/g7/complete/`, outside
+Git). It packages the G2–G5 work and the G7 services on one tree: root `4736b7d`,
+mc `b6f16b6`, laix `f251c6e` plus the uncommitted edits, which the content
+manifest binds. The G6 record it replaces is not in the checked-in file any more;
+the G6 bundles stay under `laix/build/acceptance/g6/` and replay with the
+commands above on a checkout matching them.
+
+- Source suite: **595 tests** passed in 857 s.
+- CPU: **23 profiles / 33 probe suites** passed with the same approved
+  `wrm081632` and `firmware.rom` bytes as G6 (nothing was rebuilt). New against
+  G6: `soak`, `loader`, `fs`, `shell`, `net`, `lifetime`, `screenrecovery`,
+  `screenrecovery-watchdog` and `screenrecovery-production`.
+- Produced by [run_campaign.sh](../tools/run_campaign.sh) (source suite, one new
+  bundle per profile, one no-build run per bundle); the provenance was then
+  recorded with `acceptance_provenance.py --campaign`. The provenance script
+  still writes the constant `date` field `2026-10-05`.
+
+Two defects surfaced by the first CPU runs were fixed in test code before the
+campaign; neither changed the kernel or a service:
+
+- `probe_screen_recovery_cpu.py` placed breakpoints by virtual address, but
+  every image of the profile loads at `0x41000000`, so another task could hit
+  them. It now checks the caller (client marker) or the published service
+  (Screen frame stop). This closes the open `scenario` failure.
+- The `net` client rejected a DNS upstream that answers every name (it returned
+  an address for `no-such-host.invalid`); it now accepts an address or
+  `no such name`, and still fails on a timeout, as the probe documents.
+
+| Profile | Probe suites | Boundary |
+| --- | --- | --- |
+| Fs | 1 | 27 medium snapshots at WRITE/FLUSH, all committed states; 18 writes, 9 flushes |
+| Shell | 1 | 10 typed commands; both programs ran from the volume |
+| Net | 1 | gateway pinged twice, two names resolved, link-down run |
+| Lifetime | 1 | client replaced inside the reply reserve; replacement in a fresh namespace |
+| Screen recovery | 1 | five generations, four mid-frame faults, distinct rendered frames |
+| Screen recovery watchdog | 1 | three real Screen faults under the production supervisor |
+| Screen recovery production | 1 | status line drawn, five live tasks |
+| Soak | 1 | 4096 task lifetimes, 512 faults, exact generation accounting |
+| Loader | 1 | 11 children from the volume, 3 tampered volumes refused |
+
+The remaining 14 profiles reproduced their G6 counts. Limits: no remote CI run;
+the `net` result depends on the host resolver's answer only in which of the two
+accepted forms it takes; `acceptance_provenance.py --verify` binds git HEADs, so
+it passes only until the next commit.
+
 ## Current campaign and scope
 
 [ACCEPTANCE_CI_PROVENANCE.json](ACCEPTANCE_CI_PROVENANCE.json) records the accepted
 source snapshot, image/map/ELF/font/probe/tool hashes and profile results.
-Raw bundles and logs are under `build/acceptance/g6/complete/` (G6, current) and
+Raw bundles and logs are under `build/acceptance/g7/complete/` (G7, current), `build/acceptance/g6/complete/` (G6) and
 `build/acceptance/a9/complete/` (A9, historical), outside Git. The timing and
 profile figures below are from A9; G6 reproduced the same counts (399 tests in
 526 s source time, 14 profiles / 20 suites).

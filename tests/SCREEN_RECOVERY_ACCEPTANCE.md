@@ -10,8 +10,12 @@ The [contract](../docs/SERVICE_RECOVERY.md#supervised-display-screen-and-bitmap-
 [checked-source tests](test_screen_recovery.py), [CPU probe](probe_screen_recovery_cpu.py)
 and build provenance (`laix/build/screenrecovery.provenance.json`, written by
 [screen_recovery_provenance.py](../tools/screen_recovery_provenance.py)) establish
-the evidence below. This is **not** an identified acceptance bundle: the profile
-is not one of the A9/G6 CI profiles, and the CPU runs are local.
+the evidence below. The three CPU modes are CI profiles (`screenrecovery`,
+`screenrecovery-watchdog`, `screenrecovery-production`) and passed from identified
+bundles in the [G7 packaging campaign](ACCEPTANCE_CI.md#g7-packaging-campaign-2026-10-08)
+(2026-10-08); no remote run. The `scenario` probe's earlier failure was a probe
+defect (breakpoints by virtual address in images that share a load address); the
+probe now filters by caller and by the published Screen task.
 
 ## Implementation evidence
 

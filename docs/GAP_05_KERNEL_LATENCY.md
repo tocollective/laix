@@ -82,5 +82,6 @@ The longest IRQ-disabled section is reduced or its budget is justified for
 the target workload (done: 20 ms, justified by 14.5 ms measured), a staged
 teardown passes interruption/cancellation tests without exposing partial
 mappings (done at source level, with CPU runs), and the latency table covers the
-supported RAM sizes (done at 32 and 128 MiB for memory/reaping). The packaged
-bundle for G5 is still open ([checklist](GAPS_CHECKLIST.md)).
+supported RAM sizes (done at 32 and 128 MiB for memory/reaping). The G5 CPU runs
+are packaged in the G7 campaign ([checklist](GAPS_CHECKLIST.md)); the A8
+provenance record stays historical.

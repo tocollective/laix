@@ -29,7 +29,7 @@ the mechanisms below, so no extension has a workload requirement today.
 
 | Extension | Decision | Why | Entry condition for selecting it later |
 | --- | --- | --- | --- |
-| Shared-memory regions / bulk grants for I/O | Deferred | Whole-region grants with a borrower ledger already exist for explicit sharing ([runtime memory](RUNTIME_MEMORY.md)); services move at most 512 bytes per DMA operation and Screen writes through device-granted mappings. Copying 32-byte chunks does not dominate any accepted workload | A measured workload where IPC chunk copying dominates (for example a bulk file read or bitmap upload) |
+| Shared-memory regions / bulk grants for I/O | Deferred; cost measured (2026-10-08), not selected | Whole-region grants with a borrower ledger already exist for explicit sharing ([runtime memory](RUNTIME_MEMORY.md)); services move at most 512 bytes per DMA operation and Screen writes through device-granted mappings. The measured cost of chunking is 64 KiB in 4,096 16-byte reads, 7.10 s at 128 MHz ([TARGET_WORKLOAD](TARGET_WORKLOAD.md#bulk-transfer-cost)); the selected profile reads only 16-byte control data, so the entry condition is not met by it. Selecting it would also need the borrower-naming decision in [bulk grants](#shared-bulk-grants), because `grantRegion` names its borrower by full task reference | Select it when a workload reads tens of KiB through Files or Fs; first decide how the grant's borrower is named for the fixed Files service |
 | Multiple threads per address space | Deferred | `Task` combines address space, scheduling, handles and one IPC wait. Eight slots and per-task services already give concurrency by process | A service that needs concurrent workers in one address space |
 | User fault notification / pager / debugger | Deferred | User faults terminate the task and the supervisor reaps it; supervisor faults panic. Memory is eager, so no workload needs demand paging | Recoverable faults or demand allocation are required by an application |
 | General clock, wait sets, notification objects | Deferred | Bounded `sleep`, timed calls, try variants and timed IRQ waits ([IPC liveness](IPC_LIVENESS.md)) cover the supervisor and watchdog | An application that must multiplex several event sources in one task |
@@ -48,6 +48,17 @@ introducing a parallel model. Before implementation, its design record must
 cover the points below; the scenarios give the acceptance shape.
 
 ### Shared bulk grants
+
+- **Naming the borrower (checked 2026-10-08):** `grantRegion` names its
+  borrower by full task reference, so the lender must know the service's
+  reference. A client of a resolver-published service has it: `resolveService`
+  returns it as `instance`. A boot-created service (the fixed Input/Disk/Files
+  graph) publishes no reference, and `AcceptResult` carries only the length and
+  reply token, so a service cannot learn its caller's reference either. A
+  client-owned buffer therefore works for resolver-published services on the
+  current kernel; reaching the fixed Files service needs either publication
+  through the resolver or the authenticated sender reference in the accept
+  result (same persistent-generation rules as `collectTransfer`'s sender word).
 
 - **Contract:** ownership stays with the granting region; borrowers hold a
   ledger reference and a PTE ceiling (as in the existing grant). Define a

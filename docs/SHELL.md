@@ -2,12 +2,10 @@
 
 [G7](GAP_07_APPLICATION_LAYER.md) · [Filesystem](FILESYSTEM.md) · [Files-backed loading](FILES_LOADER.md) · [Console service](CONSOLE_SERVICE.md)
 
-Date: 2026-10-08. Status: **implemented; source accepted; the `shell` profile and
-its probe are written but have not been run on a CPU, are not in CI and not in
-the checked-in provenance.**
+Date: 2026-10-08. Status: **implemented; source accepted; CPU accepted in the G7 packaging campaign (2026-10-08, 10 typed commands, both programs ran from the volume). The `shell` profile is in the CI matrix and the checked-in provenance; no remote CI run.**
 
 ```sh
-LAIX_CONSOLE=shell sh laix/build.sh          # builds the image; not run by the author
+LAIX_CONSOLE=shell sh laix/build.sh          # builds the image
 LAIX_CONSOLE=shell sh laix/run.sh            # type in the emulator window, read the UART
 python3 laix/tests/probe_shell_cpu.py laix/build/shell.img laix/build/shell.map
 ```

@@ -54,6 +54,46 @@ def stop_once(monitor, address):
     return stopped
 
 
+def stop_from(monitor, address, low, high, limit=4096):
+    """Stop at `address` when it was called from [low, high) of the same image.
+
+    The images share one load address, so the client's marker VA is also code in
+    the Screen, Echo and bitmap tasks; a breakpoint there fires in each of them.
+    The return address in ra tells the client's call from those executions."""
+    monitor.command(f"b 0x{address:X}")
+    for _ in range(limit):
+        monitor.command("c")
+        raw = monitor.command("r")
+        registers = monitor.registers(raw)
+        require(registers['pc'] == address, f"did not stop at {address:08X}")
+        if low <= registers['r31'] < high:
+            monitor.command(f"del 0x{address:X}")
+            return raw
+    raise ValueError(f"no call of {address:08X} from the client within {limit} stops")
+
+
+def stop_in_service(monitor, symbols, types, fields, address, name, limit=4096):
+    """Stop at `address` when the running task is the one published as service `name`.
+
+    Another task of the profile can execute the same virtual address (the images
+    share one load address), and a breakpoint there fires in all of them."""
+    entry = types['ServiceEntry']
+    monitor.command(f"b 0x{address:X}")
+    for _ in range(limit):
+        monitor.command("c")
+        raw = monitor.command("r")
+        require(monitor.registers(raw)['pc'] == address, f"did not stop at {address:08X}")
+        task = monitor.words(symbols['currentTask'], 1)[0]
+        identity = monitor.words(task + fields['id'], 1)[0]
+        for row in range(8):
+            base = symbols['recovery__serviceEntries'] + row * entry.size
+            if (identity != 0 and monitor.words(base + entry.field('reference').offset, 1)[0] == identity and
+                    monitor.words(base + entry.field('name').offset, 1)[0] == name):
+                monitor.command(f"del 0x{address:X}")
+                return raw
+    raise ValueError(f"service {name} never reached {address:08X} within {limit} stops")
+
+
 def cell(pixels, column, rows=GLYPH_ROWS, width=8):
     return bytes(pixels[row * PITCH + column + x] for row in range(rows) for x in range(width))
 
@@ -100,7 +140,7 @@ def probe(image, map_path, emulator, rom, timeout=120):
         # inside Screen before its frame wait), then the client saw the reply.
         renders = []
         for generation in range(1, 6):
-            stopped = stop_once(monitor, screen['videoFrame'])
+            stopped = stop_in_service(monitor, symbols, types, fields, screen['videoFrame'], 1)
             transcript.append(stopped)
             require(monitor.registers(stopped)['ptbr'] != supervisor_ptbr, 'Screen frame stop in the supervisor')
             pixels = frame(monitor, GLYPH_ROWS + 16)
@@ -108,9 +148,11 @@ def probe(image, map_path, emulator, rom, timeout=120):
                 letter=cell(pixels, 0), digit=cell(pixels, 8),
                 below=pixels[GLYPH_ROWS * PITCH:], right=b''.join(pixels[row*PITCH + GLYPH_COLUMNS:(row+1)*PITCH]
                                                                    for row in range(GLYPH_ROWS))))
-            stopped = stop_once(monitor, users['screenRendered'])
+            stopped = stop_from(monitor, users['screenRendered'], users['scenario__clientMain'],
+                                users['screenScenarioMain'])
             transcript.append(stopped)
-            require(monitor.registers(stopped)['r1'] == generation, f'render marker out of order at {generation}')
+            marker = monitor.registers(stopped)['r1']
+            require(marker == generation, f'render marker out of order at {generation}: saw {marker}')
         for generation, render in enumerate(renders, 1):
             require(any(render['letter']) and any(render['digit']), f'generation {generation} rendered no glyphs')
             require(not any(render['below']) and not any(render['right']),

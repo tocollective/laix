@@ -2,12 +2,10 @@
 
 [G7](GAP_07_APPLICATION_LAYER.md) · [Device contract](DEVICE_CONTRACT.md#multi-sector-and-writeflush-contract) · [Service recovery](SERVICE_RECOVERY.md) · [Files-backed loading](FILES_LOADER.md)
 
-Date: 2026-10-08. Status: **implemented; source accepted; the `fs` CPU profile and
-its probe are written but have not been run on a CPU, are not in CI and not in
-the checked-in provenance.**
+Date: 2026-10-08. Status: **implemented; source accepted; CPU accepted in the G7 packaging campaign (2026-10-08, 27 medium snapshots at WRITE/FLUSH, all committed states). The `fs` profile is in the CI matrix and the checked-in provenance; no remote CI run.**
 
 ```sh
-LAIX_CONSOLE=fs sh laix/build.sh          # builds the image; not run by the author
+LAIX_CONSOLE=fs sh laix/build.sh          # builds the image
 python3 laix/tests/probe_fs_cpu.py laix/build/fs.img laix/build/fs.map
 ```
 

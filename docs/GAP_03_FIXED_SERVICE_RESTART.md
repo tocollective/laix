@@ -57,6 +57,19 @@ Acceptance: [SCREEN_RECOVERY_ACCEPTANCE.md](../tests/SCREEN_RECOVERY_ACCEPTANCE.
   frame; a watchdog image lets the production supervisor and client meet three
   real Screen faults; a production smoke image draws the status line.
 
+## Screen recovery scenario probe defect (fixed 2026-10-08)
+
+After the G5 work the `scenario` probe failed at its first render marker
+(`r1` was a pointer, not the generation) and then at its first frame check. The
+kernel was correct: every image of the profile loads at `0x41000000`, so a
+breakpoint at a virtual address fires in each task that executes that address.
+The client's `screenRendered` marker is also code in Screen (`decodeNext`), and
+Screen's `videoFrame` address is code in the client. Larger images moved those
+addresses onto each other. The probe now stops at `screenRendered` only for a
+call from the client (the return address lies in `clientMain`) and at
+`videoFrame` only in the task the kernel's service table publishes as Screen.
+No kernel or user source changed.
+
 ## Remaining limits
 
 - A Screen failure also replaces bitmap storage, because they share a generation.
@@ -64,9 +77,9 @@ Acceptance: [SCREEN_RECOVERY_ACCEPTANCE.md](../tests/SCREEN_RECOVERY_ACCEPTANCE.
   an empty frame, cache and cursor; the client redraws.
 - A failure inside the display grant after its preflight (page-table
   exhaustion) leaves an unusable child that the supervisor must discard.
-- The CPU runs are on the working tree, not an identified acceptance bundle
-  ([G6](GAP_06_EVIDENCE_AND_CI.md)); `screenrecovery` is not yet one of the CI
-  profiles.
+- The CPU runs are packaged in the G7 campaign ([G6](GAP_06_EVIDENCE_AND_CI.md)):
+  profiles `screenrecovery`, `screenrecovery-watchdog` and
+  `screenrecovery-production`, also in the CI matrix. No remote run exists.
 - No device reset exists, so the quarantine of a permanently BUSY disk is final.
 
 ## Done when

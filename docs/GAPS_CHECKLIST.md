@@ -1,6 +1,6 @@
 # LA/IX remaining gaps and fix checklist
 
-Date: 2026-10-07; G2, G3, G4 and G5 updated 2026-10-08. The [A1–A10 audit](LAIX_MICROKERNEL_AUDIT.md) closed the
+Date: 2026-10-07; G2, G3, G4, G5 and G7 updated 2026-10-08. The [A1–A10 audit](LAIX_MICROKERNEL_AUDIT.md) closed the
 lifecycle baseline. These gaps are the conditions under which "complete
 microkernel" still needs qualification. Each is a proposal; a box is checked only
 where the line says what was done and how. Order is a suggestion, not a plan.
@@ -8,10 +8,10 @@ where the line says what was done and how. Order is a suggestion, not a plan.
 | ID | Gap | Priority |
 | --- | --- | --- |
 | [G1](GAP_01_STATIC_PROFILE.md) | Complete only for a narrow static profile | P2 |
-| [G2](GAP_02_KERNEL_POLICY.md) | Device and loader policy still in the kernel (mostly done; see checklist) | P2 |
-| [G3](GAP_03_FIXED_SERVICE_RESTART.md) | Fixed UART/Screen boots cannot restart (supervised Screen done; see checklist) | P2 |
-| [G4](GAP_04_FINITE_LIFETIMES.md) | Finite identity and reply lifetimes (done, including a local CPU run; bundle pending) | P2 |
-| [G5](GAP_05_KERNEL_LATENCY.md) | Non-preemptible, non-nesting kernel (staged teardown and 20 ms budget done; nesting-safe entry decided not needed; bundle pending) | P2 |
+| [G2](GAP_02_KERNEL_POLICY.md) | Device and loader policy still in the kernel (static table done; bundled) | P2 |
+| [G3](GAP_03_FIXED_SERVICE_RESTART.md) | Fixed UART/Screen boots cannot restart (supervised Screen done and bundled) | P2 |
+| [G4](GAP_04_FINITE_LIFETIMES.md) | Finite identity and reply lifetimes (done; CPU run in an identified bundle) | P2 |
+| [G5](GAP_05_KERNEL_LATENCY.md) | Non-preemptible, non-nesting kernel (staged teardown and 20 ms budget done; nesting-safe entry decided not needed; CPU runs in an identified bundle) | P2 |
 | [G6](GAP_06_EVIDENCE_AND_CI.md) | Evidence tied to artifacts; remote CI not run | P2 |
 | [G7](GAP_07_APPLICATION_LAYER.md) | No application/storage layer | P3 |
 
@@ -25,6 +25,7 @@ workload that decides G2, G4 and G5, then G3, then G7.
 ### G6 Evidence
 - [x] Re-run the source suite and artifact replay on the current tree; resolve the `rt.m` validation-pending state (2026-10-07, 399 tests, 14/14 CPU profiles).
 - [ ] Provision the four CI variables and record one remote CPU run.
+- [x] Package G2–G5 and the G7 CPU profiles into one identified campaign (2026-10-08, [G7 packaging campaign](../tests/ACCEPTANCE_CI.md#g7-packaging-campaign-2026-10-08)): 595 source tests, 23 profiles / 33 probe suites, new `fs`, `shell`, `net`, `lifetime` and `screenrecovery*` profiles in the bundle tool and the CI matrix.
 - [x] Add a longer soak profile for reaping and finite-lifetime workloads (2026-10-08; `soak` profile: 4096 task lifetimes with 512 faults in one boot, per-round `SYS_LIFETIME` and event checks, [probe_soak_cpu.py](../tests/probe_soak_cpu.py)). Local run and local bundle replay on the changed tree; not an identified remote run, and not yet in the checked-in provenance record.
 
 ### G1 Static profile
@@ -38,7 +39,7 @@ workload that decides G2, G4 and G5, then G3, then G7.
 - [x] Producer-neutral storage root format (16-byte `WSR1` record, [storage_root.py](../tools/storage_root.py)).
 - [x] Image catalog supplied as data (build-issued `ImageRow` rows loaded by `taskCatalogLoad`). Not yet supplied at runtime by a user-mode manager; that needs the G1 loader.
 - [x] Multi-sector and write/flush contract defined before any writable filesystem ([contract](DEVICE_CONTRACT.md#multi-sector-and-writeflush-contract); implemented 2026-10-08 for G7, source accepted).
-- [ ] Package the G2 source and CPU runs into an identified acceptance bundle (G6 rules).
+- [x] Package the G2 source and CPU runs into an identified acceptance bundle (G6 rules): the G2 table is exercised by the Screen, Services, HID, Media, Recovery and Loader profiles of the G7 packaging campaign (2026-10-08, `build/acceptance/g7/complete/`), 595 source tests and 23 profiles / 33 probe suites on one identified tree.
 
 ### G3 Fixed service restart
 - [x] Runtime regrant of Screen resources after owner death with quiescence preflight (2026-10-08; `grantTaskDevices(SCREEN)`, [test_screen_recovery](../tests/test_screen_recovery.py)). Supervised `screenrecovery` profile only; the fixed boots stay sealed.
@@ -46,29 +47,29 @@ workload that decides G2, G4 and G5, then G3, then G7.
 - [x] Decide UART: documented as fixed ([G3](GAP_03_FIXED_SERVICE_RESTART.md)); the emergency UART is independent either way.
 - [x] Specify device reset against the WRM hardware spec: none exists, only the machine-wide power `RESET` ([DEVICE_CONTRACT](DEVICE_CONTRACT.md#device-reset-g3-specified-as-unavailable)).
 - [x] CPU probe: repeated Screen kills (4 mid-frame faults, 5 generations; 3 watchdog-recovered faults), replacement renders, peers unaffected, pins released ([record](../tests/SCREEN_RECOVERY_ACCEPTANCE.md)). Local runs, not an identified bundle.
-- [ ] Package the G3 source and CPU runs into an identified acceptance bundle (G6 rules); add `screenrecovery` to the CI profiles.
+- [x] Package the G3 source and CPU runs into an identified acceptance bundle (G6 rules); add `screenrecovery` to the CI profiles (done in the G7 packaging campaign (2026-10-08, `build/acceptance/g7/complete/`): profiles `screenrecovery` (scenario), `screenrecovery-watchdog` and `screenrecovery-production`, also in the CI matrix).
 
 ### G4 Finite lifetimes
 - [x] Supervisor-readable remaining lifetime per namespace (2026-10-08; `SYS_LIFETIME` 75, [contract](LIMITS_AND_LATENCY.md#remaining-lifetime-report-g4), [test_lifetime](../tests/test_lifetime.py)).
 - [x] Planned-maintenance procedure, with a checked-source test of replacement before `EOVERFLOW` ([procedure](LIMITS_AND_LATENCY.md#operating-limit-and-planned-maintenance)). Source only.
 - [x] Decide on a wider versioned reply ABI, or write the operating limit: operating limit written, wider ABI declined.
 - [x] CPU run: a supervisor reads the report and replaces a client before exhaustion (2026-10-08, `LAIX_RECOVERY_FIXTURES=lifetime`; replaced with 4095 calls left, replacement in a fresh namespace, no `EOVERFLOW`; [record](../tests/LIFETIME_ACCEPTANCE.md)). Local run, not an identified bundle.
-- [ ] Package the G4 source and CPU run into an identified acceptance bundle (G6 rules); add the `lifetime` profile to the CI profiles.
+- [x] Package the G4 source and CPU run into an identified acceptance bundle (G6 rules); add the `lifetime` profile to the CI profiles (done in the G7 packaging campaign (2026-10-08, `build/acceptance/g7/complete/`); also in the CI matrix).
 
 ### G5 Kernel latency
 - [x] Staged, resumable teardown with interruption/cancellation tests (2026-10-08; `taskReap` commits one dead root per section and the idle loop resumes it after an IRQ window; [test_staged_reap](../tests/test_staged_reap.py), 14 cases: pinned-until-commit, timer IRQ and creation between stages, termination/collect mid-teardown, BUSY-DMA skip; [contract](LIMITS_AND_LATENCY.md#staged-teardown-g5)). CPU: the `latency` probe sees the EXIT section stage exactly one root, then seven idle stages of at most 1,550,591 cycles (12.1 ms), identical at 32 MiB and 128 MiB. Granularity is one root; populate and load are not staged. Local runs, not an identified bundle.
 - [x] Tighter latency budget with a regression guard (2026-10-08; budget 64,000,000 → 2,560,000 cycles, 500 ms → 20 ms, against a longest section of 1,859,714 cycles / 14.5 ms and a longest timer gap of 3,177,135; per-kind `KIND_CEILINGS` in the probe, and a source test that keeps the probe, the docs and the other probes in agreement). Eight-task cleanup went from 12,144,655 cycles in one section to 1,555,589 plus seven stages.
 - [x] Nesting-safe trap protocol only if a selected workload requires it: decided not required ([TARGET_WORKLOAD](TARGET_WORKLOAD.md), [G5](GAP_05_KERNEL_LATENCY.md#decision-nesting-safe-trap-protocol)); trap entry stays non-nesting and the kernel non-preemptible.
-- [x] Race and reuse campaign for staged teardown, as the readiness rules require: source suite plus local CPU reruns on the staged kernel of `soak` (4096 lifetimes, 512 faults), `loader`, `supervisor`, `objects`, `memory`, `sharing`, `recovery`, `lifetime`, `services` with device latency, UART bootstrap/liveness/request-reply, and Screen recovery `watchdog` and `production`. The Screen recovery `scenario` probe fails at its first render marker (`r1` is a pointer, not the generation) with and without staging, so that failure is not caused by G5; it is open and not yet diagnosed.
-- [ ] Package the G5 source and CPU runs into an identified acceptance bundle (G6 rules); regenerate the A8 provenance for the new images and budget.
+- [x] Race and reuse campaign for staged teardown, as the readiness rules require: source suite plus local CPU reruns on the staged kernel of `soak` (4096 lifetimes, 512 faults), `loader`, `supervisor`, `objects`, `memory`, `sharing`, `recovery`, `lifetime`, `services` with device latency, UART bootstrap/liveness/request-reply, and Screen recovery `watchdog` and `production`. The Screen recovery `scenario` probe failed with and without staging; it was a probe defect, not a kernel fault, and is fixed (2026-10-08, see [G3](GAP_03_FIXED_SERVICE_RESTART.md#screen-recovery-scenario-probe-defect-fixed-2026-10-08)).
+- [x] Package the G5 source and CPU runs into an identified acceptance bundle (G6 rules): `latency` (both RAM sizes), `soak`, `loader`, `supervisor`, `objects`, `memory`, `sharing`, `recovery`, `lifetime`, `services`, UART, Screen and `screenrecovery` all passed on the staged kernel in the G7 packaging campaign (2026-10-08, `build/acceptance/g7/complete/`). The separate A8 provenance record (`LIMITS_LATENCY_PROVENANCE.json`) is historical and was not regenerated; the identified bundle supersedes it for the staged kernel.
 
 ### G7 Application layer
-- [x] Writable block path and filesystem service (2026-10-08; [FILESYSTEM](FILESYSTEM.md): kernel WRITE/FLUSH with three-way write authority, Disk sector stage, WFS1 service with atomic commits. Source accepted (2026-10-08; the whole source suite, 595 tests, passes after the G7 work, 132 of them new across the five items) including a power loss at every device event of a scenario in five survival modes. The `fs` CPU profile and [probe](../tests/probe_fs_cpu.py) are written but not run: not built or run on a CPU, not in CI. Not supervised by the recovery profile yet).
-- [x] General ELF loader service (2026-10-08; [SHELL](SHELL.md): the Exec service loads a named file from the filesystem through `SYS_TASK_LOAD`, with a limit and a fixed one-endpoint authority for the program. Source accepted, 10 tests; CPU not run).
-- [x] Shell application (2026-10-08; [SHELL](SHELL.md): `ls cat write cp mv rm df sync echo run`, line editing, atomic `mv`, over the UART console service. Source accepted, 15 tests plus the boot policy and probe tests; the `shell` profile and its probe are written and never run on a CPU).
-- [x] Ethernet driver and protocol stack services (2026-10-08; [NETWORK](NETWORK.md): a kernel broker owns the card's rings and buffers (3 syscalls, `DEVICE_NET`), a driver service moves whole frames, an IP service speaks ARP, IPv4, ICMP echo and UDP, with ping and DNS lookup as its two applications; no TCP. Source accepted, 44 tests including the stack against a gateway model that checks every frame it sends; the `net` profile and its probe are written and never run on a CPU).
+- [x] Writable block path and filesystem service (2026-10-08; [FILESYSTEM](FILESYSTEM.md): kernel WRITE/FLUSH with three-way write authority, Disk sector stage, WFS1 service with atomic commits. Source accepted (2026-10-08; the whole source suite, 595 tests, passes after the G7 work, 132 of them new across the five items) including a power loss at every device event of a scenario in five survival modes. The `fs` profile and [probe](../tests/probe_fs_cpu.py) passed on a CPU (27 medium snapshots at WRITE/FLUSH commands, all committed states) and are in the G7 bundle and the CI matrix. Not supervised by the recovery profile yet).
+- [x] General ELF loader service (2026-10-08; [SHELL](SHELL.md): the Exec service loads a named file from the filesystem through `SYS_TASK_LOAD`, with a limit and a fixed one-endpoint authority for the program. Source accepted, 10 tests; the `shell` profile ran on a CPU, see below).
+- [x] Shell application (2026-10-08; [SHELL](SHELL.md): `ls cat write cp mv rm df sync echo run`, line editing, atomic `mv`, over the UART console service. Source accepted, 15 tests plus the boot policy and probe tests; the `shell` profile passed on a CPU: 10 commands typed, both programs ran from the volume).
+- [x] Ethernet driver and protocol stack services (2026-10-08; [NETWORK](NETWORK.md): a kernel broker owns the card's rings and buffers (3 syscalls, `DEVICE_NET`), a driver service moves whole frames, an IP service speaks ARP, IPv4, ICMP echo and UDP, with ping and DNS lookup as its two applications; no TCP. Source accepted, 44 tests including the stack against a gateway model that checks every frame it sends; the `net` profile passed on a CPU: the gateway pinged twice, names resolved, and the link-down run stopped cleanly).
 - [x] POSIX-like library, if needed: decided not needed yet, with the condition for revisiting it ([G7](GAP_07_APPLICATION_LAYER.md#decision-posix-like-library)).
-- [ ] Run the `fs`, `shell` and `net` profiles on a CPU (build with `LAIX_CONSOLE=…`, run the three `probe_*_cpu.py`), add them to the CI matrix, and fold them into an identified acceptance bundle (G6 rules). None has been built or run.
+- [x] Run the `fs`, `shell` and `net` profiles on a CPU, add them to the CI matrix, and fold them into an identified acceptance bundle (G6 rules) (2026-10-08: all three passed in the G7 packaging campaign (2026-10-08, `build/acceptance/g7/complete/`); the probes' first CPU run found one defect, in the `net` client, which rejected a resolver that answers every name: fixed, see [NETWORK](NETWORK.md)).
 - [ ] Put Fs, Exec, the net driver and the IP service under the recovery supervisor.
 
 ## Rules for closing an item

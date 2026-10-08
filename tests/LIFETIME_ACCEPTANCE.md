@@ -1,7 +1,8 @@
 # Finite-lifetime acceptance (G4)
 
-Status: **source accepted; CPU run passed locally, 2026-10-08.** The run is on the
-working tree and is not an identified acceptance bundle ([G6](../docs/GAP_06_EVIDENCE_AND_CI.md)).
+Status: **source accepted; CPU accepted in the G7 packaging campaign, 2026-10-08.** The
+`lifetime` profile ran from an identified bundle ([G6](../docs/GAP_06_EVIDENCE_AND_CI.md),
+[campaign](ACCEPTANCE_CI.md#g7-packaging-campaign-2026-10-08)); no remote run.
 
 Contract: [LIMITS_AND_LATENCY.md](../docs/LIMITS_AND_LATENCY.md#remaining-lifetime-report-g4).
 Source: [test_lifetime](test_lifetime.py) (14 cases). CPU: [probe](probe_lifetime_cpu.py)
@@ -42,7 +43,7 @@ LAIX_RECOVERY_FIXTURES=1 LAIX_CONSOLE=recovery sh laix/build.sh   # service faul
 ```
 
 Because syscall 75 and the construction order change the kernel, every other
-CPU profile also needs a fresh run before its record is current (G6 rules).
+CPU profile needed a fresh run (G6 rules); the G7 campaign reran all 23.
 
 ## Result
 

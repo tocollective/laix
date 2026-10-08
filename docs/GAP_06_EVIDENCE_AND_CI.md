@@ -21,6 +21,11 @@ From [AUDIT_09_ACCEPTANCE_AND_CI.md](AUDIT_09_ACCEPTANCE_AND_CI.md) and
   bytes; nothing was rebuilt. `acceptance_provenance.py --verify` passes on
   that tree, and the A9 snapshot still replays. Caveat: the record binds git
   HEADs, so it verifies only until the next commit.
+- **G7 packaging campaign, 2026-10-08.** The changed tree (G2–G5, G7) passed 595
+  source tests and all 23 CPU profiles / 33 probe suites on new identified inputs,
+  adding `soak`, `loader`, `fs`, `shell`, `net`, `lifetime` and the three
+  `screenrecovery*` profiles to the bundle tool and the CI matrix. The checked-in
+  provenance describes it; see [ACCEPTANCE_CI](../tests/ACCEPTANCE_CI.md#g7-packaging-campaign-2026-10-08).
 - GitHub Actions was not run remotely in the recorded workspace. Source CI is
   configured for every push. CPU CI needs four repository variables
   (`LAIX_TOOLS_RUN_ID`, `LAIX_TOOLS_ARTIFACT`, `LAIX_EMULATOR_SHA256`,

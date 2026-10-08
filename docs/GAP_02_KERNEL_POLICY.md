@@ -53,9 +53,9 @@ Revised 2026-10-08. See [DEVICE_CONTRACT.md](DEVICE_CONTRACT.md) and
 - A new read-safe register page or hardware class is a kernel edit
   (`DEVICE_READ_SAFE_PAGES`), because it is a hardware property.
 - The `SCREEN_*_VA` user ABI constants must agree with the rows.
-- No write path exists, so the `dirty`/`-EROFS` rules have no mechanism yet.
-- Evidence is the source suite (412 tests, 13 new) plus ad hoc CPU runs; it is not an identified
-  acceptance bundle ([G6](GAP_06_EVIDENCE_AND_CI.md)).
+- The write path exists for G7 (`dirty`/`-EROFS` rules apply); see the device contract.
+- Evidence is the 595-test source suite and the CPU profiles of the G7 campaign
+  ([G6](GAP_06_EVIDENCE_AND_CI.md)), an identified bundle; no remote run.
 
 ## Done when
 
