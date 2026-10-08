@@ -6,7 +6,7 @@ import { TaskEvent } from "../../src/task/runtime_start.m"
 import { ENDPOINT_MODE_SERVICE, RIGHT_SEND, RIGHT_RECEIVE, TASK_EVENT_RECLAIMED } from "../../src/arch/wrm081632/defs.m"
 import { createTask, createEndpoint, grantTaskDevices, grantDeviceExtent, grantTaskHandles,
     grantTaskImages, startTaskService, configureTask, publishTask, terminateTask, inspectTask,
-    sleep } from "../syscalls.m"
+    sleep, discard } from "../syscalls.m"
 
 let SESSION_MEMBERS: UWord = 8
 let TASK_DEAD: UWord = 3
@@ -41,13 +41,13 @@ let sessionReset(): Void {
 
 // True while every step so far has succeeded; the first failure is kept.
 let latch(result: Word): Bool {
-    if result < 0 && sessionError == 0 sessionError = result
+    note(result)
     return sessionError == 0
 }
 
 // Records a result without needing the answer.
 let note(result: Word): Void {
-    latch(result)
+    if result < 0 && sessionError == 0 sessionError = result
 }
 
 // The next member and its endpoint, or null once a step has failed.
@@ -173,7 +173,7 @@ let sessionTeardown(): Void {
     let mut i: UWord = memberCount
     while i != 0 {
         i -= 1
-        if members[i].reference != 0 terminateTask(members[i].reference, -1)
+        if members[i].reference != 0 discard(terminateTask(members[i].reference, -1))
         members[i].reference = 0
     }
     memberCount = 0
@@ -192,7 +192,6 @@ let sessionSupervise(): Word {
         }
         if sleep(1) != 0 return 30
     }
-    return 0
 }
 export { Service, sessionReset, latch, svcSpawn, svcOneShot, svcDevices, svcExtent, svcServe, svcClient, svcReceive,
     svcSendTo, svcBare, listBegin, listSend, listWord, svcList, svcImages, sessionPublish,

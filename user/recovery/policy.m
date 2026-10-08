@@ -5,7 +5,7 @@ import { createTask, createEndpoint, configureService, publishService,
     withdrawService, grantTaskDevices, grantDeviceExtent, closeHandle, terminateTask, inspectTask,
     collectTask, sleep, lifetimeReport } from "../syscalls.m"
 import { ENDPOINT_MODE_SERVICE, DEVICE_DISK, DEVICE_SCREEN, DEVICE_FONT, TASK_EVENT_RECLAIMED,
-    ERRNO_EAGAIN, ERRNO_EPIPE, ERRNO_EBUSY, ERRNO_ESRCH, LIFETIME_REPLY_RESERVE } from "../../src/arch/wrm081632/defs.m"
+    ERRNO_EAGAIN, ERRNO_EPIPE, ERRNO_EBUSY, ERRNO_ESRCH } from "../../src/arch/wrm081632/defs.m"
 import { IMAGE_REC_DISK, IMAGE_REC_FILES, IMAGE_REC_BITMAP, IMAGE_REC_SCREEN } from "../init/images.m"
 
 type ManagedService {

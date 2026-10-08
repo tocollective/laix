@@ -30,7 +30,6 @@ let PROTO_ICMP: UWord = 1
 let PROTO_UDP: UWord = 17
 let ECHO_IDENT: UWord = 0x4C58
 let DNS_PORT: UWord = 53
-let FRAME_WORDS: UWord = 380
 let POLLS_MAX: UWord = 64 // frames handled while waiting for one reply
 
 let mut ipRequest: UWord[8]

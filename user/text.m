@@ -2,6 +2,7 @@
 // 28 bytes, so text is collected and sent when the buffer is full or on a flush.
 // The console accepts printable ASCII, TAB, LF and CR; any other byte is shown as '.'.
 import { consoleWrite } from "console.m"
+import { discard } from "syscalls.m"
 
 let TEXT_LIMIT: UWord = 28
 
@@ -16,7 +17,7 @@ let textStart(handle: UWord): Void {
 
 let textFlush(): Void {
     if textLength != 0 {
-        consoleWrite(textHandle, &textBuffer[0] as *UByte, textLength)
+        discard(consoleWrite(textHandle, &textBuffer[0] as *UByte, textLength))
         textLength = 0
     }
 }

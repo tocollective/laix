@@ -4,10 +4,10 @@ import { ServiceResolution } from "../../src/task/recovery_start.m"
 import { ManagedService, launchService, serviceFailed, recoverService,
     recoverFilesDisk, recoveryUnavailable } from "policy.m"
 import { createTask, configureTask, publishTask, allowServices, createEndpoint,
-    resolveService, closeHandle, callTimed, tryAccept, reply, AcceptResult, sleep, exit } from "../syscalls.m"
+    resolveService, closeHandle, callTimed, tryAccept, reply, AcceptResult, sleep, exit, discard } from "../syscalls.m"
 import { IMAGE_REC_ECHO, IMAGE_REC_DISK, IMAGE_REC_FILES, IMAGE_REC_CLIENT } from "../init/images.m"
-import { ENDPOINT_MODE_SERVICE, RIGHT_SEND, RIGHT_RECEIVE, DEVICE_DISK,
-    ERRNO_EPIPE, ERRNO_EAGAIN, FILE_REQUEST_HEADER, FILE_RESPONSE_HEADER,
+import { ENDPOINT_MODE_SERVICE, RIGHT_SEND, DEVICE_DISK,
+    FILE_REQUEST_HEADER, FILE_RESPONSE_HEADER,
     FILE_FONT_ID } from "../../src/arch/wrm081632/defs.m"
 let mut echo: ManagedService
 let mut disk: ManagedService
@@ -42,7 +42,7 @@ let recoveryClient(start: *RuntimeStart): Void {
             if replied != 4 || response[0] != echoGeneration {
                 report[0] = 1
                 report[1] = echoGeneration
-                let notified: Word = callTimed(start.endpoint, &report[0] as *UByte, 8, &mut response[0] as *mut UByte, 32, 5)
+                discard(callTimed(start.endpoint, &report[0] as *UByte, 8, &mut response[0] as *mut UByte, 32, 5))
                 check(closeHandle(echoHandle))
                 echoHandle = 0
             }
@@ -59,7 +59,7 @@ let recoveryClient(start: *RuntimeStart): Void {
                 response[1] != 0 || response[2] != fileGeneration || response[3] != 16 {
                 report[0] = 2
                 report[1] = fileGeneration
-                let notified: Word = callTimed(start.endpoint, &report[0] as *UByte, 8, &mut response[0] as *mut UByte, 32, 5)
+                discard(callTimed(start.endpoint, &report[0] as *UByte, 8, &mut response[0] as *mut UByte, 32, 5))
                 check(closeHandle(fileHandle))
                 fileHandle = 0
             }
@@ -89,20 +89,20 @@ let recoverySupervisorRun(): Void {
         // The sender is the one configured child on this private control endpoint.
         let size: Word = tryAccept(control as UWord, &mut report[0] as *mut UByte, 8, &mut accepted)
         if size >= 0 {
-            let acknowledged: Word = reply(accepted.replyToken, &report[0] as *UByte, size as UWord)
+            discard(reply(accepted.replyToken, &report[0] as *UByte, size as UWord))
         }
         let echoReported: Bool = size == 8 && report[0] == 1 && report[1] == echo.generation
         let filesReported: Bool = size == 8 && report[0] == 2 && report[1] == files.generation
         if !echo.unavailable && (echoReported || serviceFailed(&echo)) {
             let recovered: Word = recoverService(&mut echo, IMAGE_REC_ECHO, 1, 0, 0)
             if recovered != 0 {
-                let disabled: Word = recoveryUnavailable(&mut echo, 1)
+                discard(recoveryUnavailable(&mut echo, 1))
             }
         }
         if !files.unavailable && (filesReported || serviceFailed(&disk) || serviceFailed(&files)) {
             let recovered: Word = recoverFilesDisk(&mut disk, &mut files)
             if recovered != 0 {
-                let disabled: Word = recoveryUnavailable(&mut files, 2)
+                discard(recoveryUnavailable(&mut files, 2))
             }
         }
         check(sleep(1))

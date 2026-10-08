@@ -20,8 +20,6 @@ import { AcceptResult, accept, reply, irqWait, irqComplete, netDeviceInfo, netDe
     netDeviceReceive, exit } from "../syscalls.m"
 import { startHandle } from "../starthandles.m"
 
-let NETDRV_BUFFER_WORDS: UWord = 380 // 1,520 bytes
-
 let mut netdrvRequest: UWord[8]
 let mut netdrvResponse: UWord[8]
 let mut netdrvSend: UWord[380]

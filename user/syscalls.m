@@ -19,15 +19,18 @@ let debugPutChar(code: UWord): Word {
     return syscall(SYS_DEBUG_PUT_CHAR, code)
 }
 
+// For a result that carries no information the caller can act on.
+let discard(result: Word): Void {}
+
 // No successful return. Stay in user mode if a broken kernel returns anyway.
 let exit(code: Word): Void {
-    syscall(SYS_EXIT, code)
+    discard(syscall(SYS_EXIT, code))
     while true {}
 }
 
-// Voluntarily rotate the ready queue. Returns 0 when this task resumes.
-let yield(): Word {
-    return syscall(SYS_YIELD)
+// Voluntarily rotate the ready queue; the task resumes with 0, so nothing is returned.
+let yield(): Void {
+    discard(syscall(SYS_YIELD))
 }
 
 let closeHandle(handle: UWord): Word {
@@ -68,7 +71,7 @@ let reply(token: UWord, response: *UByte, length: UWord): Word {
     return syscall(SYS_IPC_REPLY, token, response, length)
 }
 
-export { AcceptResult, debugPutChar, exit, yield, closeHandle, copyHandle, destroyEndpoint, send, recv, call, accept, reply }
+export { AcceptResult, debugPutChar, discard, exit, yield, closeHandle, copyHandle, destroyEndpoint, send, recv, call, accept, reply }
 
 let irqWait(token: UWord, seconds: UWord): Word { return syscall(SYS_IRQ_WAIT, token, seconds) }
 let irqComplete(token: UWord): Word { return syscall(SYS_IRQ_COMPLETE, token) }

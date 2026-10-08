@@ -70,7 +70,6 @@ let shellKey(): UWord {
         let c: UWord = keymapAscii(usage, shellShift)
         if c != 0 return c
     }
-    return 0
 }
 
 let shellPrompt(): Void {

@@ -21,7 +21,6 @@ let loaderWait(reference: UWord): Word {
         if result != -ERRNO_EAGAIN return result
         yield()
     }
-    return 0
 }
 
 let loaderStart(reference: UWord, argument: UWord): Word {

@@ -1,1 +1,1 @@
-import { recoveryFilesMain } from "server.m"
+// Entry shim: files.asm calls recoveryFilesMain, which server.m exports.

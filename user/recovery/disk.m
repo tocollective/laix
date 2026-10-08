@@ -1,1 +1,1 @@
-import { recoveryDiskMain } from "server.m"
+// Entry shim: disk.asm calls recoveryDiskMain, which server.m exports.

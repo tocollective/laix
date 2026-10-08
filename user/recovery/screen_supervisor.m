@@ -9,7 +9,7 @@ import { ManagedService, launchService, serviceFailed, recoverService,
     recoverScreenBitmap, recoveryUnavailable } from "policy.m"
 import { screenWriteFor } from "../screen/client.m"
 import { createTask, configureTask, publishTask, allowServices, createEndpoint,
-    resolveService, closeHandle, callTimed, tryAccept, reply, AcceptResult, sleep, exit } from "../syscalls.m"
+    resolveService, closeHandle, callTimed, tryAccept, reply, AcceptResult, sleep, exit, discard } from "../syscalls.m"
 import { ENDPOINT_MODE_SERVICE, RIGHT_SEND, DEVICE_SCREEN, DEVICE_FONT } from "../../src/arch/wrm081632/defs.m"
 import { IMAGE_REC_ECHO, IMAGE_REC_BITMAP, IMAGE_REC_SCREEN, IMAGE_REC_SCREEN_CLIENT } from "../init/images.m"
 let mut echo: ManagedService
@@ -47,7 +47,7 @@ let statusLine(tick: UWord, generation: UWord): Void {
 let reportFailed(control: UWord, name: UWord, generation: UWord): Void {
     report[0] = name
     report[1] = generation
-    let notified: Word = callTimed(control, &report[0] as *UByte, 8, &mut response[0] as *mut UByte, 32, 5)
+    discard(callTimed(control, &report[0] as *UByte, 8, &mut response[0] as *mut UByte, 32, 5))
 }
 let screenClient(start: *RuntimeStart): Void {
     let mut screenHandle: UWord = 0
@@ -107,20 +107,20 @@ let screenSupervisorRun(): Void {
         // The sender is the one configured child on this private control endpoint.
         let size: Word = tryAccept(control as UWord, &mut report[0] as *mut UByte, 8, &mut accepted)
         if size >= 0 {
-            let acknowledged: Word = reply(accepted.replyToken, &report[0] as *UByte, size as UWord)
+            discard(reply(accepted.replyToken, &report[0] as *UByte, size as UWord))
         }
         let screenReported: Bool = size == 8 && report[0] == 1 && report[1] == screen.generation
         let echoReported: Bool = size == 8 && report[0] == 3 && report[1] == echo.generation
         if !echo.unavailable && (echoReported || serviceFailed(&echo)) {
             let recovered: Word = recoverService(&mut echo, IMAGE_REC_ECHO, 3, 0, 0)
             if recovered != 0 {
-                let disabled: Word = recoveryUnavailable(&mut echo, 3)
+                discard(recoveryUnavailable(&mut echo, 3))
             }
         }
         if !screen.unavailable && (screenReported || serviceFailed(&bitmap) || serviceFailed(&screen)) {
             let recovered: Word = recoverScreenBitmap(&mut bitmap, &mut screen)
             if recovered != 0 {
-                let disabled: Word = recoveryUnavailable(&mut screen, 1)
+                discard(recoveryUnavailable(&mut screen, 1))
             }
         }
         check(sleep(1))

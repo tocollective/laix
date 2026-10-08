@@ -1,6 +1,6 @@
 // Minimal eager heap: one page-backed region per allocation. Metadata stays in
 // the program's data segment. No kernel imports, physical addresses or owners.
-import { openMemorySpace, allocateRegion, releaseRegion, mapRegion, unmapRegion } from "syscalls.m"
+import { openMemorySpace, allocateRegion, releaseRegion, discard, mapRegion, unmapRegion } from "syscalls.m"
 import { PAGE_SIZE, PAGE_MASK, PTE_RW, PTE_U, MEM_REGION_PAGES, MEM_VA_START,
     MEM_RIGHT_ALLOC, MEM_RIGHT_MAP, MEM_RIGHT_UNMAP, ERRNO_EINVAL, ERRNO_ENOMEM } from "../src/arch/wrm081632/defs.m"
 let HEAP_REGIONS: UWord = 8
@@ -33,7 +33,7 @@ let heapAllocate(bytes: UWord): *mut UByte {
         let virtual: UWord = MEM_VA_START + i * HEAP_REGION_BYTES
         let mapped: Word = mapRegion(heapSpace, result as UWord, virtual, 0, pages, PTE_RW | PTE_U)
         if mapped != 0 {
-            releaseRegion(heapSpace, result as UWord)
+            discard(releaseRegion(heapSpace, result as UWord))
             heapError = mapped
             return null
         }

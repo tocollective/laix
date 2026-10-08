@@ -12,7 +12,7 @@ import { START_BLOCK_VA, RUNTIME_START_BYTES, RUNTIME_START_MAGIC, RUNTIME_START
     TASK_EVENT_FAULT, EXEC_RUN_HEADER, EXEC_RESPONSE_HEADER, EXEC_FAULTED, DATA_GENERATION,
     RIGHT_SEND, ERRNO_EINVAL, ERRNO_EPIPE, ERRNO_EAGAIN, ERRNO_ETIMEDOUT } from "../../src/arch/wrm081632/defs.m"
 import { AcceptResult, accept, reply, loadTask, configureTask, publishTask, collectTask,
-    terminateTask, yield, sleep, exit } from "../syscalls.m"
+    terminateTask, yield, sleep, exit, discard } from "../syscalls.m"
 import { heapAllocate } from "../heap.m"
 import { startHandle } from "../starthandles.m"
 import { wordsGet } from "../words.m"
@@ -45,22 +45,21 @@ let execWait(reference: UWord, limit: UWord): Word {
         if collected != -ERRNO_EAGAIN return collected
         if limit != 0 && seconds >= limit && !timedOut {
             timedOut = true
-            terminateTask(reference, -1)
+            discard(terminateTask(reference, -1))
         }
         if quick < EXEC_QUICK_POLLS || timedOut {
             quick += 1
             yield()
         } else {
-            sleep(1)
+            discard(sleep(1))
             seconds += 1
         }
     }
-    return 0
 }
 
 // Ends a child that never ran: terminate and collect it so its quota row is free.
 let execAbandon(reference: UWord): Void {
-    terminateTask(reference, -1)
+    discard(terminateTask(reference, -1))
     for i: UWord in 0..8 {
         if collectTask(reference, &mut execEvent) != -ERRNO_EAGAIN return
         yield()
