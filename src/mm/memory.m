@@ -2,7 +2,7 @@
 // reference records are sized to installed RAM and reserved just after BSS
 // before any frame is made available to the allocator.
 import { PAGE_SIZE, PAGE_MASK, WORD_BYTES, WORD_BITS, RAM_MAX_BYTES,
-    CR_STATUS, STATUS_IE } from "../arch/wrm081632/defs.m"
+    CR_STATUS, STATUS_IE, TASK_SLOT_MASK, TASK_SLOTS } from "../arch/wrm081632/defs.m"
 extern let __bss_end: UByte
 let MAX_PAGES: UWord = RAM_MAX_BYTES / PAGE_SIZE
 let BITMAP_WORDS: UWord = MAX_PAGES / WORD_BITS
@@ -34,15 +34,35 @@ let mut nextFreePage: UWord
 // kernel stacks. Unregistered owners are reserved trusted kernel/broker owners.
 let MEMORY_TASK_PAGES: UWord = 96
 let MEMORY_RESERVE_PAGES: UWord = 16
-let MAX_MEMORY_BUDGETS: UWord = 8
+// How many task slots this boot supports: nine frames each (directory, tables,
+// three task pages and a guarded kernel stack, the least a task can hold), at
+// least eight, at most what a task reference can name. Every per-slot table is
+// sized from this one number, whoever carves it.
+let TASK_RAM_BYTES: UWord = 9 * PAGE_SIZE
+let TASK_SLOTS_MIN: UWord = 8
+let memorySlots(): UWord {
+    let mut slots: UWord = (kernelRamEnd - kernelReservedEnd) / TASK_RAM_BYTES
+    if slots > TASK_SLOTS slots = TASK_SLOTS
+    if slots < TASK_SLOTS_MIN slots = TASK_SLOTS_MIN
+    return slots
+}
 type MemoryBudget { owner: UWord, used: UWord, limit: UWord }
-let mut memoryBudgets: MemoryBudget[MAX_MEMORY_BUDGETS]
+// One row per task slot, carved out of RAM at boot (src/task/tables.m): there is
+// no budget until the table is bound, so every owner is then a trusted one.
+let mut memoryBudgets: *mut MemoryBudget
+let mut memoryBudgetCount: UWord
+let memoryBudgetBind(base: UWord, count: UWord): Bool {
+    if memoryBudgets != null || base == 0 || count == 0 return false
+    memoryBudgets = base as *mut MemoryBudget
+    memoryBudgetCount = count
+    return true
+}
 let mut memoryFreePages: UWord
 
 // Kernel policy only. A generation gets a fresh budget before its first frame.
 let memoryBudgetOpen(owner: UWord): Bool {
-    let slot: UWord = owner & 255
-    if slot == 0 || slot > MAX_MEMORY_BUDGETS return false
+    let slot: UWord = owner & TASK_SLOT_MASK
+    if slot == 0 || slot > memoryBudgetCount return false
     let budget: *mut MemoryBudget = &mut memoryBudgets[slot - 1]
     if budget.owner != 0 return false
     budget.owner = owner
@@ -52,8 +72,8 @@ let memoryBudgetOpen(owner: UWord): Bool {
 }
 
 let memoryBudgetFind(owner: UWord): *mut MemoryBudget {
-    let slot: UWord = owner & 255
-    if slot == 0 || slot > MAX_MEMORY_BUDGETS return null
+    let slot: UWord = owner & TASK_SLOT_MASK
+    if slot == 0 || slot > memoryBudgetCount return null
     let budget: *mut MemoryBudget = &mut memoryBudgets[slot - 1]
     // The slot is only an index; exact generation-bearing ownership authorizes
     // charging. Trusted kernel/broker identities cannot alias a task budget.
@@ -384,7 +404,7 @@ export { kernelReservedEnd, kernelRamEnd, PAGE_NONE, PAGE_KERNEL,
     pageAccessReferences,
     allocPage, allocPageRun, freePage, allocTaskPages, freeTaskPages }
 
-export { MemoryBudget, memoryBudgets, memoryFreePages, MEMORY_TASK_PAGES, MEMORY_RESERVE_PAGES,
+export { memorySlots, TASK_RAM_BYTES, TASK_SLOTS_MIN, MemoryBudget, memoryBudgets, memoryBudgetCount, memoryBudgetBind, memoryFreePages, MEMORY_TASK_PAGES, MEMORY_RESERVE_PAGES,
     memoryBudgetOpen, memoryBudgetClose, memoryBudgetFind }
 
 export { memoryBudgetDetach }

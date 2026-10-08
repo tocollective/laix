@@ -106,7 +106,7 @@ class LivenessProbe(RequestReplyProbe):
     def timeouts(self):
         for accepted in (False, True):
             self.timed()
-            token = self.accept() if accepted else (self.field(2, 'ipcCallGeneration') << 8) | 2
+            token = self.accept() if accepted else (self.field(2, 'ipcCallGeneration') << 12) | 2
             self.waiting(2, 6 if accepted else 4)
             before = self.bytes(2, 128, 32)
             self.expire((2,))
@@ -197,7 +197,7 @@ class LivenessProbe(RequestReplyProbe):
         self.expire((2, 4))
         for slot in (3, 5):
             token = self.accept()
-            require(token & 255 == slot, 'expiry changed unaffected FIFO order')
+            require(token & 4095 == slot, 'expiry changed unaffected FIFO order')
             self.reply(token)
         require(self.endpoint_field('references') == 6 and self.endpoint_field('senderCount') == 0,
                 'FIFO cleanup leaked waits')
@@ -282,7 +282,7 @@ class LivenessProbe(RequestReplyProbe):
         for index in range(iterations):
             slot = 2 + index % 2
             self.timed(slot)
-            token = self.accept() if index % 2 else (self.field(slot, 'ipcCallGeneration') << 8) | slot
+            token = self.accept() if index % 2 else (self.field(slot, 'ipcCallGeneration') << 12) | slot
             self.expire((slot,))
             require(self.result(slot) == (negative(110), 0), 'stress timeout lost')
             require(self.reply(token) == (negative(9), 0), 'stress accepted stale reply')

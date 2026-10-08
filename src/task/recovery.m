@@ -15,7 +15,7 @@ import { handleLookup, handleCopy, handleClose, ENDPOINT_SERVICE,
 import { copyToUser } from "../mm/mmu.m"
 import { TASK_RIGHT_CONFIGURE, TASK_RIGHT_INSPECT, RIGHT_SEND, RIGHT_RECEIVE,
     RIGHT_MANAGE, ERRNO_EPERM, ERRNO_EINVAL, ERRNO_EBUSY, ERRNO_ENFILE,
-    ERRNO_EAGAIN, ERRNO_EPIPE, RECOVERY_START_BYTES } from "../arch/wrm081632/defs.m"
+    ERRNO_EAGAIN, ERRNO_EPIPE, RECOVERY_START_BYTES, RUNTIME_START_MAGIC } from "../arch/wrm081632/defs.m"
 
 let SERVICE_ROWS: UWord = 8
 let SERVICE_NAMES: UWord = 4
@@ -96,7 +96,7 @@ let serviceWithdraw(name: UWord, status: Word): Word {
 }
 let serviceDependencyLive(task: *Task): Bool {
     let block: *RecoveryStart = task.bootPage as *RecoveryStart
-    if block.bytes != RECOVERY_START_BYTES || block.dependency == 0 return true
+    if block.magic != RUNTIME_START_MAGIC || block.bytes != RECOVERY_START_BYTES || block.dependency == 0 return true
     let upstream: *mut Endpoint = handleLookup(&task.handles as *mut HandleTable, block.dependency, RIGHT_SEND)
     if upstream == null return false
     let peer: *mut Task = taskGet(upstream.manager)

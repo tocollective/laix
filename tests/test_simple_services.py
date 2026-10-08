@@ -46,7 +46,7 @@ class KeyboardDevices(Devices):
 
 
 def simple_fixture(fail=None):
-    vm = TaskM(ram=0x200000, root=LAIX / 'src/kernel/simple_main.m')
+    vm = TaskM(ram=0x200000, root=LAIX / 'tests/programs/boot/simple_main.m')
     vm.memory = KeyboardDevices(vm)
     vm.addresses.update(fontData=0x16000, fontDataEnd=0x16000 + 184)
     for i, word in enumerate((0x3146414C, 1, 19, 32, 184, 16, 32, 0)):
@@ -209,7 +209,7 @@ class SimpleKernelTests(unittest.TestCase):
                 self.assertEqual(vm.field('ipcEndpoint', id), 0)
             self.assertEqual(vm.call('irqComplete', 2, vm.disk_irq), error(1))
             self.assertEqual(vm.call('deviceSubmit', 2, 0, 16, 1, 0), error(32))
-            current = (vm.globals['currentTask'] - vm.addresses['tasks']) // vm.task_type.size + 1
+            current = (vm.globals['currentTask'] - vm.table_base('tasks')) // vm.task_type.size + 1
             vm.cpu_sp = vm.field('kernelStackTop', current) - 64
             vm.call('taskReap')
             self.assertFalse(vm.field('reaped', 2))

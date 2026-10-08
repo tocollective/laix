@@ -74,9 +74,9 @@ def probe(image, map_path, emulator, rom, timeout=30):
             require(monitor.words(symbols['memoryOrphanPages'], 1) == [2 if order == 0 else 0],
                     'wrong orphan charge after first death')
             if order == 0:
-                require(field(1, 'id') == 257 and field(1, 'state') == 5,
+                require(field(1, 'id') == 4097 and field(1, 'state') == 5,
                         'original owner slot was not reused as an unpublished replacement')
-                require(record('memoryBudgets', types['MemoryBudget'], 0, 'owner') == 257,
+                require(record('memoryBudgets', types['MemoryBudget'], 0, 'owner') == 4097,
                         'replacement did not get its own budget generation')
                 directory = field(2, 'directory')
                 for i, page in enumerate(pages):

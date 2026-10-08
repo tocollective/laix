@@ -27,6 +27,36 @@ COMPOUND = {"+=": "+", "-=": "-", "*=": "*", "/=": "/", "%=": "%",
             "&=": "&", "|=": "|", "<<=": "<<", ">>=": ">>"}
 
 
+def image_ids():
+    """Catalog image IDs by name, from user/init/images.m (the one definition init uses)."""
+    import re
+    from test_kernel import LAIX
+    return {name: int(value) for name, value in
+            re.findall(r'let IMAGE_(\w+): UWord = (\d+)', (LAIX / 'user/init/images.m').read_text())}
+
+
+def bind_tables(vm, capacity=8, base=0x30000000):
+    """Lay the per-slot tables out as src/task/tables.m does, for fixtures that never run memoryInit."""
+    def size(name):
+        return vm.decls[name].sym.type.target.size
+
+    def align(n):
+        return (n + 7) & ~7
+    ready = base + align(capacity * size('tasks'))
+    transfers = ready + align(capacity * 4)
+    budgets = transfers + align(capacity * size('transfers'))
+    controls = budgets + align(capacity * size('memoryBudgets'))
+    queues = controls + align(capacity * size('taskControls'))
+    for address in range(base, queues + align(2 * 16 * capacity * 4), 4):
+        vm.memory[address] = 0
+    assert vm.call('memoryBudgetBind', budgets, capacity)
+    assert vm.call('transferTableBind', transfers, capacity)
+    assert vm.call('taskControlTableBind', controls, capacity)
+    assert vm.call('endpointQueuesBind', queues, capacity)
+    assert vm.call('taskTableBind', base, ready, capacity)
+    vm.zero_carved()
+
+
 class SourceM(BootstrapM):
     binary = dict(BootstrapM.binary, **{
         "<<": lambda a, b: a << (b & 31), ">>": lambda a, b: a >> (b & 31),
@@ -50,18 +80,9 @@ class SourceM(BootstrapM):
                     self.memory[self.addresses[name] + i * size_of(elem.type)] = self.expr(elem, {})
         # Struct arrays may contain byte-sized Bool fields between words.
         # This evaluator stores primitive values at their exact field address.
-        def zero_fields(address, typ):
-            if typ.kind == "struct":
-                for field in typ.fields:
-                    zero_fields(address + field.offset, field.type)
-            elif typ.kind == "array":
-                for i in range(typ.n):
-                    zero_fields(address + i * size_of(typ.elem), typ.elem)
-            else:
-                self.memory.setdefault(address, 0)
         for name, decl in self.decls.items():
             if isinstance(decl, s.VarDecl) and not decl.extern and name in self.addresses:
-                zero_fields(self.addresses[name], decl.sym.type)
+                self.zero_fields(self.addresses[name], decl.sym.type)
         self.controls = {0: 0, 6: 0}
         self.output = []
         self.local_storage = 0x0D000000
@@ -204,6 +225,29 @@ class SourceM(BootstrapM):
             self.write(node.target, (self.expr(node.target, local) + step) & 0xFFFFFFFF, local)
         else:
             super().statement(node, local)
+
+    def zero_fields(self, address, typ):
+        if typ.kind == "struct":
+            for field in typ.fields:
+                self.zero_fields(address + field.offset, field.type)
+        elif typ.kind == "array":
+            for i in range(typ.n):
+                self.zero_fields(address + i * size_of(typ.elem), typ.elem)
+        else:
+            self.memory.setdefault(address, 0)
+
+    def zero_carved(self):
+        """Give the tables carved out of RAM the per-field zero state static arrays start with."""
+        for table, count in (('tasks', 'taskCapacity'), ('transfers', 'transferCount'),
+                             ('taskControls', 'taskControlCount'), ('memoryBudgets', 'memoryBudgetCount'),
+                             ('spaceBudgets', 'spaceBudgetCount')):
+            typ = self.decls[table].sym.type.target
+            for i in range(self.globals[count]):
+                self.zero_fields(self.globals[table] + i * size_of(typ), typ)
+
+    def table_base(self, name):
+        """Base address of a per-slot table: those are pointer variables, bound at boot by tablesInit."""
+        return self.globals[name]
 
     def call(self, name, *args):
         if name == "panic":

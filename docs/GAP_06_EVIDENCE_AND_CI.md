@@ -46,7 +46,7 @@ From [AUDIT_09_ACCEPTANCE_AND_CI.md](AUDIT_09_ACCEPTANCE_AND_CI.md) and
   id as evidence.
 - Keep input bundles while a readiness claim is maintained.
 - ~~Add a longer soak profile for the finite-lifetime and reaping workloads.~~
-  Done 2026-10-08: profile `soak` (`LAIX_CONSOLE=soak`, image
+  Done 2026-10-08: profile `soak` (`LAIX_FIXTURE=soak`, image
   `src/kernel/soak_bootstrap.asm`). One user supervisor runs 4096 child
   lifetimes, every eighth a fault, and checks each round's `SYS_LIFETIME`
   report (exactly one task-reference generation spent, no reply identity spent,

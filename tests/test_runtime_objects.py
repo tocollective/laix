@@ -182,7 +182,7 @@ class RuntimeObjectTests(unittest.TestCase):
         self.assertEqual(vm.root(root), obj)
         self.assertEqual(vm.object_value(obj, 'generation'), 2)
         # Retire remaining empty handles, exercising the real installation error.
-        typ = vm.decls['tasks'].sym.type.elem.field('handles').type.field('entries').type.elem
+        typ = vm.decls['tasks'].sym.type.target.field('handles').type.field('entries').type.elem
         for i in range(1, 16):
             vm.memory[vm.field_address('handles') + i * typ.size + typ.field('generation').offset] = GEN_MAX
         self.assertEqual(vm.factory(), error(24))
@@ -245,7 +245,7 @@ class RuntimeObjectTests(unittest.TestCase):
 
     def test_boundary_generations_retire_and_stale_handles_never_rebind(self):
         vm = fixture(2)
-        typ = vm.decls['tasks'].sym.type.elem.field('handles').type.field('entries').type.elem
+        typ = vm.decls['tasks'].sym.type.target.field('handles').type.field('entries').type.elem
         vm.memory[vm.field_address('handles') + typ.field('generation').offset] = GEN_MAX - 1
         obj = vm.addresses['endpoints']
         vm.memory[vm.object_field(obj, 'generation')] = 0xFFFFFFFE

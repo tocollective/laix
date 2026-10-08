@@ -172,12 +172,25 @@ let mapGrantedRegion(space: UWord, grant: UWord, virtual: UWord, permissions: UW
 let closeMemoryGrant(grant: UWord): Word { return syscall(SYS_MEM_GRANT_CLOSE, grant) }
 export { grantRegion, mapGrantedRegion, closeMemoryGrant }
 
-import { SYS_ENDPOINT_CREATE, SYS_TASK_DEVICES } from "../src/arch/wrm081632/defs.m"
+import { SYS_ENDPOINT_CREATE, SYS_TASK_DEVICES, SYS_TASK_HANDLES, SYS_TASK_SERVICE_START, SYS_TASK_AUTHORITY } from "../src/arch/wrm081632/defs.m"
 // Receiver zero selects self; foreign Service receivers must be owned Created children.
 let createEndpoint(mode: UWord, receiver: UWord): Word { return syscall(SYS_ENDPOINT_CREATE, mode, receiver) }
 // Returns the keyboard IRQ token (or zero for UART only), never an MMIO address.
 let grantTaskDevices(reference: UWord, devices: UWord): Word { return syscall(SYS_TASK_DEVICES, reference, devices) }
-export { createEndpoint, grantTaskDevices }
+// Installs the start handle list of an owned Created child from `count`
+// {token, rights} word pairs (rights 0 stores the token as a plain word).
+let grantTaskHandles(reference: UWord, entries: *UWord, count: UWord): Word {
+    return syscall(SYS_TASK_HANDLES, reference, entries, count)
+}
+// Installs the checked service start record (role, protocol, own endpoint handle,
+// optional upstream send handle, interrupt token from grantTaskDevices).
+let startTaskService(reference: UWord, role: UWord, protocol: UWord, endpoint: UWord,
+    upstream: UWord, irq: UWord): Word {
+    return syscall(SYS_TASK_SERVICE_START, reference, role, protocol, endpoint, upstream, irq)
+}
+// Gives an owned Created child a subset of the caller's image authority.
+let grantTaskImages(reference: UWord, images: UWord): Word { return syscall(SYS_TASK_AUTHORITY, reference, images) }
+export { createEndpoint, grantTaskDevices, grantTaskHandles, startTaskService, grantTaskImages }
 
 import { SYS_IPC_CALL_TIMED, SYS_IPC_TRY_SEND, SYS_IPC_TRY_RECEIVE,
     SYS_TASK_CANCEL_WAIT, SYS_SLEEP } from "../src/arch/wrm081632/defs.m"

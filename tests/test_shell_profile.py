@@ -13,7 +13,7 @@ DISK, FS, CONSOLE, EXEC, SHELL = 1, 2, 3, 4, 5
 
 
 def fixture(fail=None, flags=1):
-    vm = TaskM(ram=0x200000, root=LAIX / 'src/kernel/shell_main.m')
+    vm = TaskM(ram=0x200000, root=LAIX / 'tests/programs/boot/shell_main.m')
     vm.memory = KeyboardDevices(vm)
     vm.addresses.update(fontData=0x16000, fontDataEnd=0x16000 + 184,
                         bootstrapServerStart=0x14000, bootstrapServerEnd=0x1401C)
@@ -57,7 +57,7 @@ def points_at(vm, task, token, rights, server):
 
 class ShellProfileTests(unittest.TestCase):
     def test_sources_check(self):
-        for path in ('src/kernel/shell_main.m', 'src/kernel/shell_bootstrap.m', 'user/apps/shell.m',
+        for path in ('tests/programs/boot/shell_main.m', 'tests/programs/boot/shell_bootstrap.m', 'user/apps/shell.m',
                      'user/services/exec.m', 'user/bin/hello.m', 'user/bin/count.m', 'user/bin/spin.m'):
             check_m(LAIX / path)
 

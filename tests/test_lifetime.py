@@ -10,6 +10,7 @@ from source_m import LAYOUT as C
 from test_kernel import check_m, LAIX
 from test_ipc_handles import error
 from test_ipc_request_reply import GEN_MAX
+from test_ipc_handles import GEN_MAX as HANDLE_GEN_MAX
 from test_recovery_policy import PolicyM
 from test_runtime_tasks import fixture, create
 from test_task import USER_DATA
@@ -39,6 +40,8 @@ def ok(test, vm, reference=0):
 
 def set_task(vm, field, slot, value):
     vm.memory[vm.field_address(field, slot)] = value
+    # A record that was written is a record in use: scans stop at the high-water mark.
+    vm.globals['taskHighWater'] = max(vm.globals['taskHighWater'], slot)
 
 
 def row_address(vm, name, index, field):
@@ -60,43 +63,43 @@ class LifetimeTests(unittest.TestCase):
 
     def test_fresh_system_reports_full_capacity_without_changing_a_counter(self):
         vm = fixture(1)
-        before = [vm.field('ipcCallGeneration', slot) for slot in range(1, 9)], vm.free_pages()
+        before = [vm.field('ipcCallGeneration', slot) for slot in range(1, vm.globals['taskCapacity'] + 1)], vm.free_pages()
         fields = ok(self, vm)
         self.assertEqual(fields['bytes'], C['LIFETIME_REPORT_BYTES'])
         self.assertEqual(fields['limit'], GEN_MAX)
-        # The fixture root is a recovery-class supervisor: all eight namespaces.
-        self.assertEqual((fields['replyOpen'], fields['replyTotal']), (8, 8 * GEN_MAX))
-        self.assertEqual(8 * GEN_MAX, 67108856)
+        # The fixture root is a recovery-class supervisor: every slot's namespace.
+        self.assertEqual((fields['replyOpen'], fields['replyTotal']), (vm.globals['taskCapacity'], vm.globals['taskCapacity'] * GEN_MAX))
         for name in ('retiredTasks', 'retiredHandles', 'retiredEndpoints', 'retiredIrqs',
                      'replySelected', 'taskSelected', 'handleSelected'):
             self.assertEqual(fields[name], 0, name)
         # Repeating the call is idempotent; it never advances or resets anything.
         self.assertEqual(ok(self, vm), fields)
-        self.assertEqual(([vm.field('ipcCallGeneration', slot) for slot in range(1, 9)], vm.free_pages()), before)
+        self.assertEqual(([vm.field('ipcCallGeneration', slot) for slot in range(1, vm.globals['taskCapacity'] + 1)], vm.free_pages()), before)
 
     def test_ordinary_supervisor_sees_only_the_namespaces_it_can_construct_into(self):
         vm = fixture(1)
-        table = vm.decls['tasks'].sym.type.elem.field('handles').type
+        table = vm.decls['tasks'].sym.type.target.field('handles').type
         vm.memory[vm.field_address('handles', 1) + table.field('factoryRecovery').offset] = 0
         fields = ok(self, vm)
         # Two slots are recovery-reserved, as in task construction.
-        self.assertEqual((fields['replyOpen'], fields['replyTotal']), (6, 6 * GEN_MAX))
+        self.assertEqual((fields['replyOpen'], fields['replyTotal']), (vm.globals['taskCapacity'] - 2, (vm.globals['taskCapacity'] - 2) * GEN_MAX))
 
     def test_retirement_of_every_identity_kind_is_counted(self):
         vm = fixture(1)
         set_task(vm, 'ipcCallGeneration', 3, GEN_MAX)
-        set_task(vm, 'id', 4, GEN_MAX << 8 | 4)
-        handles = vm.decls['tasks'].sym.type.elem.field('handles').type
+        set_task(vm, 'id', 4, GEN_MAX << C['TASK_SLOT_BITS'] | 4)
+        handles = vm.decls['tasks'].sym.type.target.field('handles').type
         entry = handles.field('entries').type.elem
         vm.memory[vm.field_address('handles', 5) + handles.field('entries').offset +
-                  2 * entry.size + entry.field('generation').offset] = GEN_MAX
+                  2 * entry.size + entry.field('generation').offset] = HANDLE_GEN_MAX
         vm.memory[row_address(vm, 'endpoints', 3, 'state')] = C['ENDPOINT_RETIRED'] if 'ENDPOINT_RETIRED' in C else 3
         vm.memory[row_address(vm, 'endpoints', 4, 'generation')] = 0xFFFFFFFF
-        vm.memory[row_address(vm, 'irqGrants', 7, 'generation')] = GEN_MAX
+        vm.memory[row_address(vm, 'irqGrants', 7, 'generation')] = HANDLE_GEN_MAX
+        vm.globals['taskHighWater'] = max(vm.globals['taskHighWater'], 8)  # the poked records are in use
         fields = ok(self, vm)
         self.assertEqual(fields['retiredTasks'], 2)
-        self.assertEqual(fields['replyOpen'], 6)
-        self.assertEqual(fields['replyTotal'], 6 * GEN_MAX)
+        self.assertEqual(fields['replyOpen'], vm.globals['taskCapacity'] - 2)
+        self.assertEqual(fields['replyTotal'], (vm.globals['taskCapacity'] - 2) * GEN_MAX)
         self.assertEqual(fields['retiredHandles'], 1)
         # A free row at the final generation can never be allocated again.
         self.assertEqual(fields['retiredEndpoints'], 2)
@@ -108,14 +111,14 @@ class LifetimeTests(unittest.TestCase):
         set_task(vm, 'ipcCallGeneration', child, GEN_MAX - 5)
         fields = ok(self, vm, child)
         self.assertEqual(fields['replySelected'], 5)
-        self.assertEqual(fields['taskSelected'], GEN_MAX - (child >> 8))
+        self.assertEqual(fields['taskSelected'], GEN_MAX - (child >> C['TASK_SLOT_BITS']))
         # The child holds one installed handle; its other 15 slots are untouched.
-        self.assertEqual(fields['handleSelected'], GEN_MAX - 1)
-        self.assertEqual(fields['replyTotal'], 7 * GEN_MAX + 5)
+        self.assertEqual(fields['handleSelected'], HANDLE_GEN_MAX - 1)
+        self.assertEqual(fields['replyTotal'], (vm.globals['taskCapacity'] - 1) * GEN_MAX + 5)
         set_task(vm, 'ipcCallGeneration', child, GEN_MAX)
         fields = ok(self, vm, child)
         self.assertEqual(fields['replySelected'], 0)
-        self.assertEqual(fields['replyOpen'], 7)
+        self.assertEqual(fields['replyOpen'], vm.globals['taskCapacity'] - 1)
 
     def test_authority_faults_and_stale_references_do_not_report_or_mutate(self):
         vm = fixture(2, endpoint=True)
@@ -152,21 +155,21 @@ class LifetimeTests(unittest.TestCase):
         vm = fixture(1)
         set_task(vm, 'ipcCallGeneration', 2, GEN_MAX - RESERVE)
         first = create(vm)
-        self.assertEqual(first & 255, 3)
+        self.assertEqual(first & C['TASK_SLOT_MASK'], 3)
         # The slot just above the reserve is still preferred by order.
         vm.invoke(C['SYS_TASK_TERMINATE'], first, 0)
         vm.reap()
         vm.invoke(C['SYS_TASK_COLLECT'], first, USER_DATA)
         set_task(vm, 'ipcCallGeneration', 2, GEN_MAX - RESERVE - 1)
-        self.assertEqual(create(vm) & 255, 2)
+        self.assertEqual(create(vm) & C['TASK_SLOT_MASK'], 2)
 
     def test_construction_falls_back_to_a_near_limit_namespace_when_nothing_else_is_left(self):
         vm = fixture(1)
         set_task(vm, 'ipcCallGeneration', 2, GEN_MAX - 3)
-        for slot in range(3, 9):
+        for slot in range(3, vm.globals['taskCapacity'] + 1):
             set_task(vm, 'ipcCallGeneration', slot, GEN_MAX)
         child = create(vm)
-        self.assertEqual(child & 255, 2)
+        self.assertEqual(child & C['TASK_SLOT_MASK'], 2)
         self.assertEqual(ok(self, vm, child)['replySelected'], 3)
         # Only retired namespaces remain: creation fails without allocating.
         vm.invoke(C['SYS_TASK_TERMINATE'], child, 0)
@@ -178,7 +181,7 @@ class LifetimeTests(unittest.TestCase):
         self.assertEqual(vm.result(1)[0], error(23))
         self.assertEqual(vm.free_pages(), baseline)
         fields = ok(self, vm)
-        self.assertEqual((fields['replyOpen'], fields['replyTotal'], fields['retiredTasks']), (1, GEN_MAX, 7))  # only the running root remains
+        self.assertEqual((fields['replyOpen'], fields['replyTotal'], fields['retiredTasks']), (1, GEN_MAX, vm.globals['taskCapacity'] - 1))  # only the running root remains
 
     def test_planned_replacement_moves_a_client_before_it_sees_eoverflow(self):
         vm = fixture(1, endpoint=True)
@@ -210,7 +213,7 @@ class LifetimeTests(unittest.TestCase):
         self.assertEqual(vm.result(1)[0], 0)
         replacement = create(vm, token=vm.root_handle, rights=1)
 
-        self.assertNotEqual(replacement & 255, client & 255)
+        self.assertNotEqual(replacement & C['TASK_SLOT_MASK'], client & C['TASK_SLOT_MASK'])
         # No counter was reset or advanced by the replacement itself.
         self.assertEqual(vm.field('ipcCallGeneration', client), old_generation)
         fresh = ok(self, vm, replacement)
@@ -230,7 +233,7 @@ class LifetimeTests(unittest.TestCase):
     def test_replacement_is_still_due_when_no_fresh_namespace_remains(self):
         vm = fixture(1, endpoint=True)
         client = create(vm, token=vm.root_handle, rights=1)
-        for slot in range(3, 9):
+        for slot in range(3, vm.globals['taskCapacity'] + 1):
             set_task(vm, 'ipcCallGeneration', slot, GEN_MAX)
         set_task(vm, 'ipcCallGeneration', client, GEN_MAX - RESERVE)
         vm.invoke(C['SYS_TASK_TERMINATE'], client, 0)
@@ -239,7 +242,7 @@ class LifetimeTests(unittest.TestCase):
         replacement = create(vm, token=vm.root_handle, rights=1)
         # Same namespace, counter preserved: the supervisor must see "still due"
         # and stop replacing instead of consuming task generations in a loop.
-        self.assertEqual(replacement & 255, client & 255)
+        self.assertEqual(replacement & C['TASK_SLOT_MASK'], client & C['TASK_SLOT_MASK'])
         self.assertEqual(ok(self, vm, replacement)['replySelected'], RESERVE)
 
 

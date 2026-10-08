@@ -66,9 +66,10 @@ class RequestReplyProbe(SchedulerProbe):
 
     def check_queue(self, running):
         head, count = self.m.words(self.s["task__readyHead"], 2)
-        ring = self.m.words(self.s["task__readyQueue"], 8)
-        require(head < 8 and count <= 8, "invalid ready queue bounds")
-        queue = [ring[(head + i) % 8] for i in range(count)]
+        capacity = self.m.words(self.s["taskCapacity"], 1)[0]
+        ring = self.m.words(self.s["task__readyQueue"], capacity)
+        require(head < capacity and count <= capacity, "invalid ready queue bounds")
+        queue = [ring[(head + i) % capacity] for i in range(count)]
         require(len(queue) == len(set(queue)) and all(1 <= id <= self.count for id in queue),
                 "duplicate or invalid ready membership")
         for id in range(1, self.count + 1):
@@ -269,7 +270,7 @@ class RequestReplyProbe(SchedulerProbe):
         require(self.syscall(1, ACCEPT, self.tokens[1], DATA, 1) == (negative(90), 7), "small accept consumed request")
         require(self.syscall(1, ACCEPT, self.tokens[1], DATA, PAGE + 1) == (negative(90), 0), "accept admitted excessive capacity")
         a = self.accept()
-        require(a == 0x102 and self.bytes(1, 0, 7) == b"client2", "FIFO/snapshot identity is wrong")
+        require(a == 0x1002 and self.bytes(1, 0, 7) == b"client2", "FIFO/snapshot identity is wrong")
         b = self.accept()
         require(b == 0x103 and self.bytes(1, 0, 7) == b"client3", "second request identity is wrong")
         for id in (2, 3):
@@ -291,7 +292,7 @@ class RequestReplyProbe(SchedulerProbe):
         self.write(self.address(2, "ipcCallGeneration"), 0x7FFFFE)
         self.request(2)
         last = self.accept()
-        require(last == 0x7FFFFF02 and self.reply(last) == (8, 8), "last generation failed")
+        require(last == 0x7FFFF002 and self.reply(last) == (8, 8), "last generation failed")
         require(self.syscall(2, CALL, self.tokens[2], DATA, 1, DATA + 128, 32) == (negative(75), 0),
                 "reply generation wrapped")
         require(self.endpoint_field("references") == 4, "exchange leaked wait references")
@@ -302,11 +303,11 @@ class RequestReplyProbe(SchedulerProbe):
         self.syscall(1, ACCEPT, self.tokens[1], DATA, 32)
         self.waiting(1, 5)
         self.request(2, b"hello")
-        require(self.result(1) == (5, 0x102) and self.bytes(1, 0, 5) == b"hello", "blocked accept did not complete")
+        require(self.result(1) == (5, 0x1002) and self.bytes(1, 0, 5) == b"hello", "blocked accept did not complete")
         self.waiting(2, 6)
         require(self.kernel_api("taskWake", 2) == 0, "generic wake bypassed AwaitReply")
         self.waiting(2, 6)
-        self.reply(0x102, b"world")
+        self.reply(0x1002, b"world")
         require(self.result(2) == (5, 5) and self.bytes(2, 128, 5) == b"world", "reply after blocked accept failed")
         self.cleared(2)
         return dict(accept_first=True, no_early_client_wake=True, generic_wake_rejected=True)

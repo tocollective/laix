@@ -6,8 +6,8 @@ The existing UART and screen profiles remain available. This milestone keeps
 networking, general user ELF loading and a full filesystem deferred.
 
 ```sh
-LAIX_CONSOLE=services sh laix/build.sh
-LAIX_CONSOLE=services sh laix/run.sh --ram 2M --no-net
+LAIX_SESSION=services sh laix/build.sh
+LAIX_SESSION=services sh laix/run.sh --ram 2M --no-net
 python3 laix/tests/probe_simple_services_cpu.py \
     laix/build/services.img laix/build/services.map
 ```

@@ -1,5 +1,11 @@
 # Embedded service bootstrap
 
+> Since 2026-10-09 this is the `uart` reference boot
+> ([tests/programs/boot](../tests/programs/boot), built by `tools/build_fixture.sh`),
+> not the product boot. The kernel now starts only init and init builds the system;
+> see [INIT.md](INIT.md). The mechanisms below (start records, narrow device grants,
+> sealed bootstrap) are unchanged and still apply to the trusted-construction API.
+
 The normal boot path is `kernelInit` -> `bootstrapInit` -> `taskStart`. Init is a trusted kernel component, executed
 with IRQs disabled before any user task runs. It loads two distinct,
 position-independent images from `src/kernel/bootstrap.asm`; both images and

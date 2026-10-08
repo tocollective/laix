@@ -32,6 +32,30 @@ def require(condition, message):
         raise ValueError(message)
 
 
+# The per-slot kernel tables are carved out of RAM at boot (src/task/tables.m), so
+# these symbols name pointer variables, not arrays. A Symbols map hands out what
+# the pointer holds while a machine is open, and the variable's own address
+# otherwise, so every probe keeps indexing `symbols['tasks'] + ...` unchanged.
+CARVED = frozenset(("tasks", "taskControls", "memoryBudgets", "task__readyQueue", "transfer__transfers"))
+
+
+class Symbols(dict):
+    monitor = None  # the machine of the open ready_monitor session
+
+    def __getitem__(self, name):
+        value = super().__getitem__(name)
+        monitor = Symbols.monitor
+        if name not in CARVED or monitor is None:
+            return value
+        resolved = self.__dict__.setdefault("_resolved", {})
+        if resolved.get(name, (None, 0))[0] is not monitor:
+            pointer = monitor.words(value, 1)[0]
+            if not pointer:
+                return value
+            resolved[name] = (monitor, pointer)
+        return resolved[name][1]
+
+
 @contextmanager
 def ready_monitor(data, emulator, rom, timeout, full_image=False, extra_args=()):
     """Open a temporary, paused machine using existing executable bytes only."""
@@ -61,8 +85,10 @@ def ready_monitor(data, emulator, rom, timeout, full_image=False, extra_args=())
                 connection.settimeout(timeout)
                 monitor = Monitor(connection)
                 monitor.disk = disk  # the probe's private image; the emulator writes it in place
+                Symbols.monitor = monitor
                 yield monitor, process, stdout, stderr
             finally:
+                Symbols.monitor = None
                 if connection is not None:
                     connection.close()
                 if process.poll() is None:

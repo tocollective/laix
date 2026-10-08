@@ -145,7 +145,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(vm.call('taskRegisterImage', 2, 0x20000, 0x20100))
         self.assertEqual(vm.call('serviceResolve', 2, USER_DATA), error(1))
         table = vm.field_address('handles', caller)
-        typ = vm.decls['tasks'].sym.type.elem.field('handles').type.field('entries').type.elem
+        typ = vm.decls['tasks'].sym.type.target.field('handles').type.field('entries').type.elem
         count = lambda: sum(bool(vm.memory[table + i*typ.size + typ.field('object').offset]) for i in range(16))
         self.assertEqual(vm.call('serviceResolve', 1, USER_DATA+4090), error(14))
         self.assertEqual(count(), 0)
@@ -338,7 +338,7 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(vm.field('state',child),5)
 
     def test_recovery_modules_and_cpu_fixture_type_check(self):
-        for name in ('user/recovery/policy.m','src/kernel/recovery_main.m',
+        for name in ('user/recovery/policy.m','tests/programs/boot/recovery_main.m',
                      'tests/programs/recovery/policy.m','tests/programs/recovery/server.m',
                      'user/recovery/supervisor.m','user/recovery/server.m'):
             check_m(LAIX/name)
@@ -372,13 +372,13 @@ class ImageCatalogDataTests(unittest.TestCase):
 
     def test_capacity_is_the_table_width_not_a_fixed_image_count(self):
         vm = ObjectsM()
-        full = [(0x20000 + 0x1000 * i, 0x20100 + 0x1000 * i) for i in range(15)]
-        self.assertEqual(vm.call('taskCatalogLoad', catalog_rows(vm, full), 15), 0xFFFF)
-        self.assertEqual(catalog_image(vm, 16), full[14])
+        full = [(0x20000 + 0x1000 * i, 0x20100 + 0x1000 * i) for i in range(30)]
+        self.assertEqual(vm.call('taskCatalogLoad', catalog_rows(vm, full), 30), 0x7FFFFFFF)
+        self.assertEqual(catalog_image(vm, 31), full[29])
         vm = ObjectsM()
-        self.assertEqual(vm.call('taskCatalogLoad', catalog_rows(vm, full + [(0x40000, 0x40100)]), 16), 0)
+        self.assertEqual(vm.call('taskCatalogLoad', catalog_rows(vm, full + [(0x60000, 0x60100)]), 31), 0)
         self.assertEqual(catalog_image(vm, 2), (0, 0))
-        self.assertFalse(vm.call('taskRegisterImage', 17, 0x40000, 0x40100))
+        self.assertFalse(vm.call('taskRegisterImage', 32, 0x60000, 0x60100))
 
     def test_sealed_catalog_rejects_rows_and_unregistered_ids_cannot_create(self):
         vm = fixture(catalog=True)
@@ -386,7 +386,7 @@ class ImageCatalogDataTests(unittest.TestCase):
         rows = catalog_rows(vm, [(0x24000, 0x24100)])
         self.assertEqual(vm.call('taskCatalogLoad', rows, 1), 0)
         self.assertFalse(vm.call('taskRegisterImage', 3, 0x24000, 0x24100))
-        vm.memory[vm.field_address('createImages')] = 0xFFFF
-        for image in (3, 16, 17, 0):
+        vm.memory[vm.field_address('createImages')] = 0x7FFFFFFF
+        for image in (3, 31, 32, 0):
             vm.invoke(C['SYS_TASK_CREATE'], image)
             self.assertEqual(vm.result(vm.current())[0], error(1))

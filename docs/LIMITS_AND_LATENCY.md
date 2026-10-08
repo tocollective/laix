@@ -8,16 +8,16 @@ charges and lifetime identity exhaustion are separate constraints.
 
 | Resource | Concurrent limit | Domain charge and failure |
 |---|---|---|
-| User tasks | 8, including Created/Blocked/Dead until collection/reaping | Ordinary creation uses six slots; two are recovery-reserved. Four child/control records per ordinary creator, including uncollected children. `ENFILE` on admission failure |
-| Task control/completion rows | 16 | Two reserved for recovery; completion requires no allocation |
+| User tasks | One slot count per boot, from the installed RAM (nine frames a slot, at least 8, at most 4,095; [init](INIT.md#task-slots)), including Created/Blocked/Dead until collection/reaping | Ordinary creation uses all but two slots; two are recovery-reserved. Four child/control records per ordinary creator, including uncollected children (a recovery supervisor such as init is exempt). `ENFILE` on admission failure |
+| Task control/completion rows | One per slot | Two reserved for recovery; completion requires no allocation |
 | Endpoints | 16 | Factory-issued quota at most 12, two recovery-reserved rows; `ENFILE` |
 | Handles | 16 per task | Two recovery-manager installation slots reserved; `EMFILE`; foreign installation requires consent |
-| IPC waits | One per task; eight entries per endpoint FIFO | Caller owns its wait and endpoint pin; seven other user tasks can precede a caller; queue admission returns `EBUSY` |
+| IPC waits | One per task; one entry per slot in each endpoint FIFO | Caller owns its wait and endpoint pin; every other task can precede a caller; the queue cannot fill before the task table does |
 | IPC payload and destination capacity | 0–32 bytes | `EMSGSIZE` for any greater send/request/reply length or receive/accept/response capacity, before walking user buffers; r2=0 for oversized admission |
 | Physical pages | Installed usable RAM, with 16 pages reserved | 96 frames per task, including directory/tables, startup, stacks and guards; borrowed frames charged to the lender; `ENOMEM` |
 | Ordinary user mappings | 128 per address space, including aliases, startup and grants | An alias spends a leaf charge even when it allocates no frame; mapping returns `ENOMEM` at quota |
 | Private user page tables | 8 per address space | Includes bootstrap device tables; two-table region publication is rejected atomically if only one table charge remains; `ENOMEM` |
-| Address-space budget ledger | 32 roots | Public task construction has at most eight live roots; trusted internal root construction also fails closed at ledger exhaustion |
+| Address-space budget ledger | One row per slot | Carved by `mmuInit`; a root's row is the one its owner's slot names, so lookup is one probe. Trusted internal root construction also fails closed at ledger exhaustion |
 | Memory authority rows / regions / grants | 32 / 64 / 64 | Four authority rows, eight allocation regions and eight outgoing grants per domain; `ENFILE` |
 | Region operations | 1–16 pages (64 KiB) | Allocate/map/unmap/protect/grant operate on one bounded region; loader populate is at most the region's 64 KiB, checked before any copy |
 | Device operations | One selected storage engine, one pinned sector operation | 1–512 bytes within one approved sector; immutable owner/instance; `EBUSY` prevents overlapping submission |
@@ -36,9 +36,9 @@ safe release; creating another task does not forgive those physical costs.
 
 | Identity | Last valid generation | Exhaustion policy |
 |---|---|---|
-| Reply identity, per physical task slot | `0x7fffff` (8,388,607 admitted calls) | Final call may complete; every later call returns `EOVERFLOW` without queue/pin/counter mutation; collected slot is retired from task construction |
-| Task reference | `0x7fffff`, starting at generation zero | Construction reservations, including failures, consume generations; exhausted slots are never selected again |
-| Handle slot / receiver transfer ticket / IRQ line | `0x7fffff` | Persist across task/owner reuse; retired handles yield `EMFILE`, transfer tickets `EOVERFLOW`, IRQ grant fails without wrapping |
+| Reply identity, per physical task slot | `0x7ffff` (524,287 admitted calls) | Final call may complete; every later call returns `EOVERFLOW` without queue/pin/counter mutation; collected slot is retired from task construction |
+| Task reference | `0x7ffff`, starting at generation zero | Construction reservations, including failures, consume generations; exhausted slots are never selected again |
+| Handle slot / IRQ line / memory rows | `0x7fffff` (transfer tickets share the task layout: `0x7ffff`) | Persist across task/owner reuse; retired handles yield `EMFILE`, transfer tickets `EOVERFLOW`, IRQ grant fails without wrapping |
 | Memory authority / region / grant row | `0x7fffff` | Persistent row generations; skip exhausted rows and return `ENFILE` when no usable quota/row remains |
 | Endpoint row | `0xffffffff` | Last object may live and release; row then becomes Retired, never Free |
 | Storage extent / device operation | `0x7fffffff` | Regrant/update or new operation returns `EOVERFLOW`; completion/cancellation of an existing operation remains possible |
@@ -61,9 +61,9 @@ remain invalid, even if a server keeps their numeric values.
 
 Replacement is an explicit application/supervisor action, not transparent RPC
 retry or state migration. At-most-once application execution is not inferred
-from transport completion. This policy has a finite **boot lifetime**: eight
-reply namespaces admit at most 67,108,856 calls combined; ordinary factories
-cannot use the two reserved slots. Handle, IRQ and other row retirements can
+from transport completion. This policy has a finite **boot lifetime**: the
+reply namespaces (one per slot, 524,287 calls each) admit a bounded total;
+ordinary factories cannot use the two reserved slots. Handle, IRQ and other row retirements can
 force maintenance sooner. If all eligible namespaces retire, creation returns
 `ENFILE` without allocations. An indefinite-lifetime deployment requires a new
 wider ABI or a planned whole-system restart after all applications and waits
@@ -81,9 +81,9 @@ words, 44 bytes) to a user buffer, with `-EFAULT` before any state change.
 
 | Field | Meaning |
 |---|---|
-| `bytes`, `limit` | Report size; last valid 23-bit generation (`0x7fffff`) |
+| `bytes`, `limit` | Report size; last valid 19-bit generation (`0x7ffff`) |
 | `replySelected` | Admitted calls left in the selected child's reply namespace (0 without a reference) |
-| `replyTotal`, `replyOpen` | Calls left and number of namespaces the caller can still construct into. Ordinary callers see six, recovery-class callers eight |
+| `replyTotal`, `replyOpen` | Calls left and number of namespaces the caller can still construct into. Ordinary callers see all slots but two, recovery-class callers every slot |
 | `taskSelected` | Task-reference generations left in the selected child's slot |
 | `handleSelected` | Fewest handle-slot generations left in the selected child's table |
 | `retiredTasks` | Slots with an exhausted reply counter or task-reference counter |
@@ -97,8 +97,8 @@ a supervisor reads the report and tells its operator.
 ## Operating limit and planned maintenance
 
 **Decision (G4): the 23-bit reply identity is kept; the written limit below is
-the contract.** A wider identity would change the token layout `generation << 8
-| slot`, which fits one positive 32-bit result, and needs a versioned ABI and
+the contract.** A wider identity would change the token layout `generation << 12
+| slot`, which fits one positive 31-bit result, and needs a versioned ABI and
 migration of every user helper. The [target workload](TARGET_WORKLOAD.md) is
 sessions of hours with a planned restart accepted, which the limit below fits
 except under saturated back-to-back calling. Revisit it if a deployment must
@@ -106,10 +106,9 @@ run longer than that without a restart.
 
 | Limit | Value |
 |---|---|
-| Calls per reply namespace | 8,388,607 |
-| Calls per boot, ordinary supervisor (6 namespaces) | 50,331,642 |
-| Calls per boot, with the two recovery slots (8) | 67,108,856 |
-| Task references per slot | 8,388,608 (generation zero through `0x7fffff`) |
+| Calls per reply namespace | 524,287 (`TASK_GENERATION_MAX`; was 8,388,607 with 8-bit slots) |
+| Calls per boot | 524,287 times the number of usable slots: 52 million with the 100 slots of a 4 MiB machine, 1.9 billion at 3,600 slots; an ordinary supervisor has two slots fewer |
+| Task references per slot | 524,288 (generation zero through `0x7ffff`) |
 
 Arithmetic only, not measured rates: at a sustained 100 admitted calls per
 second one namespace lasts about 23 hours and an ordinary supervisor's six
@@ -149,16 +148,16 @@ The dispatcher has no user-supplied loop count outside these contracts:
 
 | Syscall family | Admitted work under IRQ exclusion |
 |---|---|
-| Debug / yield / exit / task control | One byte, one fixed TCB/context, or fixed eight-task/sixteen-control scans; exit revokes fixed handles/waits/grants |
-| Raw and Service IPC, try operations, timed calls | At most 32 bytes per copy, at most two user pages per buffer, fixed eight-wait FIFO removal/cancellation; timed deadline addition at most 60 iterations |
-| Endpoint/handle/transfer/discovery | Fixed 8/16-entry scans; one accepted transfer/notification per task; no recursive graph walks |
+| Debug / yield / exit / task control | One byte, one fixed TCB/context, or scans bounded by the high-water marks of used task and control rows; exit revokes fixed handles/waits/grants |
+| Raw and Service IPC, try operations, timed calls | At most 32 bytes per copy, at most two user pages per buffer, FIFO removal/cancellation bounded by the number of tasks; timed deadline addition at most 60 iterations |
+| Endpoint/handle/transfer/discovery | Fixed 16-entry scans and high-water-bounded task scans; one accepted transfer/notification per task; no recursive graph walks |
 | Memory authority/allocation/mapping/edit | Fixed 32/64-entry ledgers; at most 16 page allocations/edits; 16-page mapping stages at most two absent tables before publication |
 | Populate | At most 64 KiB, at most 17 source pages if unaligned, at most 16 destination pages; complete validation before first write |
 | Grant creation/map/close | At most 16 frames per region, fixed 64-grant ledger; explicit borrower consent and alias charge |
-| Device/Input/IRQ | One sector/136-byte snapshot, one operation, fixed PIC lines/eight tasks; BUSY returns or quarantines rather than polling indefinitely |
+| Device/Input/IRQ | One sector/136-byte snapshot, one operation, fixed PIC lines/tasks up to the high-water mark; BUSY returns or quarantines rather than polling indefinitely |
 | Runtime approved image creation | Immutable catalog: at most three PT_LOAD entries, 64 image pages (256 KiB), bounded byte copying and creation rollback; untrusted callers select catalog IDs, not arbitrary image lengths |
 | Runtime image load (`SYS_TASK_LOAD`) | One copy of at most 64 KiB into a private snapshot in at most 16 borrowed free frames (the reserve is kept), the catalog's image checks, then the catalog's bounded construction with rollback. Measured at most 1,859,714 cycles (14.5 ms) for the 38,788-byte test image ([Files-backed loading](FILES_LOADER.md)) |
-| Lifetime report | Fixed scans: eight task slots, sixteen handle slots in each, sixteen endpoint rows and 32 IRQ lines; one 44-byte copy. Task construction scans the eight slots twice |
+| Lifetime report | Scans of the used task slots up to the high-water mark (sixteen handle slots in each) plus one closed-form term for the never-used ones, sixteen endpoint rows and 32 IRQ lines; one 44-byte copy. Task construction scans the slots at most twice |
 | Deferred reaping | At most `TASK_REAP_STAGE_TASKS` (one) dead root per section, so a section is one root: 1024 directory entries and at most eight private user tables of 1024 leaves. Ordinary leaves are limited to 128, with three bounded resource descriptors; 64-region/grant cleanup ledgers. The other dead tasks wait for a later stage ([staged teardown](#staged-teardown-g5)) |
 
 Allocator scans are bounded by installed frames (8192 at 32 MiB), and task frame

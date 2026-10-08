@@ -20,7 +20,7 @@ class LifecycleM(ServiceM):
         self.fail_allocation = None
 
     def field_address(self, field, id=1):
-        return super().field_address(field, id & 255)
+        return super().field_address(field, id & C['TASK_SLOT_MASK'])
 
     def call(self, name, *args):
         if name in ('allocPage', 'allocPageRun') and hasattr(self, 'allocation_count'):
@@ -49,9 +49,9 @@ class LifecycleM(ServiceM):
                      for i in range(11))
 
     def control_count(self):
-        typ = self.decls['taskControls'].sym.type.elem
-        return sum(bool(self.memory[self.addresses['taskControls'] + typ.size * i +
-                                    typ.field('reference').offset]) for i in range(16))
+        typ = self.decls['taskControls'].sym.type.target
+        return sum(bool(self.memory[self.table_base('taskControls') + typ.size * i +
+                                    typ.field('reference').offset]) for i in range(self.globals['taskControlCount']))
 
 
 def fixture(count=2, endpoint=False):
@@ -63,7 +63,7 @@ def fixture(count=2, endpoint=False):
         assert vm.call('taskControlBootstrapSelf', reference)
         vm.memory[vm.field_address('createImages', reference)] = 1
         # These fixtures represent bootstrap-authorized supervisors.
-        table = vm.decls['tasks'].sym.type.elem.field('handles').type
+        table = vm.decls['tasks'].sym.type.target.field('handles').type
         vm.memory[vm.field_address('handles', reference) + table.field('factoryRecovery').offset] = 1
         assert vm.call('taskPublish', reference)
     if endpoint:
@@ -94,7 +94,7 @@ class RuntimeTaskTests(unittest.TestCase):
         self.assertEqual(structs['RuntimeStart'].size, C['RUNTIME_START_BYTES'])
         self.assertEqual(structs['TaskEvent'].size, C['TASK_EVENT_BYTES'])
         parse_asm(LAIX / 'src/task/control.asm')
-        check_m(LAIX / 'src/kernel/supervisor_main.m')
+        check_m(LAIX / 'tests/programs/boot/supervisor_main.m')
         check_m(LAIX / 'user/syscalls.m')
 
     def test_40_lifetimes_reuse_resources_reject_stale_and_retain_history(self):
@@ -104,8 +104,8 @@ class RuntimeTaskTests(unittest.TestCase):
         for code in range(40):
             ref = create(vm, argument=code)
             references.append(ref)
-            self.assertEqual(ref & 255, 2)
-            self.assertEqual(ref >> 8, code)
+            self.assertEqual(ref & C['TASK_SLOT_MASK'], 2)
+            self.assertEqual(ref >> C['TASK_SLOT_BITS'], code)
             vm.run(ref)
             vm.invoke(C['SYS_EXIT'], code)
             self.assertEqual(vm.current(), 1)
@@ -323,7 +323,7 @@ class RuntimeTaskTests(unittest.TestCase):
         vm.reap()
         vm.invoke(41, 2, USER_DATA)
         replacement = create(vm, token=root, rights=1)
-        self.assertEqual(replacement, 258)
+        self.assertEqual(replacement, 4098)
         self.assertEqual(vm.call('taskGet', 2), 0)
         self.assertEqual(vm.call('handleEntry', vm.field_address('handles', replacement), old_handle), 0)
         self.assertFalse(vm.call('physicalPageOwned', vm.pages(replacement)[1], 2, 5))
@@ -371,8 +371,8 @@ class RuntimeTaskTests(unittest.TestCase):
 
     def test_generation_exhaustion_never_wraps(self):
         vm = fixture(1)
-        for slot in range(2, 9):
-            vm.memory[vm.field_address('id', slot)] = (0x7FFFFF << 8) | slot
+        for slot in range(2, vm.globals['taskCapacity'] + 1):
+            vm.memory[vm.field_address('id', slot)] = (C['TASK_GENERATION_MAX'] << C['TASK_SLOT_BITS']) | slot
         baseline = vm.free_pages()
         vm.invoke(36, 1)
         self.assertEqual(vm.result(1)[0], error(23))
@@ -416,7 +416,7 @@ class RuntimeTaskTests(unittest.TestCase):
         # Early collection cannot turn logical death into physical reclamation.
         vm.invoke(41, 2, USER_DATA)
         newer = create(vm)
-        self.assertEqual(newer & 255, 4)
+        self.assertEqual(newer & C['TASK_SLOT_MASK'], 4)
         self.assertTrue(vm.call('irqNotify', 3) == 0)
         self.assertFalse(vm.wakes[2])
         vm.memory.complete()
@@ -424,11 +424,13 @@ class RuntimeTaskTests(unittest.TestCase):
         self.assertEqual(vm.field('state', 2), 0)
         self.assertTrue(vm.call('physicalPageAvailable', bounce))
         replacement = create(vm)
-        self.assertEqual(replacement, 258)
+        self.assertEqual(replacement, 4098)
         self.assertEqual(vm.call('irqLookup', replacement, irq), C['PIC_LINE_COUNT'])
 
     def test_slow_collector_is_bounded_without_lost_events(self):
         vm = fixture(1)
+        # Sixteen rows are the interesting boundary: this boot has exactly that many.
+        vm.globals['taskControlCount'] = 16
         refs = []
         for _ in range(15):
             ref = create(vm)

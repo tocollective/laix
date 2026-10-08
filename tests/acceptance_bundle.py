@@ -11,18 +11,15 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILES = ('uart', 'screen', 'services', 'uart-stress', 'screen-stress',
-            'memory', 'sharing', 'objects', 'supervisor', 'soak', 'loader', 'fs', 'shell', 'net', 'recovery', 'recovery-production', 'lifetime',
-            'screenrecovery', 'screenrecovery-watchdog', 'screenrecovery-production',
+            'memory', 'sharing', 'objects', 'supervisor', 'soak', 'loader', 'fs', 'shell', 'net', 'recovery', 'lifetime',
+            'screenrecovery',
             'latency', 'hid', 'media')
 SCHEMA = 1
 # Profiles whose image is not named after them.
 IMAGES = {'uart': 'laix', 'uart-stress': 'laix', 'screen-stress': 'laix', 'hid': 'laix', 'latency': 'laix',
-          'media': 'services', 'recovery-production': 'recovery', 'lifetime': 'recovery',
-          'screenrecovery-watchdog': 'screenrecovery', 'screenrecovery-production': 'screenrecovery'}
+          'media': 'services', 'lifetime': 'recovery'}
 # Build-time provenance records the probes compare with the current sources.
-PROVENANCE = {'recovery': 'recovery', 'recovery-production': 'recovery', 'lifetime': 'recovery',
-              'screenrecovery': 'screenrecovery', 'screenrecovery-watchdog': 'screenrecovery',
-              'screenrecovery-production': 'screenrecovery'}
+PROVENANCE = {'recovery': 'recovery', 'lifetime': 'recovery', 'screenrecovery': 'screenrecovery'}
 
 
 def digest(path):
@@ -104,9 +101,8 @@ def pack(args):
         'hid': ('services',), 'uart-stress': ('services',), 'screen-stress': ('services',),
         'loader': ('services',), 'fs': ('services',), 'shell': ('services',), 'net': ('services',),
         'memory': ('memory-user',), 'sharing': ('sharing-user',), 'objects': ('objects-user',),
-        'recovery': ('recovery-user',), 'recovery-production': ('recovery-user',), 'lifetime': ('recovery-user',),
-        'screenrecovery': ('screen-recovery-user',), 'screenrecovery-watchdog': ('screen-recovery-user',),
-        'screenrecovery-production': ('screen-recovery-user',),
+        'recovery': ('recovery-user',), 'lifetime': ('recovery-user',),
+        'screenrecovery': ('screen-recovery-user',),
     }.get(args.profile, ())
     service_names = {
         'screen': ('screen', 'storage', 'application'),
@@ -163,11 +159,8 @@ def commands(profile, emulator, rom, logs):
         'shell': [('probe_shell_cpu.py', [])],
         'net': [('probe_net_cpu.py', [])],
         'recovery': [('probe_service_recovery_cpu.py', [])],
-        'recovery-production': [('probe_service_recovery_cpu.py', ['--production', '--window', '512', '96'])],
         'lifetime': [('probe_lifetime_cpu.py', [])],
         'screenrecovery': [('probe_screen_recovery_cpu.py', [])],
-        'screenrecovery-watchdog': [('probe_screen_recovery_cpu.py', ['--watchdog'])],
-        'screenrecovery-production': [('probe_screen_recovery_cpu.py', ['--production'])],
         # The same image at the largest installed RAM (4 x 32M); a third element
         # names a suite's logs when a probe runs more than once.
         'latency': [('probe_limits_latency_cpu.py', ['--rounds', '4']),

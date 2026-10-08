@@ -6,6 +6,7 @@ import { createTask, createEndpoint, configureService, publishService,
     collectTask, sleep, lifetimeReport } from "../syscalls.m"
 import { ENDPOINT_MODE_SERVICE, DEVICE_DISK, DEVICE_SCREEN, DEVICE_FONT, TASK_EVENT_RECLAIMED,
     ERRNO_EAGAIN, ERRNO_EPIPE, ERRNO_EBUSY, ERRNO_ESRCH, LIFETIME_REPLY_RESERVE } from "../../src/arch/wrm081632/defs.m"
+import { IMAGE_REC_DISK, IMAGE_REC_FILES, IMAGE_REC_BITMAP, IMAGE_REC_SCREEN } from "../init/images.m"
 
 type ManagedService {
     reference: UWord,
@@ -194,11 +195,11 @@ let recoverChain(consumer: *mut ManagedService, consumerName: UWord, consumerIma
     return 0
 }
 let recoverFilesDisk(disk: *mut ManagedService, files: *mut ManagedService): Word {
-    return recoverChain(files, 2, 4, 0, disk, 3, 3, DEVICE_DISK)
+    return recoverChain(files, 2, IMAGE_REC_FILES, 0, disk, 3, IMAGE_REC_DISK, DEVICE_DISK)
 }
-// Screen consumes the bitmap storage service. Names and images are the screen
-// profile's: Screen is name 1/image 4, bitmap storage name 2/image 3.
+// Screen consumes the bitmap storage service. Names are the screen session's:
+// Screen is name 1, bitmap storage name 2.
 let recoverScreenBitmap(bitmap: *mut ManagedService, screen: *mut ManagedService): Word {
-    return recoverChain(screen, 1, 4, DEVICE_SCREEN, bitmap, 2, 3, DEVICE_FONT)
+    return recoverChain(screen, 1, IMAGE_REC_SCREEN, DEVICE_SCREEN, bitmap, 2, IMAGE_REC_BITMAP, DEVICE_FONT)
 }
 export { serviceFailed, recoverService, recoverChain, recoverFilesDisk, recoverScreenBitmap, recoveryUnavailable }

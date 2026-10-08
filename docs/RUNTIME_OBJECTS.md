@@ -13,7 +13,7 @@ addresses and MMIO ranges are never accepted as creation authority.
 | Resource | Creation/root authority | Object operations and bounds |
 | --- | --- | --- |
 | Raw/Service endpoint | nontransferable mode mask, object quota and recovery flag in the caller's `HandleTable` | create, attenuate/copy, close, destroy; 16 objects, 16 handles/task, quota at most 12 objects/creator |
-| task control | nontransferable approved-image mask in `Task.createImages` | configure, publish, inspect, terminate, collect; 8 tasks, 16 control/completion rows, four ordinary children/creator; [task contract](RUNTIME_TASKS.md) |
+| task control | nontransferable approved-image mask in `Task.createImages` | configure, publish, inspect, terminate, collect; one slot and one control/completion row per task slot (from RAM at boot), four ordinary children/creator; [task contract](RUNTIME_TASKS.md) |
 | address space and eager region | self authority or CONFIGURE control over an unpublished child; budget enrolled before root allocation | allocate/release, map/unmap/protect, populate, close; 96 frames/task and a 16-frame trusted reserve; [memory contract](RUNTIME_MEMORY.md) |
 | sharing grant | explicit owner-held SHARE authority and named borrower | map/close, bounded grant and borrower ledgers; both death orders retain pins and accounting |
 | keyboard IRQ and input broker | nontransferable `Task.deviceFactory` INPUT bit plus CONFIGURE over an unpublished child | one exclusive keyboard subscriber; generation-bearing IRQ wait/complete and checked event reads |
@@ -153,6 +153,6 @@ provenance and explicit limits. Reproduce without building WRM:
 
 ```sh
 python3 -m unittest discover -s laix/tests -p 'test_runtime_objects.py'
-LAIX_CONSOLE=objects sh laix/build.sh
+LAIX_FIXTURE=objects sh laix/build.sh
 python3 laix/tests/probe_runtime_objects_cpu.py laix/build/objects.img laix/build/objects.map
 ```

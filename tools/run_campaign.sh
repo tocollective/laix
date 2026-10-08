@@ -10,7 +10,7 @@ repo_dir=$(dirname -- "$laix_dir")
 destination=$1
 emulator=${2:-"$repo_dir/bin/wrm081632"}
 rom=${3:-"$repo_dir/bin/firmware.rom"}
-profiles=${LAIX_CAMPAIGN_PROFILES:-"uart screen services uart-stress screen-stress memory sharing objects supervisor soak loader fs shell net recovery recovery-production lifetime screenrecovery screenrecovery-watchdog screenrecovery-production latency hid media"}
+profiles=${LAIX_CAMPAIGN_PROFILES:-"uart screen services uart-stress screen-stress memory sharing objects supervisor soak loader fs shell net recovery lifetime screenrecovery latency hid media"}
 if [ -e "$destination" ]; then
     printf '%s\n' 'DESTINATION must be new; preserve older campaigns' >&2
     exit 1

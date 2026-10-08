@@ -24,6 +24,20 @@ identified inputs. Its [provenance](../tests/ACCEPTANCE_CI_PROVENANCE.json)
 replaces the G6 record, and the G6 bundles stay preserved. Rows below say
 whether their CPU evidence is in that campaign. No remote CI run exists.
 
+**2026-10-09 (single-kernel work).** The kernel changed after the campaigns
+cited below: init and its runtime calls ([INIT](INIT.md)), 12-bit task references
+(reply tokens and tickets with them), and every per-task table carved from RAM at
+boot instead of fixed arrays. 618 source tests pass; no image was built and no CPU
+probe was run, so every CPU statement in the rows below is for the earlier kernel
+bytes and is pending again. Statements about "eight task slots", "sixteen control
+rows" or 23-bit reply generations in the rows and in the audit and gap records
+describe that earlier kernel; [LIMITS_AND_LATENCY](LIMITS_AND_LATENCY.md) and
+[INIT](INIT.md#task-slots) are current. The build is one kernel with init and a
+session chosen by data; the profile names in the rows (`shell`, `net`, `fs`,
+`recovery`, ...) are now sessions of that image (`LAIX_SESSION`), while the CPU
+evidence was gathered on the reference boots of [tests/programs/boot](../tests/programs/boot)
+([INIT](INIT.md#fixtures)); no CPU evidence exists yet for a session image.
+
 The four evidence levels are independent:
 
 - **Implementation complete**: code and its scoped contract exist.

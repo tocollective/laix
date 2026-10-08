@@ -34,12 +34,14 @@ class SchedulerCPUProbeTests(unittest.TestCase):
             vm.call("taskStart", 1000000)
         p = object.__new__(probe.SchedulerProbe)
         p.m = MemoryMonitor(vm)
-        p.s = dict(tasks=vm.addresses["tasks"], idleTask=vm.addresses["idleTask"],
+        p.s = dict(tasks=vm.table_base("tasks"), idleTask=vm.addresses["idleTask"],
                    currentTask=0xE000000, task__readyHead=0xE000004,
-                   task__readyCount=0xE000008, task__readyQueue=vm.addresses["readyQueue"])
+                   task__readyCount=0xE000008, taskCapacity=0xE00000C,
+                   task__readyQueue=vm.table_base("readyQueue"))
         for name, symbol in (("currentTask", "currentTask"), ("readyHead", "task__readyHead"),
                              ("readyCount", "task__readyCount")):
             vm.memory[p.s[symbol]] = vm.globals[name]
+        vm.memory[p.s["taskCapacity"]] = vm.globals["taskCapacity"]
         p.size = vm.task_type.size
         p.offsets = {field.name: field.offset for field in vm.task_type.fields}
         vm.memory[vm.field_address("context") + probe.C["TF_R28"]] = probe.DATA + 16
@@ -77,7 +79,7 @@ class SchedulerCPUProbeTests(unittest.TestCase):
         vm, p, _ = self.fixture()
         p.check_queue(1)
         head = vm.globals["readyHead"]
-        first = vm.addresses["readyQueue"] + 4 * head
+        first = vm.table_base("readyQueue") + 4 * head
         for state in (3, 4):
             vm.memory[vm.field_address("state", 2)] = state
             with self.subTest(state=state), self.assertRaises(ValueError):
@@ -92,7 +94,7 @@ class SchedulerCPUProbeTests(unittest.TestCase):
             p.check_queue(1)
         vm.memory[first] = 2
         vm.memory[p.s["task__readyCount"]] = 2
-        vm.memory[vm.addresses["readyQueue"] + 4 * ((head + 1) % 8)] = 2
+        vm.memory[vm.table_base("readyQueue") + 4 * ((head + 1) % vm.globals["taskCapacity"])] = 2
         with self.assertRaises(ValueError):
             p.check_queue(1)
         vm.memory[p.s["task__readyCount"]] = 1
@@ -131,7 +133,7 @@ class SchedulerCPUProbeTests(unittest.TestCase):
         s = symbols()
         names = ("tasks", "idleTask", "currentTask", "taskStart", "taskCreate", "taskTick",
                  "taskBlock", "taskWake", "taskIdlePoll", "timerInit", "task__readyQueue",
-                 "task__readyHead", "task__readyCount", "task__schedulerStarted", "trapEntry.restore",
+                 "task__readyHead", "task__readyCount", "taskCapacity", "task__schedulerStarted", "trapEntry.restore",
                  "trapRestoreFrame", "userCodeStart", "userCodeEnd", "taskKernelResume.idle",
                  "trapEmergencyFrame", "kernelRamEnd", "memory__pageBitmap", "trapRegisterSelfTest", "taskKernelSp")
         s.update({name: 0x14000 for name in names})
@@ -143,7 +145,7 @@ class SchedulerCPUProbeTests(unittest.TestCase):
         with patch.object(probe, "instruction", side_effect=lambda data, pc: 0 if pc == busy else 7), \
                 patch.object(probe, "disassemble", return_value=f"jal r0, 0x{busy:08X}"):
             self.assertEqual(probe.preflight(data, s)[:2], (size, offsets))
-            for changes in ({"currentTask": s["currentTask"] + 4}, {"trapEmergencyFrame": s["idleTask"]},
+            for changes in ({"trapEmergencyFrame": s["idleTask"]},
                             {"userCodeEnd": s["userCodeEnd"] - 4}, {"kernelStart": 0x10014}):
                 with self.subTest(changes=changes), self.assertRaises(ValueError):
                     probe.preflight(data, dict(s, **changes))

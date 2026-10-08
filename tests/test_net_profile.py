@@ -13,7 +13,7 @@ CONSOLE, DRIVER, IP, CLIENT = 1, 2, 3, 4
 
 
 def fixture(fail=None):
-    vm = TaskM(ram=0x200000, root=LAIX / 'src/kernel/net_main.m')
+    vm = TaskM(ram=0x200000, root=LAIX / 'tests/programs/boot/net_main.m')
     vm.memory = NetDevices(vm)
     vm.addresses.update(fontData=0x16000, fontDataEnd=0x16000 + 184,
                         bootstrapServerStart=0x14000, bootstrapServerEnd=0x1401C)
@@ -34,7 +34,7 @@ def fixture(fail=None):
 
 class NetProfileTests(unittest.TestCase):
     def test_sources_check(self):
-        for path in ('src/kernel/net_main.m', 'src/kernel/net_bootstrap.m', 'user/services/netdrv.m',
+        for path in ('tests/programs/boot/net_main.m', 'tests/programs/boot/net_bootstrap.m', 'user/services/netdrv.m',
                      'user/services/ip.m', 'user/services/ipclient.m', 'tests/programs/net/client.m'):
             check_m(LAIX / path)
 

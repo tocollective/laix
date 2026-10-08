@@ -37,14 +37,12 @@ def preflight(data, symbols):
     size, offsets = task_layout()
     required = {"tasks", "idleTask", "currentTask", "taskStart", "taskCreate",
                 "taskTick", "taskBlock", "taskWake", "taskIdlePoll", "timerInit",
-                "task__readyQueue", "task__readyHead", "task__readyCount",
+                "task__readyQueue", "task__readyHead", "task__readyCount", "taskCapacity",
                 "task__schedulerStarted", "trapEntry.restore", "trapRestoreFrame",
                 "userCodeStart", "userCodeEnd", "taskKernelResume.idle", "trapEmergencyFrame",
                 "kernelRamEnd", "memory__pageBitmap", "trapRegisterSelfTest", "taskKernelSp"}
     require(required <= symbols.keys(), "image lacks scheduler symbols: " +
             ", ".join(sorted(required - symbols.keys())))
-    require(symbols["currentTask"] - symbols["tasks"] == 8 * size,
-            "ready TCB array does not match source ABI")
     require(symbols["trapEmergencyFrame"] >= symbols["idleTask"] + size,
             "ready idle TCB does not match source ABI")
     magic, sectors, entry, reserved = struct.unpack_from("<4I", data)
@@ -133,9 +131,10 @@ class SchedulerProbe(CpuProbe):
 
     def check_queue(self, running):
         head, count = self.m.words(self.s["task__readyHead"], 2)
-        ring = self.m.words(self.s["task__readyQueue"], 8)
-        require(head < 8 and count <= 8, "invalid queue bounds")
-        queue = [ring[(head + i) % 8] for i in range(count)]
+        capacity = self.m.words(self.s["taskCapacity"], 1)[0]
+        ring = self.m.words(self.s["task__readyQueue"], capacity)
+        require(head < capacity and count <= capacity, "invalid queue bounds")
+        queue = [ring[(head + i) % capacity] for i in range(count)]
         require(len(queue) == len(set(queue)) and all(id in (1, 2) for id in queue),
                 "duplicate or uncreated ready task")
         for id in (1, 2):
@@ -414,8 +413,11 @@ class SchedulerProbe(CpuProbe):
         """Batch paused reads; retain hardware-entry and post-IRET snapshots."""
         current = (self.m.words(self.s["currentTask"], 1)[0] - self.s["tasks"]) // self.size + 1
         live = self.regs()
-        span = (self.s["task__readyCount"] + 4 - self.s["tasks"]) // 4
-        require(0 < span <= 1024, "TCB snapshot exceeds monitor capacity")
+        # The TCB table and the ready ring are separate tables carved from RAM, and the
+        # scalars beside them are separate variables: dump each, not one contiguous span.
+        span = 2 * self.size // 4  # the two stress tasks
+        capacity = self.m.words(self.s["taskCapacity"], 1)[0]
+        require(0 < span <= 1024 and 0 < capacity <= 4095, "TCB snapshot exceeds monitor capacity")
         for index in range(count):
             selected = 3 - current
             # Each continue is awaited before dependent reads. Only reads of
@@ -439,6 +441,10 @@ class SchedulerProbe(CpuProbe):
             self.m.commands(["del all", f"b 0x{self.busy:X}"])
             self.log.append(self.m.command("c"))
             text = self.m.commands(["r", f"xp 0x{self.s['tasks']:X} {span}",
+                                    f"xp 0x{self.s['currentTask']:X} 1",
+                                    f"xp 0x{self.s['task__readyHead']:X} 1",
+                                    f"xp 0x{self.s['task__readyCount']:X} 1",
+                                    f"xp 0x{self.s['task__readyQueue']:X} {capacity}",
                                     f"xp 0x{C['KERNEL_SP']:X} 3",
                                     f"xp 0x{top - C['TF_SIZE']:X} {C['TF_SIZE'] // 4}",
                                     f"x 0x{DATA + selected * 16:X} 1", "info"])
@@ -463,7 +469,7 @@ class SchedulerProbe(CpuProbe):
                     saved[C["TF_EPC"] // 4] == self.busy and saved[C["TF_FCSR"] // 4] == trapped["fcsr"] and
                     saved[C["TF_PTBR"] // 4] == trapped["ptbr"], "stress saved a corrupted context")
             head, ready = memory[self.s["task__readyHead"]], memory[self.s["task__readyCount"]]
-            require(head < 8 and ready == 1 and
+            require(head < capacity and ready == 1 and
                     memory[self.s["task__readyQueue"] + 4 * head] == current and
                     field(current, "state") == 1 and field(selected, "state") == 2,
                     "stress queue is not one Ready task and one Running task")

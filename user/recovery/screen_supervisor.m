@@ -11,6 +11,7 @@ import { screenWriteFor } from "../screen/client.m"
 import { createTask, configureTask, publishTask, allowServices, createEndpoint,
     resolveService, closeHandle, callTimed, tryAccept, reply, AcceptResult, sleep, exit } from "../syscalls.m"
 import { ENDPOINT_MODE_SERVICE, RIGHT_SEND, DEVICE_SCREEN, DEVICE_FONT } from "../../src/arch/wrm081632/defs.m"
+import { IMAGE_REC_ECHO, IMAGE_REC_BITMAP, IMAGE_REC_SCREEN, IMAGE_REC_SCREEN_CLIENT } from "../init/images.m"
 let mut echo: ManagedService
 let mut bitmap: ManagedService
 let mut screen: ManagedService
@@ -85,14 +86,19 @@ let screenClient(start: *RuntimeStart): Void {
         check(sleep(1))
     }
 }
-let screenSupervisorMain(start: *RuntimeStart, bytes: UWord): Void {
-    if start.argument == 1 screenClient(start)
+// Entry of the client image.
+let screenClientMain(start: *RuntimeStart, bytes: UWord): Void {
+    screenClient(start)
+}
+
+// The supervisor itself: init runs this as its supervised-display session.
+let screenSupervisorRun(): Void {
     let control: Word = createEndpoint(ENDPOINT_MODE_SERVICE, 0)
     if control < 0 exit(control)
-    check(launchService(&mut echo, 2, 3, 0, 1, 0))
-    check(launchService(&mut bitmap, 3, 2, 0, 1, DEVICE_FONT))
-    check(launchService(&mut screen, 4, 1, bitmap.root, 1, DEVICE_SCREEN))
-    let client: Word = createTask(5)
+    check(launchService(&mut echo, IMAGE_REC_ECHO, 3, 0, 1, 0))
+    check(launchService(&mut bitmap, IMAGE_REC_BITMAP, 2, 0, 1, DEVICE_FONT))
+    check(launchService(&mut screen, IMAGE_REC_SCREEN, 1, bitmap.root, 1, DEVICE_SCREEN))
+    let client: Word = createTask(IMAGE_REC_SCREEN_CLIENT)
     if client < 0 exit(client)
     check(allowServices(client as UWord, 5))
     check(configureTask(client as UWord, control as UWord, RIGHT_SEND, 1))
@@ -106,7 +112,7 @@ let screenSupervisorMain(start: *RuntimeStart, bytes: UWord): Void {
         let screenReported: Bool = size == 8 && report[0] == 1 && report[1] == screen.generation
         let echoReported: Bool = size == 8 && report[0] == 3 && report[1] == echo.generation
         if !echo.unavailable && (echoReported || serviceFailed(&echo)) {
-            let recovered: Word = recoverService(&mut echo, 2, 3, 0, 0)
+            let recovered: Word = recoverService(&mut echo, IMAGE_REC_ECHO, 3, 0, 0)
             if recovered != 0 {
                 let disabled: Word = recoveryUnavailable(&mut echo, 3)
             }
@@ -120,4 +126,4 @@ let screenSupervisorMain(start: *RuntimeStart, bytes: UWord): Void {
         check(sleep(1))
     }
 }
-export { screenSupervisorMain }
+export { screenSupervisorRun, screenClientMain }

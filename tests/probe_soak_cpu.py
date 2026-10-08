@@ -2,7 +2,7 @@
 """G6 soak CPU probe: thousands of task lifetimes on existing image/emulator bytes.
 
 Needs the soak image (LAIX_CONSOLE=soak sh laix/build.sh). The scenario is
-src/kernel/soak_bootstrap.asm: a user supervisor creates, runs, faults or
+tests/programs/boot/soak_bootstrap.asm: a user supervisor creates, runs, faults or
 exits, collects and reuses a child SOAK_ROUNDS times and checks every round's
 SYS_LIFETIME report and completion event itself. This probe checks what the
 supervisor cannot see: the kernel's state at the end, after the whole run.
@@ -24,13 +24,13 @@ from test_kernel import LAIX, check_m
 from source_m import LAYOUT as C
 
 HISTORY = 32
-GEN_MAX = 0x7FFFFF
+GEN_MAX = C['TASK_GENERATION_MAX']
 FAULT_PERIOD = 8
 
 
 def scenario_rounds():
     """The round count is the scenario's own constant, bound by the source manifest."""
-    match = re.search(r'^SOAK_ROUNDS = (\d+)', (LAIX / 'src/kernel/soak_bootstrap.asm').read_text(), re.M)
+    match = re.search(r'^SOAK_ROUNDS = (\d+)', (LAIX / 'tests/programs/boot/soak_bootstrap.asm').read_text(), re.M)
     require(match is not None, 'scenario does not define SOAK_ROUNDS')
     rounds = int(match[1])
     require(rounds % FAULT_PERIOD == 0 and rounds > HISTORY, f'unusable SOAK_ROUNDS {rounds}')
@@ -66,7 +66,7 @@ def probe(image, map_path, emulator, rom, timeout=600):
                 'runtime resources/slots survived the soak')
         # Finite lifetimes: every round spent one generation of the one slot
         # that served, and nothing else moved (no reply identity, no other slot).
-        require(field(2, 'id') >> 8 == rounds - 1 and field(2, 'id') & 255 == 2,
+        require(field(2, 'id') >> C['TASK_SLOT_BITS'] == rounds - 1 and field(2, 'id') & C['TASK_SLOT_MASK'] == 2,
                 f'slot 2 did not spend exactly {rounds} reference generations: {field(2, "id"):#x}')
         require(all(field(slot, 'id') == 0 for slot in range(3, 9)), 'a second slot was used')
         require(all(field(slot, 'ipcCallGeneration') == 0 for slot in range(1, 9)),
@@ -85,10 +85,10 @@ def probe(image, map_path, emulator, rom, timeout=600):
         for index, record in enumerate(events[:-1]):
             code = rounds - (HISTORY - 1) + index
             if code % FAULT_PERIOD == FAULT_PERIOD - 1:
-                require(record[:6] == [code << 8 | 2, 2, 3, 3, 5, 3] and record[7] == 1,
+                require(record[:6] == [code << C['TASK_SLOT_BITS'] | 2, 2, 3, 3, 5, 3] and record[7] == 1,
                         f'wrong fault completion {code}: {record}')
             else:
-                require(record[:5] == [code << 8 | 2, 2, 3, code, C['TASK_EVENT_RECLAIMED']],
+                require(record[:5] == [code << C['TASK_SLOT_BITS'] | 2, 2, 3, code, C['TASK_EVENT_RECLAIMED']],
                         f'wrong normal completion {code}: {record}')
         require(events[-1][:5] == [1, 1, 3, 0, 4], 'wrong supervisor completion')
         uart = uart_text(stdout)

@@ -21,7 +21,7 @@ def probe(image, map_path, emulator, rom, timeout=30):
     symbols = symbols_from_map(map_path)
     check_layout(symbols)
     size, fields = task_layout()
-    require(symbols['currentTask'] - symbols['tasks'] == 8 * size, 'image/source task layout mismatch')
+    require('taskCapacity' in symbols, 'image has no sized task table')
     types = {name: module.scope[name].type
              for module in check_m(LAIX / 'src/trap/trap.m')
              for name in ('Endpoint', 'HandleTable', 'Handle', 'IrqGrant', 'TaskControl', 'Transfer')

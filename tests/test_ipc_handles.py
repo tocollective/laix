@@ -2,7 +2,7 @@
 
 import unittest
 
-from source_m import SourceM, KernelPanic, LAYOUT
+from source_m import SourceM, KernelPanic, LAYOUT, bind_tables
 from test_kernel import LAIX
 from test_task import TaskM, TaskEntered
 
@@ -19,7 +19,8 @@ def error(number):
 class HandlesM(SourceM):
     def __init__(self):
         super().__init__(LAIX / "src/trap/trap.m")
-        self.task_type = self.decls["tasks"].sym.type.elem
+        self.task_type = self.decls["tasks"].sym.type.target
+        bind_tables(self, 8)
         self.endpoint_type = self.decls["endpoints"].sym.type.elem
         self.handle_type = self.task_type.field("handles").type.field("entries").type.elem
         for id in range(1, 9):
@@ -29,7 +30,7 @@ class HandlesM(SourceM):
         self.select(1)
 
     def task_field(self, id, name):
-        return self.addresses["tasks"] + (id - 1) * self.task_type.size + self.task_type.field(name).offset
+        return self.table_base("tasks") + (id - 1) * self.task_type.size + self.task_type.field(name).offset
 
     def table(self, id):
         return self.task_field(id, "handles")

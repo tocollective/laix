@@ -1,5 +1,5 @@
 // Receiver-selected, single-use endpoint transfer. All records are kernel-owned.
-import { Task, currentTask, taskGet, MAX_TASKS, TASK_READY,
+import { Task, currentTask, taskGet, taskHighWater, TASK_READY,
     TASK_RUNNING, TASK_BLOCKED, taskSaveContext, taskOwnsTrap } from "../task/task.m"
 import { Handle, MAX_HANDLES, HANDLE_GENERATION_MAX, ENDPOINT_RECOVERY_RESERVE,
     handleCopyCheck, handleLookup, handleInstallAt, objectAssertAtomic } from "objects.m"
@@ -7,7 +7,8 @@ import { ipcCallerValid } from "ipc.m"
 import { TimerCount, timerDeadline, timerReadCount, timerDeadlineReached } from "../drivers/timer.m"
 import { TrapFrame } from "../trap/trap_frame.m"
 import { RIGHT_ALL, RIGHT_MANAGE, ERRNO_EPERM, ERRNO_ESRCH, ERRNO_EINVAL,
-    ERRNO_EBADF, ERRNO_EMFILE, ERRNO_EBUSY, ERRNO_EAGAIN, ERRNO_EOVERFLOW } from "../arch/wrm081632/defs.m"
+    ERRNO_EBADF, ERRNO_EMFILE, ERRNO_EBUSY, ERRNO_EAGAIN, ERRNO_EOVERFLOW,
+    TASK_SLOT_BITS, TASK_SLOT_MASK, TASK_GENERATION_MAX } from "../arch/wrm081632/defs.m"
 
 let TRANSFER_RESERVED: UWord = 1
 let TRANSFER_DELIVERED: UWord = 2
@@ -21,7 +22,16 @@ type Transfer {
     handle: UWord,
     deadline: TimerCount,
 }
-let mut transfers: Transfer[MAX_TASKS] // one reservation or notification per domain
+// One reservation or notification per domain (task slot), carved out of RAM at
+// boot (src/task/tables.m).
+let mut transfers: *mut Transfer
+let mut transferCount: UWord
+let transferTableBind(base: UWord, count: UWord): Bool {
+    if transfers != null || base == 0 || count == 0 return false
+    transfers = base as *mut Transfer
+    transferCount = count
+    return true
+}
 
 let transferLive(task: *mut Task): Bool {
     return task != null && (task.state == TASK_READY || task.state == TASK_RUNNING || task.state == TASK_BLOCKED)
@@ -59,7 +69,7 @@ let transferReserve(slot: UWord, sender: UWord, rights: UWord, seconds: UWord): 
     let record: *mut Transfer = &mut transfers[currentTask.slot - 1]
     transferExpire(record)
     if record.state != 0 return -ERRNO_EBUSY
-    if record.generation == HANDLE_GENERATION_MAX return -ERRNO_EOVERFLOW
+    if record.generation == TASK_GENERATION_MAX return -ERRNO_EOVERFLOW
     let entry: *mut Handle = &mut currentTask.handles.entries[slot - 1]
     if entry.object != null || entry.reserved || entry.generation == HANDLE_GENERATION_MAX return -ERRNO_EMFILE
     let mut deadline: TimerCount
@@ -72,7 +82,7 @@ let transferReserve(slot: UWord, sender: UWord, rights: UWord, seconds: UWord): 
     record.rights = rights
     record.deadline = deadline
     entry.reserved = true
-    return ((record.generation << 8) | currentTask.slot) as Word
+    return ((record.generation << TASK_SLOT_BITS) | currentTask.slot) as Word
 }
 
 // Validation precedes installation and reference charging. A rejected attempt
@@ -83,8 +93,8 @@ let transferCommit(source: UWord, receiverId: UWord, ticket: UWord, rights: UWor
     if !transferLive(receiver) return -ERRNO_ESRCH
     let record: *mut Transfer = &mut transfers[receiver.slot - 1]
     transferExpire(record)
-    if ticket >> 8 == 0 || ticket >> 8 > HANDLE_GENERATION_MAX || ticket & 255 != receiver.slot ||
-        record.generation != ticket >> 8 || record.state != TRANSFER_RESERVED ||
+    if ticket >> TASK_SLOT_BITS == 0 || ticket >> TASK_SLOT_BITS > TASK_GENERATION_MAX ||
+        ticket & TASK_SLOT_MASK != receiver.slot || record.generation != ticket >> TASK_SLOT_BITS || record.state != TRANSFER_RESERVED ||
         record.receiver != receiverId || record.sender != currentTask.id return -ERRNO_EBADF
     if rights != record.rights return -ERRNO_EPERM
     let checked: Word = handleCopyCheck(&mut currentTask.handles, source, currentTask.id, receiverId, rights)
@@ -105,7 +115,7 @@ let transferCancel(ticket: UWord): Word {
     let record: *mut Transfer = &mut transfers[currentTask.slot - 1]
     transferExpire(record)
     if record.receiver != currentTask.id || record.state != TRANSFER_RESERVED ||
-        ticket != ((record.generation << 8) | currentTask.slot) return -ERRNO_EBADF
+        ticket != ((record.generation << TASK_SLOT_BITS) | currentTask.slot) return -ERRNO_EBADF
     transferClear(record)
     return 0
 }
@@ -122,7 +132,7 @@ let transferCollect(frame: *mut TrapFrame, ticket: UWord): *TrapFrame {
         transferExpire(record)
         result = -ERRNO_EBADF
         if record.receiver == currentTask.id && record.state != 0 &&
-            ticket == ((record.generation << 8) | currentTask.slot) {
+            ticket == ((record.generation << TASK_SLOT_BITS) | currentTask.slot) {
             result = -ERRNO_EAGAIN
             if record.state == TRANSFER_DELIVERED {
                 result = record.handle as Word
@@ -141,7 +151,7 @@ let transferCollect(frame: *mut TrapFrame, ticket: UWord): *TrapFrame {
 
 let transferReleaseTask(owner: UWord): Void {
     objectAssertAtomic()
-    for i: UWord in 0..MAX_TASKS {
+    for i: UWord in 0..taskHighWater {
         let record: *mut Transfer = &mut transfers[i]
         if record.receiver == owner || (record.state == TRANSFER_RESERVED && record.sender == owner) transferClear(record)
     }
@@ -149,7 +159,7 @@ let transferReleaseTask(owner: UWord): Void {
 
 let transferTimerTick(): Void {
     objectAssertAtomic()
-    for i: UWord in 0..MAX_TASKS transferExpire(&mut transfers[i])
+    for i: UWord in 0..taskHighWater transferExpire(&mut transfers[i])
 }
 export { transferReserve, transferCommit, transferCancel, transferCollect,
-    transferReleaseTask, transferTimerTick }
+    transferReleaseTask, transferTimerTick, Transfer, transferTableBind, transferCount }

@@ -105,7 +105,7 @@ unbounded multi-domain allocator.
 | Transfer records | One fixed record per task slot | Collect/death clear notification; no notification allocation on commit |
 | Endpoints | Creator, sealed quota at most 12; destroyed-but-pinned objects still count | Final reference releases charge; ordinary factories cannot use final two global object slots |
 | Tasks and completion rows | Creating domain, four ordinary child controls including uncollected events | Collect/discard refunds; supervisor death removes private children/events; published children run independently and release orphan controls on completion |
-| Task global slots / control rows | Eight tasks / sixteen control rows | Final two slots and control rows exclude ordinary runtime creation; bootstrap recovery policy may use them |
+| Task global slots / control rows | One slot and one control row per task slot, sized from RAM at boot ([init](INIT.md#task-slots)) | Final two slots and control rows exclude ordinary runtime creation; bootstrap recovery policy may use them |
 | Frames and private tables/stacks | Allocation task, 96 physical frames including task construction | Existing teardown/refund rules; 16 physical frames reserved for trusted kernel/idle/broker operations |
 | Memory spaces / regions | Four caller space rows; eight allocation-owner regions, each at most sixteen frames | Close, release and existing orphan reclamation; global fixed ledgers remain bounded |
 | Grant offers / lease pins | Lender, eight grant rows and one lease pin per region frame per offer | Revoke/close/death drops pins; offers consume no borrower grant quota |

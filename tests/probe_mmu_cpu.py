@@ -15,7 +15,7 @@ from pathlib import Path
 import re
 import struct
 
-from probe_boot import Monitor, ready_monitor, require, disassemble
+from probe_boot import Monitor, ready_monitor, require, disassemble, Symbols
 from probe_unexpected_traps import LAYOUT, instruction, locations
 from run_ready import ROOT, check_layout, check_full_dump, field
 
@@ -24,8 +24,8 @@ RW, RO, RX = 0x17, 0x13, 0x1B
 
 
 def symbols_from_map(path):
-    return {m[2]: int(m[1], 16) for line in path.read_text().splitlines()
-            if (m := re.fullmatch(r"([0-9A-Fa-f]{8})\s+(\S+)", line.strip()))}
+    return Symbols({m[2]: int(m[1], 16) for line in path.read_text().splitlines()
+                    if (m := re.fullmatch(r"([0-9A-Fa-f]{8})\s+(\S+)", line.strip()))})
 
 
 def check_fault(uart, code, stage, cause, address, pc, user, registers):

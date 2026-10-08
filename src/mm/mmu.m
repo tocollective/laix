@@ -2,7 +2,7 @@ import { memoryGrantFrameOwner, memoryGrantMayProtect, memoryGrantUnmapped } fro
 // Single-CPU MMU manager. All mutations hold memoryLock (save/restore IE).
 // Shared supervisor physical window: user code frames become RO here before
 // acquiring X anywhere. Task mappings occupy a separate virtual window.
-import { kernelRamEnd, MAX_PAGES, PAGE_NONE, PAGE_DIRECTORY, PAGE_TABLE,
+import { kernelRamEnd, MAX_PAGES, PAGE_NONE, PAGE_DIRECTORY, PAGE_TABLE, PAGE_KERNEL, memorySlots,
     PAGE_USER, PAGE_USER_STACK, PAGE_KERNEL_STACK, allocPage, allocPageRun, freePage, physicalPageOwned,
     retainPage, releasePage, physicalPageReferences, pageAccessReferences,
     memoryLock, memoryUnlock } from "memory.m"
@@ -10,7 +10,7 @@ import { panic } from "../kernel/panic.m"
 import { PAGE_SIZE, PAGE_MASK, PAGE_TABLE_ENTRIES, SUPERPAGE_SIZE, BOOT_INFO,
     BOOT_INFO_END, BOOT_LOAD, KERNEL_STACK_BYTES, PTE_V, PTE_R, PTE_W, PTE_X, PTE_U, PTE_RWX_BITS,
     PTE_RW, PTE_RX, PTE_RO, CR_PTBR, PTBR_ENABLE, TLBI_ALL, VRAM_BASE, IO_BASE, WORD_BITS,
-    ERRNO_EFAULT } from "../arch/wrm081632/defs.m"
+    ERRNO_EFAULT, TASK_SLOT_MASK } from "../arch/wrm081632/defs.m"
 import { deviceGrantAllowed, deviceRoleMappingCount } from "../drivers/device_table.m"
 
 let USER_VA_START: UWord = 0x40000000
@@ -36,14 +36,23 @@ let mut spaceInitialized: UWord[MAX_PAGES / WORD_BITS]
 // Frame quotas alone do not bound teardown: aliases need no new data frames.
 // Charge ordinary leaves and private user tables independently. Bootstrap
 // resources are descriptor rows; their tables still spend this quota.
-let MAX_SPACE_BUDGETS: UWord = 32
 let MMU_MAPPING_LIMIT: UWord = 128
 let MMU_TABLE_LIMIT: UWord = 8
 type SpaceBudget { directory: UWord, owner: UWord, mappings: UWord, tables: UWord }
-let mut spaceBudgets: SpaceBudget[MAX_SPACE_BUDGETS]
+let SPACE_BUDGET_BYTES: UWord = 16 // four words; test_task_tables checks it against the type
+// One row per task slot, carved out of RAM by mmuInit (the count is memorySlots):
+// an owner's row is the one its slot names whenever that is free, so a lookup is
+// a single probe; the scan below it only serves owners that share a slot.
+let mut spaceBudgets: *mut SpaceBudget
+let mut spaceBudgetCount: UWord
 
 let mmuBudget(directory: *mut UWord, owner: UWord): *mut SpaceBudget {
-    for i: UWord in 0..MAX_SPACE_BUDGETS {
+    let home: UWord = owner & TASK_SLOT_MASK
+    if home != 0 && home <= spaceBudgetCount {
+        let row: *mut SpaceBudget = &mut spaceBudgets[home - 1]
+        if row.directory == (directory as UWord) && row.owner == owner return row
+    }
+    for i: UWord in 0..spaceBudgetCount {
         if spaceBudgets[i].directory == (directory as UWord) && spaceBudgets[i].owner == owner {
             return &mut spaceBudgets[i]
         }
@@ -225,6 +234,10 @@ let mmuFreeTable(address: UWord, owner: UWord): Void {
     mmuRequire(freePage(address, owner, PAGE_TABLE))
 }
 
+let mmuLedgerFree(ledger: UWord, pages: UWord): Void {
+    for i: UWord in 0..pages mmuRequire(freePage(ledger + i * PAGE_SIZE, MMU_KERNEL_OWNER, PAGE_KERNEL))
+}
+
 let mmuInit(): Bool {
     let status: UWord = memoryLock()
     if kernelPageDirectory != null || mfcr(CR_PTBR) & PTBR_ENABLE != 0 ||
@@ -232,8 +245,16 @@ let mmuInit(): Bool {
         memoryUnlock(status)
         return false
     }
+    let rows: UWord = memorySlots()
+    let ledgerPages: UWord = (rows * SPACE_BUDGET_BYTES + PAGE_MASK) / PAGE_SIZE
+    let ledger: UWord = allocPageRun(MMU_KERNEL_OWNER, PAGE_KERNEL, ledgerPages)
+    if ledger == PAGE_NONE {
+        memoryUnlock(status)
+        return false
+    }
     let root: UWord = allocPage(MMU_KERNEL_OWNER, PAGE_DIRECTORY)
     if root == PAGE_NONE {
+        mmuLedgerFree(ledger, ledgerPages)
         memoryUnlock(status)
         return false
     }
@@ -250,6 +271,7 @@ let mmuInit(): Bool {
                 mmuFreeTable(directory[allocated] & ~PAGE_MASK, MMU_KERNEL_OWNER)
             }
             mmuRequire(freePage(root, MMU_KERNEL_OWNER, PAGE_DIRECTORY))
+            mmuLedgerFree(ledger, ledgerPages)
             memoryUnlock(status)
             return false
         }
@@ -265,6 +287,8 @@ let mmuInit(): Bool {
     directory[IO_BASE / SUPERPAGE_SIZE] = IO_BASE | PTE_RW
     mmuRequire(retainPage(root, MMU_KERNEL_OWNER, PAGE_DIRECTORY))
     kernelPageDirectory = directory
+    spaceBudgets = ledger as *mut SpaceBudget
+    spaceBudgetCount = rows
     mmuInvalidate()
     mtcr(CR_PTBR, root | PTBR_ENABLE)
     memoryUnlock(status)
@@ -293,8 +317,11 @@ let mmuInitAddressSpace(directory: *mut UWord, owner: UWord): Bool {
         memoryUnlock(status)
         return false
     }
+    // The owner's own row when it is free, else the first free one.
     let mut budget: *mut SpaceBudget = null
-    for i: UWord in 0..MAX_SPACE_BUDGETS {
+    let home: UWord = owner & TASK_SLOT_MASK
+    if home != 0 && home <= spaceBudgetCount && spaceBudgets[home - 1].directory == 0 budget = &mut spaceBudgets[home - 1]
+    for i: UWord in 0..spaceBudgetCount {
         if budget == null && spaceBudgets[i].directory == 0 budget = &mut spaceBudgets[i]
     }
     if budget == null {
@@ -902,4 +929,4 @@ export { mmuMapRegion, mmuAccessValid, mmuPermissionsValid, mmuSpaceOwned }
 
 export { mmuUserFrameOwner }
 
-export { SpaceBudget, spaceBudgets, MMU_MAPPING_LIMIT, MMU_TABLE_LIMIT, mmuMappingAllows }
+export { SpaceBudget, spaceBudgets, spaceBudgetCount, MMU_MAPPING_LIMIT, MMU_TABLE_LIMIT, mmuMappingAllows }

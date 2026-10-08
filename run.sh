@@ -14,11 +14,8 @@ if [ ! -f "$rom" ]; then
     printf 'ROM not found: %s (set WRM_ROM to an existing ROM image)\n' "$rom" >&2
     exit 1
 fi
-case "${LAIX_CONSOLE:-uart}" in
-    uart) image_name=laix ;;
-    screen|services|fs|shell|net|supervisor|memory|sharing|objects|recovery|screenrecovery) image_name=$LAIX_CONSOLE ;;
-    *) printf '%s\n' 'LAIX_CONSOLE must be uart, screen, services, fs, shell, net, supervisor, memory, sharing, objects, recovery or screenrecovery' >&2; exit 1 ;;
-esac
+# The image build.sh wrote; LAIX_IMAGE names a test image (the LAIX_MAIN program).
+image_name=${LAIX_IMAGE:-laix}
 if [ ! -f "$laix_dir/build/$image_name.img" ]; then
     printf 'Run laix/build.sh first.\n' >&2
     exit 1

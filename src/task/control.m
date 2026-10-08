@@ -5,20 +5,26 @@ import { diskDevicesCheck, diskDevicesRegrant, serviceDiskIrq, deviceExtentConfi
     screenDevicesCheck, screenDevicesRegrant } from "../drivers/service_devices.m"
 import { kernelBootInfo } from "../kernel/boot.m"
 import { inputDevicesInit } from "../drivers/input_device.m"
-import { DEVICE_UART_TX, DEVICE_INPUT, DEVICE_DISK, DEVICE_FONT, DEVICE_SCREEN } from "../arch/wrm081632/defs.m"
-import { DEVICE_ROLE_INPUT, DEVICE_ROLE_SCREEN, deviceRoleIrq } from "../drivers/device_table.m"
+import { netDevicesInit } from "../drivers/net_device.m"
+import { DEVICE_UART_TX, DEVICE_INPUT, DEVICE_DISK, DEVICE_FONT, DEVICE_SCREEN, DEVICE_NET,
+    START_HANDLES_MAGIC, START_HANDLES_MAX, WORD_BYTES, TASK_SLOT_BITS, TASK_GENERATION_MAX, START_MAGIC, SERVICE_START_VERSION,
+    SERVICE_START_BYTES, START_DATA_VA, IPC_MESSAGE_MAX, START_ROLE_SERVER, START_ROLE_CLIENT,
+    SCREEN_FONT_VA, RIGHT_SEND, RIGHT_RECEIVE } from "../arch/wrm081632/defs.m"
+import { DEVICE_ROLE_INPUT, DEVICE_ROLE_SCREEN, DEVICE_ROLE_NET, deviceRoleIrq,
+    deviceRoleBlobBytes } from "../drivers/device_table.m"
 // Bounded, nontransferable task capabilities and completion mailboxes.
 // References select records; only the kernel-recorded owner grants authority.
 import { Task, currentTask, taskGet, taskConstructImage, taskPublishChecked,
     taskDiscardChecked, taskTerminateChecked, taskSaveContext, taskOwnsTrap,
-    tasks, MAX_TASKS, TASK_GENERATION_MAX, TASK_RECOVERY_RESERVE, lifetimeLeft,
+    taskServiceStartInstall, tasks, taskCapacity, taskHighWater, TASK_RECOVERY_RESERVE, lifetimeLeft,
     TASK_CREATED, TASK_DEAD, USER_DATA } from "task.m"
 import { RuntimeStart, TaskEvent, LifetimeReport } from "runtime_start.m"
+import { ServiceStart } from "service_start.m"
 import { TrapFrame } from "../trap/trap_frame.m"
 import { PAGE_NONE, PAGE_USER, PAGE_KERNEL, allocPage, allocPageRun, freePage,
     memoryFreePages, MEMORY_RESERVE_PAGES } from "../mm/memory.m"
 import { mapPage, copyToUser, copyFromUser } from "../mm/mmu.m"
-import { handleCopy, handleLookup } from "../ipc/objects.m"
+import { handleCopy, handleLookup, handleClose } from "../ipc/objects.m"
 import { objectAssertAtomic, endpointRetiredCount, MAX_HANDLES, HANDLE_GENERATION_MAX } from "../ipc/objects.m"
 import { serviceDevicesQuiescent } from "../drivers/service_devices.m"
 import { panic } from "../kernel/panic.m"
@@ -30,7 +36,6 @@ import { TASK_RIGHT_CONFIGURE, TASK_RIGHT_PUBLISH, TASK_RIGHT_INSPECT,
     RIGHT_ALL, ERRNO_EPERM, ERRNO_ESRCH, ERRNO_EINVAL, ERRNO_ENFILE,
     ERRNO_EAGAIN, ERRNO_EBUSY, TASK_LOAD_BYTES, IMAGE_LOAD_AUTHORITY } from "../arch/wrm081632/defs.m"
 
-let MAX_TASK_CONTROLS: UWord = 16 // also bounds uncollected completion events
 let TASK_DOMAIN_QUOTA: UWord = 4 // includes uncollected child completion records
 let TASK_CONTROL_RESERVE: UWord = 2
 let TASK_HISTORY_SIZE: UWord = 32 // diagnostic ring; never used as authority
@@ -42,7 +47,18 @@ type TaskControl {
     done: Bool,
     event: TaskEvent,
 }
-let mut taskControls: TaskControl[MAX_TASK_CONTROLS]
+// One row per possible child, so also the bound on uncollected completion events.
+// Carved out of RAM at boot (src/task/tables.m). Rows are used lowest first and
+// taskControlHigh is one past the highest row ever used: every scan stops there.
+let mut taskControls: *mut TaskControl
+let mut taskControlCount: UWord
+let mut taskControlHigh: UWord
+let taskControlTableBind(base: UWord, count: UWord): Bool {
+    if taskControls != null || base == 0 || count < 2 return false
+    taskControls = base as *mut TaskControl
+    taskControlCount = count
+    return true
+}
 let mut taskHistory: TaskEvent[TASK_HISTORY_SIZE]
 let mut taskHistoryHead: UWord
 let mut taskControlsSealed: Bool
@@ -54,7 +70,7 @@ extern let runtimeApprovedEnd: UByte
 // Immutable boot catalog: registration closes with task-control sealing. Image 1
 // is the kernel's approved self-test fixture; IDs 2.. are build-issued ELF rows
 // (ImageRow) loaded in order. The kernel owns no list of image names.
-let IMAGE_CATALOG_MAX: UWord = 16 // IDs 1..16; also the width of Task.createImages
+let IMAGE_CATALOG_MAX: UWord = 31 // IDs 1..31; bit 31 of Task.createImages is IMAGE_LOAD_AUTHORITY
 type ImageRow {
     start: UWord,
     end: UWord,
@@ -90,7 +106,7 @@ let taskCatalogLoad(rows: *ImageRow, count: UWord): UWord {
 let taskControlLookup(reference: UWord, rights: UWord): *mut TaskControl {
     objectAssertAtomic()
     if currentTask == null || currentTask.id == 0 || rights == 0 return null
-    for i: UWord in 0..MAX_TASK_CONTROLS {
+    for i: UWord in 0..taskControlHigh {
         let control: *mut TaskControl = &mut taskControls[i]
         if control.reference == reference && reference != 0 && control.owner == currentTask.id &&
             control.rights & rights == rights return control
@@ -98,11 +114,19 @@ let taskControlLookup(reference: UWord, rights: UWord): *mut TaskControl {
     return null
 }
 
+// The first unused row, extending the used range by one when there is none.
+// Taking a row is the caller's decision: the range grows only when it does.
 let taskControlFree(): *mut TaskControl {
-    for i: UWord in 0..MAX_TASK_CONTROLS {
+    for i: UWord in 0..taskControlHigh {
         if taskControls[i].reference == 0 return &mut taskControls[i]
     }
+    if taskControlHigh < taskControlCount return &mut taskControls[taskControlHigh]
     return null
+}
+
+let taskControlTake(control: *mut TaskControl): Void {
+    let index: UWord = ((control as UWord) - (&taskControls[0] as UWord)) / sizeof(TaskControl)
+    if index >= taskControlHigh taskControlHigh = index + 1
 }
 
 // Bootstrap may grant specific control independently of creation authority.
@@ -114,9 +138,10 @@ let taskControlBootstrap(owner: UWord, reference: UWord, rights: UWord): Bool {
     let control: *mut TaskControl = taskControlFree()
     if taskControlsSealed || task == null || task.state != TASK_CREATED || supervisor == null ||
         supervisor.state != TASK_CREATED || control == null || rights == 0 || rights & ~TASK_RIGHT_ALL != 0 return false
-    for i: UWord in 0..MAX_TASK_CONTROLS {
+    for i: UWord in 0..taskControlHigh {
         if taskControls[i].reference == reference return false
     }
+    taskControlTake(control)
     control.owner = owner
     control.reference = reference
     control.rights = rights
@@ -137,13 +162,18 @@ let taskControlSeal(): Void { taskControlsSealed = true }
 let taskRuntimeReserve(): *mut TaskControl {
     let mut charged: UWord = 0
     let mut control: *mut TaskControl = null
-    for i: UWord in 0..MAX_TASK_CONTROLS {
+    for i: UWord in 0..taskControlHigh {
         let row: *mut TaskControl = &mut taskControls[i]
         if row.owner == currentTask.id && row.reference != 0 && row.reference != currentTask.id charged += 1
-        if !currentTask.handles.factoryRecovery && i >= MAX_TASK_CONTROLS - TASK_CONTROL_RESERVE continue
+        if !currentTask.handles.factoryRecovery && i >= taskControlCount - TASK_CONTROL_RESERVE continue
         if control == null && row.reference == 0 control = row
     }
+    if control == null && taskControlHigh < taskControlCount &&
+        (currentTask.handles.factoryRecovery || taskControlHigh < taskControlCount - TASK_CONTROL_RESERVE) {
+        control = &mut taskControls[taskControlHigh]
+    }
     if ((!currentTask.handles.factoryRecovery && charged >= TASK_DOMAIN_QUOTA) || control == null) return null
+    taskControlTake(control)
     control.owner = currentTask.id
     control.rights = TASK_RIGHT_ALL
     control.done = false
@@ -277,16 +307,17 @@ let taskInstallRuntimeStart(reference: UWord, token: UWord, rights: UWord, argum
 }
 
 // Scoped brokers: UART TX, raw keyboard batches, approved read-only extents
-// (generic Disk or the font-bitmap reader) and the display. The display grant
+// (generic Disk or the font-bitmap reader), the display and the Ethernet card. The display grant
 // installs exactly the Screen role's device-table rows into the unpublished
 // child; a manager picks no address, size or permission. Display policy lives in
 // user mode. Disk, bitmap storage and display are each issued alone.
 let taskRuntimeDevices(reference: UWord, devices: UWord): Word {
     objectAssertAtomic()
     if currentTask == null || devices == 0 ||
-        devices & ~(DEVICE_UART_TX | DEVICE_INPUT | DEVICE_DISK | DEVICE_FONT | DEVICE_SCREEN) != 0 ||
-        (devices & (DEVICE_DISK | DEVICE_FONT | DEVICE_SCREEN) != 0 &&
-            devices != DEVICE_DISK && devices != DEVICE_FONT && devices != DEVICE_SCREEN) ||
+        devices & ~(DEVICE_UART_TX | DEVICE_INPUT | DEVICE_DISK | DEVICE_FONT | DEVICE_SCREEN | DEVICE_NET) != 0 ||
+        (devices & (DEVICE_DISK | DEVICE_FONT | DEVICE_SCREEN | DEVICE_NET) != 0 &&
+            devices != DEVICE_DISK && devices != DEVICE_FONT && devices != DEVICE_SCREEN &&
+            devices != DEVICE_NET) ||
         currentTask.deviceFactory & devices != devices return -ERRNO_EPERM
     if taskControlLookup(reference, TASK_RIGHT_CONFIGURE) == null return -ERRNO_EPERM
     let child: *mut Task = taskGet(reference)
@@ -310,6 +341,14 @@ let taskRuntimeDevices(reference: UWord, devices: UWord): Word {
         if result != 0 {
             irqReleaseTask(reference)
             return result
+        }
+    }
+    if devices == DEVICE_NET {
+        token = irqIssue(reference, deviceRoleIrq(DEVICE_ROLE_NET))
+        if token == 0 return -ERRNO_EBUSY
+        if !netDevicesInit(reference, token) {
+            irqReleaseTask(reference)
+            return -ERRNO_EBUSY
         }
     }
     if devices == DEVICE_DISK || devices == DEVICE_FONT {
@@ -338,13 +377,148 @@ let taskRuntimeExtent(reference: UWord, offset: UWord, bytes: UWord, flags: UWor
     return deviceExtentConfigure(reference, offset, bytes, flags)
 }
 
+// Start handle list of an unpublished child the caller controls: the words after
+// the magic and count in the child's data page (user/starthandles.m). Entries are
+// {token, rights} pairs in the caller's memory. With rights, the token names one
+// of the caller's own handles and the child gets an attenuated copy, which is the
+// same copy rule as the one start endpoint of SYS_TASK_CONFIGURE; with rights 0
+// the token is stored as a plain word, such as the interrupt token returned by
+// SYS_TASK_DEVICES, which only its issuing owner can use. Every entry is checked
+// before anything is installed, and a failed copy closes the earlier copies.
+// One call at a time (the kernel is non-preemptible), so a static scratch row is
+// enough. It is filled bytewise (the user pointer need not be aligned) and read
+// back as little-endian words.
+let mut taskHandleBytes: UByte[48]
+let taskHandleWord(index: UWord): UWord {
+    return (taskHandleBytes[4 * index] as UWord) | ((taskHandleBytes[4 * index + 1] as UWord) << 8) |
+        ((taskHandleBytes[4 * index + 2] as UWord) << 16) | ((taskHandleBytes[4 * index + 3] as UWord) << 24)
+}
+let taskRuntimeHandles(reference: UWord, entries: UWord, count: UWord): Word {
+    objectAssertAtomic()
+    if currentTask == null || currentTask.id == 0 return -ERRNO_EPERM
+    if count == 0 || count > START_HANDLES_MAX return -ERRNO_EINVAL
+    if taskControlLookup(reference, TASK_RIGHT_CONFIGURE) == null return -ERRNO_EPERM
+    let child: *mut Task = taskGet(reference)
+    if child == null || child.state != TASK_CREATED return -ERRNO_EBUSY
+    let page: *mut UWord = child.pages[1] as *mut UWord
+    if page[0] == START_HANDLES_MAGIC return -ERRNO_EBUSY
+    let copied: Word = copyFromUser(currentTask.directory, currentTask.id,
+        &mut taskHandleBytes[0], entries, count * 2 * WORD_BYTES)
+    if copied != 0 return copied
+    for i: UWord in 0..count {
+        let rights: UWord = taskHandleWord(2 * i + 1)
+        if rights != 0 && (rights & ~RIGHT_ALL != 0 ||
+            handleLookup(&mut currentTask.handles, taskHandleWord(2 * i), rights) == null) return -ERRNO_EPERM
+    }
+    let mut installed: UWord[6]
+    for i: UWord in 0..count {
+        installed[i] = taskHandleWord(2 * i)
+        if taskHandleWord(2 * i + 1) == 0 continue
+        let result: Word = handleCopy(&mut currentTask.handles, taskHandleWord(2 * i), &mut child.handles,
+            currentTask.id, reference, taskHandleWord(2 * i + 1))
+        if result < 0 {
+            for j: UWord in 0..i {
+                if taskHandleWord(2 * j + 1) != 0 && handleClose(&mut child.handles, installed[j]) != 0 panic("could not roll back start handle", null)
+            }
+            return result
+        }
+        installed[i] = result as UWord
+    }
+    page[0] = START_HANDLES_MAGIC
+    page[1] = count
+    for i: UWord in 0..START_HANDLES_MAX {
+        if i < count page[2 + i] = installed[i]
+        else page[2 + i] = 0
+    }
+    return count as Word
+}
+
+// The checked service start record (user/services) for an unpublished child the
+// caller controls, in place of the boot-time policy that built it. The caller
+// names the child's role and protocol and passes its own handles: `endpoint` is
+// copied into the child (receive, or send for a client) and `upstream`, when
+// nonzero, as the one send handle the role needs on the service below it. The
+// device rights and the interrupt token must already come from SYS_TASK_DEVICES;
+// the record is the same one the boot policy would have installed, so every
+// cross-check of taskServiceStartInstall (role, rights, upstream manager, token)
+// applies unchanged. A failure closes the copies and leaves the child Created.
+let taskRuntimeServiceStart(reference: UWord, role: UWord, protocol: UWord, endpoint: UWord,
+    upstream: UWord, irq: UWord): Word {
+    objectAssertAtomic()
+    if currentTask == null || currentTask.id == 0 || taskControlLookup(reference, TASK_RIGHT_CONFIGURE) == null return -ERRNO_EPERM
+    let child: *mut Task = taskGet(reference)
+    if child == null || child.state != TASK_CREATED || child.configured || child.bootPage != PAGE_NONE return -ERRNO_EBUSY
+    let mut rights: UWord = RIGHT_RECEIVE
+    if role == START_ROLE_CLIENT rights = RIGHT_SEND
+    if endpoint == 0 || handleLookup(&mut currentTask.handles, endpoint, rights) == null return -ERRNO_EPERM
+    if upstream != 0 && handleLookup(&mut currentTask.handles, upstream, RIGHT_SEND) == null return -ERRNO_EPERM
+    let mut block: ServiceStart
+    block.magic = START_MAGIC
+    block.version = SERVICE_START_VERSION
+    block.bytes = SERVICE_START_BYTES
+    block.role = role
+    block.taskId = reference
+    block.rights = rights
+    block.devices = child.deviceRights
+    block.data = START_DATA_VA
+    block.dataBytes = PAGE_SIZE
+    block.ipcLimit = IPC_MESSAGE_MAX
+    block.protocol = protocol
+    block.bitmapEndpoint = 0
+    block.fontIndex = 0
+    block.fontBytes = 0
+    block.irq = irq
+    if role == START_ROLE_SERVER {
+        block.fontIndex = SCREEN_FONT_VA
+        block.fontBytes = deviceRoleBlobBytes(DEVICE_ROLE_SCREEN)
+    }
+    let own: Word = handleCopy(&mut currentTask.handles, endpoint, &mut child.handles,
+        currentTask.id, reference, rights)
+    if own < 0 return own
+    block.endpoint = own as UWord
+    if upstream != 0 {
+        let below: Word = handleCopy(&mut currentTask.handles, upstream, &mut child.handles,
+            currentTask.id, reference, RIGHT_SEND)
+        if below < 0 {
+            if handleClose(&mut child.handles, own as UWord) != 0 panic("could not roll back service endpoint", null)
+            return below
+        }
+        block.bitmapEndpoint = below as UWord
+    }
+    if !taskServiceStartInstall(reference, &block, serviceDiskIrq(kernelBootInfo.disk), true) {
+        if handleClose(&mut child.handles, own as UWord) != 0 ||
+            (upstream != 0 && handleClose(&mut child.handles, block.bitmapEndpoint) != 0) panic("could not roll back service handles", null)
+        return -ERRNO_EINVAL
+    }
+    return 0
+}
+
+// Narrowing delegation of image authority to an unpublished child the caller
+// controls: only bits the caller holds itself, and only before publication, so a
+// loader such as Exec gets the load bit without any task ever gaining authority
+// that its supervisor lacks.
+let taskRuntimeAuthority(reference: UWord, images: UWord): Word {
+    objectAssertAtomic()
+    if currentTask == null || currentTask.id == 0 || taskControlLookup(reference, TASK_RIGHT_CONFIGURE) == null return -ERRNO_EPERM
+    if images == 0 return -ERRNO_EINVAL
+    if images & ~currentTask.createImages != 0 return -ERRNO_EPERM
+    let child: *mut Task = taskGet(reference)
+    if child == null || child.state != TASK_CREATED return -ERRNO_EBUSY
+    child.createImages = child.createImages | images
+    return 0
+}
+
 let taskRuntimePublish(reference: UWord): Word {
     let control: *mut TaskControl = taskControlLookup(reference, TASK_RIGHT_PUBLISH)
     if control == null return -ERRNO_EPERM
     let task: *mut Task = taskGet(reference)
     if task == null || task.state != TASK_CREATED || !task.configured return -ERRNO_EBUSY
     let block: *RuntimeStart = task.bootPage as *RuntimeStart
-    if block.endpoint != 0 && handleLookup(&mut task.handles, block.endpoint, block.rights) == null return -ERRNO_EPERM
+    if block.magic == START_MAGIC {
+        // The checked service record (SYS_TASK_SERVICE_START) lays its fields out differently.
+        let service: *ServiceStart = task.bootPage as *ServiceStart
+        if handleLookup(&mut task.handles, service.endpoint, service.rights) == null return -ERRNO_EPERM
+    } else if block.endpoint != 0 && handleLookup(&mut task.handles, block.endpoint, block.rights) == null return -ERRNO_EPERM
     if !serviceDependencyLive(task) return -ERRNO_EPERM
     if !taskPublishChecked(reference) return -ERRNO_EINVAL
     return 0
@@ -375,7 +549,7 @@ let taskRecordCompletion(task: *Task, terminated: Bool): Void {
     taskHistory[taskHistoryHead] = event
     taskHistoryHead = (taskHistoryHead + 1) % TASK_HISTORY_SIZE
     if taskHistoryCount < TASK_HISTORY_SIZE taskHistoryCount += 1
-    for i: UWord in 0..MAX_TASK_CONTROLS {
+    for i: UWord in 0..taskControlHigh {
         let control: *mut TaskControl = &mut taskControls[i]
         if control.reference != task.id continue
         if control.owner == 0 control.reference = 0
@@ -387,7 +561,7 @@ let taskRecordCompletion(task: *Task, terminated: Bool): Void {
 }
 
 let taskRecordReaped(reference: UWord): Void {
-    for i: UWord in 0..MAX_TASK_CONTROLS {
+    for i: UWord in 0..taskControlHigh {
         if taskControls[i].reference == reference && taskControls[i].done {
             taskControls[i].event.flags |= TASK_EVENT_RECLAIMED
             taskControls[i].event.flags &= ~TASK_EVENT_QUARANTINED
@@ -405,7 +579,7 @@ let taskRecordReaped(reference: UWord): Void {
 // mailboxes behind. Published children continue independently (user policy).
 let taskReleaseSupervisor(owner: UWord): Void {
     serviceReleaseSupervisor(owner)
-    for i: UWord in 0..MAX_TASK_CONTROLS {
+    for i: UWord in 0..taskControlHigh {
         let control: *mut TaskControl = &mut taskControls[i]
         if control.owner != owner || control.reference == 0 continue
         let task: *mut Task = taskGet(control.reference)
@@ -468,11 +642,18 @@ let taskRuntimeLifetime(reference: UWord, destination: UWord): Word {
     report.handleSelected = 0
     report.retiredTasks = 0
     report.retiredHandles = 0
-    for i: UWord in 0..MAX_TASKS {
+    // Slots beyond the high-water mark were never used: each is a full namespace.
+    let mut ordinary: UWord = taskCapacity
+    if !currentTask.handles.factoryRecovery ordinary = taskCapacity - TASK_RECOVERY_RESERVE
+    if ordinary > taskHighWater {
+        report.replyOpen = ordinary - taskHighWater
+        report.replyTotal = (ordinary - taskHighWater) * TASK_GENERATION_MAX
+    }
+    for i: UWord in 0..taskHighWater {
         let task: *mut Task = &mut tasks[i]
         let replies: UWord = lifetimeLeft(task.ipcCallGeneration, TASK_GENERATION_MAX)
         let mut references: UWord = TASK_GENERATION_MAX + 1
-        if task.id != 0 references = lifetimeLeft(task.id >> 8, TASK_GENERATION_MAX)
+        if task.id != 0 references = lifetimeLeft(task.id >> TASK_SLOT_BITS, TASK_GENERATION_MAX)
         for j: UWord in 0..MAX_HANDLES {
             if task.handles.entries[j].generation >= HANDLE_GENERATION_MAX report.retiredHandles += 1
         }
@@ -481,13 +662,13 @@ let taskRuntimeLifetime(reference: UWord, destination: UWord): Word {
             continue
         }
         // The same two slots the constructor withholds from ordinary callers.
-        if !currentTask.handles.factoryRecovery && i >= MAX_TASKS - TASK_RECOVERY_RESERVE continue
+        if !currentTask.handles.factoryRecovery && i >= taskCapacity - TASK_RECOVERY_RESERVE continue
         report.replyOpen += 1
         report.replyTotal += replies
     }
     if selected != null {
         report.replySelected = lifetimeLeft(selected.ipcCallGeneration, TASK_GENERATION_MAX)
-        report.taskSelected = lifetimeLeft(selected.id >> 8, TASK_GENERATION_MAX)
+        report.taskSelected = lifetimeLeft(selected.id >> TASK_SLOT_BITS, TASK_GENERATION_MAX)
         report.handleSelected = HANDLE_GENERATION_MAX
         for j: UWord in 0..MAX_HANDLES {
             let left: UWord = lifetimeLeft(selected.handles.entries[j].generation, HANDLE_GENERATION_MAX)
@@ -525,6 +706,6 @@ let taskRuntimeTerminate(frame: *mut TrapFrame, reference: UWord, code: Word): *
 }
 
 export { taskControlLookup, TaskControl, taskControls, taskHistory, taskHistoryHead, taskHistoryCount,
-    MAX_TASK_CONTROLS, TASK_HISTORY_SIZE, taskControlBootstrapSelf, taskControlBootstrap, taskControlSeal, taskInstallRuntimeStart,
-    taskControlLookupBootOpen, taskRegisterImage, taskCatalogLoad, ImageRow, IMAGE_CATALOG_MAX, taskRuntimeDiscard, taskRuntimeDevices, taskRuntimeExtent, taskRuntimeCreate, taskRuntimeLoad, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
+    taskControlCount, taskControlHigh, taskControlTableBind, TASK_HISTORY_SIZE, taskControlBootstrapSelf, taskControlBootstrap, taskControlSeal, taskInstallRuntimeStart,
+    taskControlLookupBootOpen, taskRegisterImage, taskCatalogLoad, ImageRow, IMAGE_CATALOG_MAX, taskRuntimeDiscard, taskRuntimeDevices, taskRuntimeExtent, taskRuntimeCreate, taskRuntimeLoad, taskRuntimeConfigure, taskRuntimeHandles, taskRuntimeServiceStart, taskRuntimeAuthority, taskRuntimePublish, taskRuntimeRead,
     taskRuntimeTerminate, taskRuntimeLifetime, taskRecordCompletion, taskRecordReaped, taskReleaseSupervisor }

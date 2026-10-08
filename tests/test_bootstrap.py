@@ -18,7 +18,7 @@ START = 0x40002000
 
 class InitM(ServiceM):
     def __init__(self):
-        super().__init__(root=LAIX / "src/kernel/main.m")
+        super().__init__(root=LAIX / "tests/programs/boot/uart_main.m")
         self.addresses.update(bootstrapServerStart=0x14200, bootstrapServerEnd=0x14210,
                               bootstrapClientStart=0x14300, bootstrapClientEnd=0x1430C)
         self.server_blob, self.client_blob = [0x1100 + i for i in range(4)], [0x2200 + i for i in range(3)]
@@ -67,7 +67,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(vm.field("deviceRights", id), devices)
             token = vm.token(id)
             entry = vm.call("handleEntry", vm.field_address("handles", id), token)
-            handle_type = vm.decls["tasks"].sym.type.elem.field("handles").type.field("entries").type.elem
+            handle_type = vm.decls["tasks"].sym.type.target.field("handles").type.field("entries").type.elem
             self.assertEqual(vm.memory[entry + handle_type.field("rights").offset], rights)
             for forbidden in (7, 4, 1 if id == 1 else 2):
                 self.assertEqual(vm.call("handleLookup", vm.field_address("handles", id), token, forbidden), 0)
@@ -249,7 +249,7 @@ class BootstrapTests(unittest.TestCase):
         self.assertFalse(vm.call("bootstrapInit"))
         self.assertEqual(vm.free_pages(), before)
         # Unknown syscall numbers remain denied; runtime creation requires a capability.
-        vm.invoke(81, 2, 7, 0xDEADBEEF)
+        vm.invoke(84, 2, 7, 0xDEADBEEF)
         self.assertEqual(vm.result(1)[0], error(38))
 
 

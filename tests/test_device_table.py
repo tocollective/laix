@@ -165,13 +165,13 @@ class DeviceTableTests(unittest.TestCase):
 
     def test_kernel_modules_hold_no_screen_resource_constants(self):
         for name in ('src/mm/mmu.m', 'src/drivers/irq.m', 'src/drivers/service_devices.m',
-                     'src/kernel/service_bootstrap.m'):
+                     'tests/programs/boot/service_bootstrap.m'):
             source = (LAIX / name).read_text()
             for constant in ('SCREEN_VRAM_VA', 'SCREEN_VIDEO_VA', 'SCREEN_VRAM_BYTES',
                              'VIDEO_IRQ', 'KEYBOARD_IRQ', 'FLOPPY_BASE', 'DISK1_BASE'):
                 self.assertNotIn(constant, source, (name, constant))
-        check_m(LAIX / 'src/kernel/service_bootstrap.m')
-        check_m(LAIX / 'src/kernel/simple_bootstrap.m')
+        check_m(LAIX / 'tests/programs/boot/service_bootstrap.m')
+        check_m(LAIX / 'tests/programs/boot/simple_bootstrap.m')
 
 
 if __name__ == '__main__':

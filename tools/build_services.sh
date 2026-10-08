@@ -3,6 +3,9 @@ set -eu
 laix_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 repo_dir=$(dirname -- "$laix_dir")
 service_dir="$laix_dir/build/services"
+# The init profile's programs go to their own directory: they are the one
+# image's catalog (src/kernel/init_bootstrap.asm), not a profile's embeds.
+if [ "${1:-screen}" = init ]; then service_dir="$laix_dir/build/init"; fi
 mkdir -p "$service_dir"
 
 # Separate user ELF images; the kernel accepts only these trusted boot embeds.
@@ -14,7 +17,8 @@ case "${1:-screen}" in
     fs) images='input disk fs fsclient' ;;
     shell) images='disk fs exec shell bin-hello bin-count bin-spin' ;;
     net) images='netdrv ip netclient' ;;
-    *) printf '%s\n' 'Service profile must be screen, services, loader, fs, shell or net' >&2; exit 1 ;;
+    init) images='init console disk files input fs exec shell banner simple-application loader fsclient netdrv ip netclient screen storage application rec-echo rec-disk rec-files rec-client rec-bitmap rec-screen rec-screen-client hello bin-hello bin-count bin-spin' ;;
+    *) printf '%s\n' 'Service profile must be screen, services, loader, fs, shell, net or init' >&2; exit 1 ;;
 esac
 for image in $images; do
     case "$image" in
@@ -26,6 +30,16 @@ for image in $images; do
         exec) modules='services/exec services/fsclient heap starthandles words' ;;
         shell) modules='apps/shell services/fsclient services/execclient starthandles keymap text console words' ;;
         bin-hello) modules='bin/hello text console' ;;
+        init) modules='init/init init/lib init/session init/images init/sessions recovery/supervisor recovery/screen_supervisor recovery/policy screen/client' ;;
+        rec-echo) modules='recovery/echo recovery/server services/disk services/files' ;;
+        rec-disk) modules='recovery/disk recovery/server services/disk services/files' ;;
+        rec-files) modules='recovery/files recovery/server services/disk services/files' ;;
+        rec-client) modules='recovery/rclient recovery/supervisor recovery/policy' ;;
+        rec-bitmap) modules='recovery/bitmap screen/storage' ;;
+        rec-screen) modules='recovery/screen screen/server screen/unicode screen/font screen/cache screen/video' ;;
+        rec-screen-client) modules='recovery/sclient recovery/screen_supervisor recovery/policy screen/client' ;;
+        banner) modules='apps/banner text console' ;;
+        console) modules='services/consolesrv' ;;
         netdrv) modules='services/netdrv starthandles' ;;
         ip) modules='services/ip starthandles words' ;;
         netclient) modules='../tests/programs/net/client services/ipclient text console words starthandles' ;;
@@ -44,7 +58,7 @@ for image in $images; do
     esac
     set --
     for module in $modules syscalls; do
-        object="$service_dir/$image-$(basename -- "$module").o"
+        object="$service_dir/$image-$(printf '%s' "$module" | tr / -).o"
         python3 "$repo_dir/mc/mc.py" -c "$laix_dir/user/$module.m" -o "$object"
         set -- "$@" "$object"
     done
@@ -60,9 +74,11 @@ for image in $images; do
     fi
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/task/service_start.m" -o "$service_dir/$image-start.o"
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/task/runtime_start.m" -o "$service_dir/$image-task-abi.o"
+    python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/task/recovery_start.m" -o "$service_dir/$image-recovery-abi.o"
     python3 "$repo_dir/mc/mc.py" -c "$laix_dir/src/arch/wrm081632/defs.m" -o "$service_dir/$image-defs.o"
     python3 "$repo_dir/mc/asm.py" -c "$repo_dir/mc/runtime/mem.asm" -o "$service_dir/$image-mem.o"
     python3 "$repo_dir/mc/ld.py" --layout exec --base 0x41000000 "$@" \
-        "$service_dir/$image-start.o" "$service_dir/$image-task-abi.o" "$service_dir/$image-defs.o" "$service_dir/$image-mem.o" \
+        "$service_dir/$image-start.o" "$service_dir/$image-task-abi.o" "$service_dir/$image-recovery-abi.o" \
+        "$service_dir/$image-defs.o" "$service_dir/$image-mem.o" \
         -o "$service_dir/$image.elf" --map "$service_dir/$image.map"
 done

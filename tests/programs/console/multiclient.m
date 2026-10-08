@@ -1,7 +1,7 @@
 // Trusted acceptance bootstrap only; excluded from ordinary image profiles.
 import { kernelInit, kernelBootInfo } from "../../../src/kernel/boot.m"
-import { bootstrapInit } from "../../../src/kernel/bootstrap.m"
-import { bootstrapScreenInit } from "../../../src/kernel/service_bootstrap.m"
+import { bootstrapInit } from "../boot/uart_bootstrap.m"
+import { bootstrapScreenInit } from "../boot/service_bootstrap.m"
 import { taskGet, Task, taskInstallStart, taskInstallServiceStart, taskPublish, taskStart } from "../../../src/task/task.m"
 import { taskCreateProgram } from "../../../src/task/program.m"
 import { TaskStart } from "../../../src/task/start.m"

@@ -13,7 +13,7 @@ system. A general-purpose workload may need more than these bounds allow.
 
 The published bounds are in [LIMITS_AND_LATENCY.md](LIMITS_AND_LATENCY.md):
 
-- 8 task slots (6 ordinary plus 2 recovery-reserved), 16 endpoints, 16 handles
+- Task slots from the installed RAM (2026-10-09: no longer a constant 8; see [INIT](INIT.md#task-slots)), two of them recovery-reserved, 16 endpoints, 16 handles
   per task, 8 IPC waits per endpoint, 0–32-byte messages.
 - 96 physical frames, 128 user mappings and 8 private page tables per task.
 - Runtime image creation uses an immutable catalog: at most 3 `PT_LOAD`

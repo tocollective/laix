@@ -16,7 +16,7 @@ Acceptance: [SCREEN_RECOVERY_ACCEPTANCE.md](../tests/SCREEN_RECOVERY_ACCEPTANCE.
 
 - Disk/Files recovery is supervised, with fresh identities, transactional
   publication and quiescent handover ([SERVICE_RECOVERY.md](SERVICE_RECOVERY.md)).
-- **Screen is now restartable in a new profile**, `LAIX_CONSOLE=screenrecovery`.
+- **Screen is now restartable in a new profile**, `LAIX_SESSION=screenrecovery`.
   The supervisor launches bitmap storage and Screen, and `grantTaskDevices`
   accepts `SCREEN` and `FONT`. The kernel installs exactly the Screen role's
   device-table rows into an unpublished child after a preflight (no live owner,

@@ -6,7 +6,7 @@ branches that the CPU run cannot inject.
 """
 import unittest
 
-from source_m import LAYOUT as C
+from source_m import LAYOUT as C, image_ids
 from test_ipc_handles import error
 from test_kernel import LAIX, check_m
 from test_runtime_tasks import create
@@ -217,7 +217,7 @@ class DisplayReplacementTests(unittest.TestCase):
 class DisplayPolicyTests(unittest.TestCase):
     def test_modules_type_check(self):
         for name in ('user/recovery/screen.m', 'user/recovery/bitmap.m', 'user/recovery/screen_supervisor.m',
-                     'src/kernel/screen_recovery_main.m', 'tests/programs/screenrecovery/screen.m',
+                     'tests/programs/boot/screen_recovery_main.m', 'tests/programs/screenrecovery/screen.m',
                      'tests/programs/screenrecovery/scenario.m'):
             check_m(LAIX/name)
 
@@ -228,7 +228,7 @@ class DisplayPolicyTests(unittest.TestCase):
         screen, _ = vm.service(0x1000100, 2)
         self.assertEqual(vm.call('recoverScreenBitmap', bitmap, screen), 0)
         self.assertEqual([args[0] for name, args in vm.operations if name == 'terminateTask'], [2, 1])
-        self.assertEqual([args[0] for name, args in vm.operations if name == 'createTask'], [3, 4])
+        self.assertEqual([args[0] for name, args in vm.operations if name == 'createTask'], [image_ids()['REC_BITMAP'], image_ids()['REC_SCREEN']])
         self.assertEqual([args[1] for name, args in vm.operations if name == 'grantTaskDevices'], [FONT, SCREEN])
         configured = [args for name, args in vm.operations if name == 'configureService']
         self.assertEqual(configured[0][2:4], (0, 2))

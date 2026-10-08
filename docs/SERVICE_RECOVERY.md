@@ -8,8 +8,8 @@ handling and retry limits. Kernel code supplies construction, atomic
 publication, private resolution and physically safe Disk handover.
 
 ```sh
-LAIX_CONSOLE=recovery sh laix/build.sh
-LAIX_CONSOLE=recovery sh laix/run.sh --headless --no-net
+LAIX_SESSION=recovery sh laix/build.sh
+LAIX_SESSION=recovery sh laix/run.sh --headless --no-net
 ```
 
 This profile runs a supervisor, stateless Echo, read-only Disk, Files and a
@@ -170,8 +170,8 @@ supervisor, so a dead Screen leaves clients with `EPIPE` until reboot. The
 runtime supervisor instead ([G3](GAP_03_FIXED_SERVICE_RESTART.md)):
 
 ```sh
-LAIX_CONSOLE=screenrecovery sh laix/build.sh
-LAIX_CONSOLE=screenrecovery sh laix/run.sh
+LAIX_SESSION=screenrecovery sh laix/build.sh
+LAIX_SESSION=screenrecovery sh laix/run.sh
 ```
 
 It is a separate profile because the disk broker has one owner at a time: bitmap

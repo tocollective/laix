@@ -281,7 +281,7 @@ class ScreenSecurityTests(unittest.TestCase):
 
     def test_full_screen_bootstrap_checks_startup_grants_and_rollback(self):
         def fixture(fail=None):
-            vm = TaskM(ram=0x200000, root=LAIX / 'src/kernel/screen_main.m')
+            vm = TaskM(ram=0x200000, root=LAIX / 'tests/programs/boot/screen_main.m')
             vm.memory = Devices(vm)
             vm.addresses.update(fontData=0x16000, fontDataEnd=0x16000 + 184)
             for i, value in enumerate((0x3146414C, 1, 19, 32, 184, 16, 32, 0)):

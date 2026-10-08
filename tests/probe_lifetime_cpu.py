@@ -22,8 +22,9 @@ from probe_mmu_cpu import symbols_from_map
 from probe_scheduler_cpu import task_layout, uart_text
 from run_ready import ROOT, check_layout
 from test_kernel import LAIX, check_m
+from source_m import LAYOUT as C
 
-GEN_MAX = 0x7FFFFF
+GEN_MAX = C['TASK_GENERATION_MAX']  # reply namespaces share the task reference layout
 RESERVE = 4096          # LIFETIME_REPLY_RESERVE in src/arch/wrm081632/defs.m
 SEEDED_REMAINING = RESERVE + 2
 CLIENT_SLOT = 2
@@ -54,7 +55,7 @@ def probe(image, map_path, emulator, rom, timeout=60):
         require(marker in users, f'scenario image lacks {marker}')
     check_layout(symbols)
     size, fields = task_layout()
-    require(symbols['currentTask'] - symbols['tasks'] == 8 * size, 'task image/source layout mismatch')
+    require('taskCapacity' in symbols, 'task image has no sized task table')
     types = {name: module.scope[name].type for module in check_m(LAIX / 'src/trap/trap.m')
              for name in ('Endpoint', 'TaskControl', 'ServiceEntry', 'IrqGrant')
              if name in module.scope and module.scope[name].type is not None}

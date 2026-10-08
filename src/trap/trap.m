@@ -17,8 +17,8 @@ import { SYS_MEM_SPACE, SYS_MEM_ALLOC, SYS_MEM_RELEASE, SYS_MEM_MAP,
 import { memoryOpenSpace, memoryCloseSpace, memoryAllocate, memoryRelease,
     memoryMap, memoryEdit, memoryPopulate } from "../mm/runtime.m"
 import { SYS_TASK_CREATE, SYS_TASK_CONFIGURE, SYS_TASK_PUBLISH, SYS_TASK_INSPECT,
-    SYS_TASK_TERMINATE, SYS_TASK_COLLECT, SYS_TASK_LOAD } from "../arch/wrm081632/defs.m"
-import { taskRuntimeCreate, taskRuntimeLoad, taskRuntimeConfigure, taskRuntimePublish, taskRuntimeRead,
+    SYS_TASK_TERMINATE, SYS_TASK_COLLECT, SYS_TASK_LOAD, SYS_TASK_HANDLES, SYS_TASK_SERVICE_START, SYS_TASK_AUTHORITY } from "../arch/wrm081632/defs.m"
+import { taskRuntimeCreate, taskRuntimeLoad, taskRuntimeConfigure, taskRuntimeHandles, taskRuntimeServiceStart, taskRuntimeAuthority, taskRuntimePublish, taskRuntimeRead,
     taskRuntimeTerminate } from "../task/control.m"
 import { STACK_CANARY, KERNEL_STACK_BOTTOM, KERNEL_STACK_TOP, CAUSE_BREAKPOINT, CAUSE_SYSCALL, CAUSE_INTERRUPT,
     INSTRUCTION_BYTES, REG_RESULT, REG_SYSCALL, ERRNO_ENOSYS, ERRNO_EINVAL,
@@ -175,6 +175,13 @@ let userSyscall(frame: *mut TrapFrame): *TrapFrame {
             return deviceResult(frame, taskRuntimeLoad(frame.regs[1], frame.regs[2]))
         case SYS_TASK_CONFIGURE:
             return deviceResult(frame, taskRuntimeConfigure(frame.regs[1], frame.regs[2], frame.regs[3], frame.regs[4]))
+        case SYS_TASK_HANDLES:
+            return deviceResult(frame, taskRuntimeHandles(frame.regs[1], frame.regs[2], frame.regs[3]))
+        case SYS_TASK_AUTHORITY:
+            return deviceResult(frame, taskRuntimeAuthority(frame.regs[1], frame.regs[2]))
+        case SYS_TASK_SERVICE_START:
+            return deviceResult(frame, taskRuntimeServiceStart(frame.regs[1], frame.regs[2], frame.regs[3],
+                frame.regs[4], frame.regs[5], frame.regs[6]))
         case SYS_TASK_PUBLISH:
             return deviceResult(frame, taskRuntimePublish(frame.regs[1]))
         case SYS_TASK_INSPECT:

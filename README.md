@@ -24,31 +24,35 @@ transfer supports messages up to 32 bytes with FIFO blocking and cancellation.
 See the [IPC contract](docs/05_IPC_RIGHTS.md).
 
 Runtime task construction and supervision are available in the separate
-`LAIX_CONSOLE=supervisor` boot profile. It launches 24 approved children,
+`supervisor` fixture boot profile. It launches 24 approved children,
 collects their exit codes, then collects a faulting child. Task references
 carry generations; scoped control capabilities, completion storage, rollback
 and DMA quarantine are specified in [the runtime task contract](docs/RUNTIME_TASKS.md)
 and [acceptance record](tests/RUNTIME_TASKS_ACCEPTANCE.md).
 
-The `LAIX_CONSOLE=recovery` profile runs a user watchdog for stateless Echo and
+The `recovery` session runs a user watchdog for stateless Echo and
 read-only Files/Disk. Replacements have fresh identities and scoped grants;
 consenting clients explicitly resolve new handles. Publication is transactional,
 restart attempts/backoff are bounded and BUSY DMA remains quarantined. See the
 [recovery contract](docs/SERVICE_RECOVERY.md) and
 [source/CPU acceptance](tests/SERVICE_RECOVERY_ACCEPTANCE.md).
 
-The `LAIX_CONSOLE=fs` profile runs Input, Disk, a writable flat filesystem (WFS1)
+The `fs` session runs Input, Disk, a writable flat filesystem (WFS1)
 and an acceptance client. The kernel broker writes and flushes only when the
 storage root, the manager's extent and the drive all allow it; the filesystem
 commits atomically through two checksummed metadata copies. See
 [the filesystem contract](docs/FILESYSTEM.md) and the
 [write/flush contract](docs/DEVICE_CONTRACT.md#multi-sector-and-writeflush-contract).
 
-The `LAIX_CONSOLE=shell` profile adds Exec, which loads a program from the
+Since 2026-10-09 the kernel starts only init (the root server), and init builds the
+system from an image catalog; the profile descriptions below are the sessions of
+that one image (`LAIX_SESSION`), see [the init contract](docs/INIT.md).
+
+The `shell` session adds Exec, which loads a program from the
 filesystem by name, and a command shell over the UART console and the keyboard.
 See [the shell contract](docs/SHELL.md).
 
-The `LAIX_CONSOLE=net` profile runs a kernel-brokered Ethernet card, a driver
+The `net` session runs a kernel-brokered Ethernet card, a driver
 service and a small IPv4 stack (ARP, ICMP echo, UDP) with ping and DNS lookup.
 See [the network contract](docs/NETWORK.md).
 
@@ -57,10 +61,10 @@ address-space rights, per-task frame budgets and a kernel progress reserve.
 The minimal [user heap](user/heap.m) grows and releases complete page-backed
 regions. See the [runtime memory contract](docs/RUNTIME_MEMORY.md) and
 [acceptance record](tests/RUNTIME_MEMORY_ACCEPTANCE.md). The separate
-`LAIX_CONSOLE=memory` profile exercises heap growth, IPC, timer preemption,
+`memory` fixture profile exercises heap growth, IPC, timer preemption,
 W^X aliases and unpublished-child loader authority on CPU. Explicit sharing
 uses scoped whole-region grants and a borrower/reference ledger; the separate
-`LAIX_CONSOLE=sharing` fixture checks both death orders and owner-slot reuse.
+`sharing` fixture fixture checks both death orders and owner-slot reuse.
 See [sharing acceptance](tests/MEMORY_SHARING_ACCEPTANCE.md).
 
 Исходники сгруппированы по подсистемам:
@@ -91,7 +95,8 @@ laix/
 M-модуль и одноимённый ASM-файл находятся рядом: компилятор подключает
 ассемблерную часть автоматически. Импорты, `.include` и `.incbin` используют
 пути относительно своего исходника. Точка входа ядра — `src/kernel/main.m`;
-`LAIX_MAIN` позволяет выбрать программу из `tests/programs/`.
+`LAIX_MAIN` позволяет выбрать тестовую программу из `tests/programs/` через
+`tools/build_fixture.sh`.
 
 Из корня репозитория:
 
@@ -100,15 +105,34 @@ M-модуль и одноимённый ASM-файл находятся ряд�
 ./laix/run.sh
 ```
 
-For user-mode screen/Unicode output, build and select the separate screen image:
+There is one kernel. It starts init (the root server, [docs/INIT.md](docs/INIT.md)),
+and init builds the system from an image catalog. What a build runs is a
+*session*, picked by data: `LAIX_SESSION=<name> sh laix/build.sh` (default `shell`;
+`python3 laix/tools/sessions.py --list` lists them) writes the number into the
+storage root and appends the volume the session needs. The image is always
+`build/laix.img` with `build/laix.map`.
+
+| Session | What init builds |
+| --- | --- |
+| `shell` | Disk, writable filesystem, Exec, command shell, console |
+| `console` | Console server and the boot banner |
+| `services` | Input, read-only Disk, Files and an application |
+| `loader` | The same, with a client that loads a program it reads |
+| `fs` | Input, writable Disk, filesystem and a client |
+| `net` | Ethernet driver, IP stack and a client |
+| `screen` | Display server, bitmap storage and an application |
+| `recovery` | Init as the supervisor of Echo, Disk and Files |
+| `screenrecovery` | Init as the supervisor of the display chain |
 
 ```sh
-LAIX_CONSOLE=screen sh laix/build.sh
-LAIX_CONSOLE=screen sh laix/run.sh
+LAIX_SESSION=screen sh laix/build.sh
+sh laix/run.sh
 ```
 
-Screen artifacts are `build/screen.img` and `build/screen.map`; default UART
-artifacts remain `build/laix.img` and `build/laix.map`.
+The reference boots that the source tests and the CPU acceptance campaign use
+(a fixed task graph placed by a test entry instead of init) are built by
+`LAIX_FIXTURE=<name> sh laix/tools/build_fixture.sh`; see
+[tests/programs/boot](tests/programs/boot).
 
 Нужны Python 3, готовый эмулятор `bin/wrm081632` и готовый ROM
 `bin/firmware.rom`. Для других путей используйте переменные
@@ -159,7 +183,7 @@ fixtures). To boot from the floppy instead, use
   Контракты — в [этапе 2](docs/02_MEMORY_MMU.md).
 - `src/trap/trap_frame.m` и `src/trap/trap_layout.inc` — общий формат контекста
   на 160 байт и соответствующие ассемблерные смещения.
-- `src/task/task.m` and `src/task/task.asm` provide eight task slots with
+- `src/task/task.m` and `src/task/task.asm` provide task slots (their number is taken from the installed RAM, see [docs/INIT.md](docs/INIT.md#task-slots)) with
   Ready/Running/Blocked/Dead states, syscall yield (2), and timer preemption.
   Tasks have separate address spaces and guarded kernel stacks. Restore/IRET
   preserves GPR/FCSR; the reaper releases Dead resources on the selected stack.
@@ -549,12 +573,12 @@ let ok: Bool = rngFill(bytes, 16)
 размеры буфера 0–5 и 32 байта, границы записи и переход между блоками RNG.
 Команда `--check` выше проверяет только синтаксис и типы этого теста.
 
-A separate simple-service profile starts keyboard input, a read-only disk extent,
+The `services` session starts keyboard input, a read-only disk extent,
 an immutable `/font` file service and a capability-limited application:
 
 ```sh
-LAIX_CONSOLE=services sh laix/build.sh
-LAIX_CONSOLE=services sh laix/run.sh --ram 2M --no-net
+LAIX_SESSION=services sh laix/build.sh
+sh laix/run.sh --ram 2M --no-net
 ```
 
 See the [protocols and failure lifecycle](docs/SIMPLE_SERVICES.md) and

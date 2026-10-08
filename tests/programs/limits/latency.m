@@ -1,9 +1,9 @@
 import { TrapFrame } from "../../../src/trap/trap_frame.m"
 // CPU measurement fixture only. Never linked into ordinary images.
 import { kernelInit, kernelBootInfo } from "../../../src/kernel/boot.m"
-import { bootstrapInit } from "../../../src/kernel/bootstrap.m"
+import { bootstrapInit } from "../boot/uart_bootstrap.m"
 import { panic } from "../../../src/kernel/panic.m"
-import { Task, taskStart, tasks, currentTask, MAX_TASKS, TASK_READY, TASK_BLOCKED, TASK_RUNNING,
+import { Task, taskStart, tasks, currentTask, taskHighWater, TASK_READY, TASK_BLOCKED, TASK_RUNNING,
     taskTerminateChecked } from "../../../src/task/task.m"
 import { SpaceBudget, spaceBudgets, mapPage } from "../../../src/mm/mmu.m"
 import { MemoryBudget, allocPage, PAGE_USER, memoryBudgetFind, MEMORY_TASK_PAGES } from "../../../src/mm/memory.m"
@@ -13,7 +13,7 @@ import { PAGE_SIZE, MEM_VA_START, PTE_RW, PTE_U } from "../../../src/arch/wrm081
 // Preparation itself is not a public syscall and is outside latency samples.
 let latencyFillTasks(includeCurrent: UWord): UWord {
     let mut filled: UWord = 0
-    for slot: UWord in 0..MAX_TASKS {
+    for slot: UWord in 0..taskHighWater {
         let task: *mut Task = &mut tasks[slot]
         if ((task == currentTask && includeCurrent == 0) || (task.state != TASK_READY && task.state != TASK_BLOCKED && task.state != TASK_RUNNING)) continue
         let mut budget: *mut SpaceBudget = null
@@ -55,7 +55,7 @@ let latencyFillTasks(includeCurrent: UWord): UWord {
 
 let latencyRetirePeers(): UWord {
     let mut count: UWord = 0
-    for i: UWord in 0..MAX_TASKS {
+    for i: UWord in 0..taskHighWater {
         if &mut tasks[i] == currentTask || (tasks[i].state != TASK_READY && tasks[i].state != TASK_BLOCKED) continue
         let selected: *TrapFrame = taskTerminateChecked(&currentTask.context, tasks[i].id, 0)
         if selected != &currentTask.context panic("latency selected retiring peer", null)

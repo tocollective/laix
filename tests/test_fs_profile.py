@@ -12,7 +12,7 @@ EROFS = 30
 
 
 def fixture(fail=None, flags=1, size=8192):
-    vm = TaskM(ram=0x200000, root=LAIX / 'src/kernel/fs_main.m')
+    vm = TaskM(ram=0x200000, root=LAIX / 'tests/programs/boot/fs_main.m')
     vm.memory = KeyboardDevices(vm)
     vm.addresses.update(fontData=0x16000, fontDataEnd=0x16000 + 184)
     for i, word in enumerate((0x31525357, 1, size, flags)):
@@ -38,7 +38,7 @@ def fixture(fail=None, flags=1, size=8192):
 
 class FsProfileTests(unittest.TestCase):
     def test_sources_check(self):
-        for path in ('src/kernel/fs_main.m', 'src/kernel/fs_bootstrap.m', 'user/services/fs.m',
+        for path in ('tests/programs/boot/fs_main.m', 'tests/programs/boot/fs_bootstrap.m', 'user/services/fs.m',
                      'user/services/fsclient.m', 'tests/programs/fs/client.m'):
             check_m(LAIX / path)
 

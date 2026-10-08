@@ -32,10 +32,9 @@ import { RIGHT_SEND, IPC_MESSAGE_MAX, START_BLOCK_VA, START_BLOCK_BYTES,
     START_ROLE_SERVER, START_ROLE_STORAGE, DEVICE_UART_TX,
     SERVICE_START_BYTES, START_ROLE_INPUT, START_ROLE_DISK,
     START_ROLE_FILE, START_ROLE_CLIENT, START_PROTOCOL_FILE, DEVICE_INPUT, DEVICE_DISK,
-    LIFETIME_REPLY_RESERVE } from "../arch/wrm081632/defs.m"
+    LIFETIME_REPLY_RESERVE, TASK_SLOTS, TASK_SLOT_BITS, TASK_SLOT_MASK, TASK_GENERATION_MAX } from "../arch/wrm081632/defs.m"
 
 let SCHEDULER_QUANTUM_HZ: UWord = 100
-let MAX_TASKS: UWord = 8
 let TASK_RECOVERY_RESERVE: UWord = 2
 // Dead address spaces torn down per IRQ-excluded reaping section (G5). One root
 // is at most 1024 directory entries plus eight 1024-leaf tables.
@@ -43,15 +42,13 @@ let TASK_REAP_STAGE_TASKS: UWord = 1
 // taskIdlePoll result meaning "a reap stage ran and more remain": the idle
 // loop opens one IRQ window and polls again instead of sleeping. Never a frame.
 let TASK_IDLE_STAGE: UWord = 1
-let IDLE_STACK_OWNER: UWord = MAX_TASKS + 1
+let IDLE_STACK_OWNER: UWord = TASK_SLOTS + 1 // slot bits zero: never a task budget
 let TASK_EMPTY: UWord = 0 // unused slot, not a schedulable state
 let TASK_READY: UWord = 1
 let TASK_RUNNING: UWord = 2
 let TASK_DEAD: UWord = 3
 let TASK_BLOCKED: UWord = 4
 let TASK_CREATED: UWord = 5 // private construction, never in the ready queue
-let TASK_SLOT_MASK: UWord = 255
-let TASK_GENERATION_MAX: UWord = 0x7FFFFF // references fit a positive syscall result
 let WAIT_NONE: UWord = 0
 let WAIT_EVENT: UWord = 1
 let WAIT_IPC_SEND: UWord = 2
@@ -113,9 +110,16 @@ type Task {
     ipcPadding: UWord, // keep every TCB's TrapFrame aligned to eight bytes
 }
 
-align(8) let mut tasks: Task[MAX_TASKS]
+// The task table and the ready ring have one entry per slot this boot supports.
+// They are carved out of RAM at boot (src/task/tables.m), so the number of slots
+// follows the installed memory instead of a compile-time constant. Slots are
+// handed out lowest first; taskHighWater is the highest one ever handed out and
+// bounds every scan, since a record beyond it is still all zero.
+let mut tasks: *mut Task
+let mut taskCapacity: UWord
+let mut taskHighWater: UWord
 let mut currentTask: *mut Task
-let mut readyQueue: UWord[MAX_TASKS] // generation-bearing references, never user pointers
+let mut readyQueue: *mut UWord // generation-bearing references, never user pointers; taskCapacity entries
 let mut readyHead: UWord
 let mut readyCount: UWord
 let mut schedulerStarted: Bool
@@ -144,9 +148,18 @@ let taskTransitionAllowed(previous: UWord, next: UWord): Bool {
         (previous == TASK_DEAD && next == TASK_EMPTY)
 }
 
+// Hands the carved tables to the scheduler, once. Both are zero-filled by the allocator.
+let taskTableBind(taskBase: UWord, readyBase: UWord, capacity: UWord): Bool {
+    if tasks != null || taskBase == 0 || readyBase == 0 || capacity < 2 || capacity > TASK_SLOTS return false
+    tasks = taskBase as *mut Task
+    readyQueue = readyBase as *mut UWord
+    taskCapacity = capacity
+    return true
+}
+
 // Slot lookup is kernel-internal enumeration, never user task resolution.
 let taskSlot(slot: UWord): *mut Task {
-    if slot == 0 || slot > MAX_TASKS return null
+    if slot == 0 || slot > taskCapacity return null
     return &mut tasks[slot - 1]
 }
 
@@ -160,12 +173,12 @@ let taskGet(id: UWord): *mut Task {
 // scheduler mutations require IE=0 or EXL=1, independent of PIC ENABLE.
 let taskEnqueue(task: *mut Task): Void {
     if !taskIrqsDisabled() || task == &mut idleTask || task.state == TASK_EMPTY ||
-        (task.state == TASK_CREATED && task.reusable && !task.configured) || task.queued || task.ipcEndpoint != null || readyCount == MAX_TASKS ||
+        (task.state == TASK_CREATED && task.reusable && !task.configured) || task.queued || task.ipcEndpoint != null || readyCount == taskCapacity ||
         !taskTransitionAllowed(task.state, TASK_READY) {
         panic("invalid ready transition", null)
         return
     }
-    readyQueue[(readyHead + readyCount) % MAX_TASKS] = task.id
+    readyQueue[(readyHead + readyCount) % taskCapacity] = task.id
     readyCount += 1
     task.waitReason = WAIT_NONE
     task.queued = true
@@ -228,12 +241,12 @@ let taskConstructImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord)
     // limit for last, so replacing a client near the limit lands in a fresh
     // namespace instead of the same one. The second pass is the old rule.
     for pass: UWord in 0..2 {
-        for i: UWord in 0..MAX_TASKS {
+        for i: UWord in 0..taskCapacity {
             // Bootstrap and the sealed recovery policy may use the final two slots.
-            if currentTask != null && !currentTask.handles.factoryRecovery && i >= MAX_TASKS - TASK_RECOVERY_RESERVE continue
+            if currentTask != null && !currentTask.handles.factoryRecovery && i >= taskCapacity - TASK_RECOVERY_RESERVE continue
             // Retired reply namespaces require replacement in a different slot.
             // Construction and collection must never reset the reply counter.
-            if tasks[i].state == TASK_EMPTY && tasks[i].id >> 8 < TASK_GENERATION_MAX &&
+            if tasks[i].state == TASK_EMPTY && tasks[i].id >> TASK_SLOT_BITS < TASK_GENERATION_MAX &&
                 tasks[i].ipcCallGeneration < TASK_GENERATION_MAX {
                 if pass == 0 && lifetimeLeft(tasks[i].ipcCallGeneration, TASK_GENERATION_MAX) <= LIFETIME_REPLY_RESERVE continue
                 task = &mut tasks[i]
@@ -244,12 +257,13 @@ let taskConstructImage(sourceStart: UWord, sourceEnd: UWord, entryOffset: UWord)
     }
     if task == null return 0
     task.slot = ((task as UWord) - (&tasks[0] as UWord)) / sizeof(Task) + 1
+    if task.slot > taskHighWater taskHighWater = task.slot
     // Generation zero is the first boot lifetime. Every later reservation,
     // including failed construction, advances; exhausted slots never wrap.
-    let mut generation: UWord = task.id >> 8
+    let mut generation: UWord = task.id >> TASK_SLOT_BITS
     if task.id != 0 generation += 1
-    task.id = (generation << 8) | task.slot
-    task.asid = task.slot // full TLB flush on activation, no ASID leases
+    task.id = (generation << TASK_SLOT_BITS) | task.slot
+    task.asid = task.slot & 255 // full TLB flush on activation, no ASID leases
     task.state = TASK_CREATED
     task.reaped = false
     task.reusable = false
@@ -365,10 +379,14 @@ let taskInstallStart(id: UWord, block: *TaskStart): Bool {
     return true
 }
 
-let taskInstallServiceStart(id: UWord, block: *ServiceStart, diskIrq: UWord): Bool {
-    if !taskIrqsDisabled() || schedulerStarted || !serviceStartValid(block) || block.taskId != id return false
+// Checked service start record. At boot the record also grants the device
+// rights it names; at run time (a supervisor starting its own child) the child
+// must already hold exactly those rights from the device broker.
+let taskServiceStartInstall(id: UWord, block: *ServiceStart, diskIrq: UWord, runtime: Bool): Bool {
+    if !taskIrqsDisabled() || !serviceStartValid(block) || block.taskId != id return false
     let task: *mut Task = taskGet(id)
-    if task == null || task.state != TASK_CREATED || task.bootPage != PAGE_NONE return false
+    if task == null || task.state != TASK_CREATED || task.bootPage != PAGE_NONE ||
+        (runtime && task.deviceRights != block.devices) return false
     let entry: *mut Handle = handleEntry(&mut task.handles, block.endpoint)
     let object: *mut Endpoint = handleLookup(&mut task.handles, block.endpoint, block.rights)
     if entry == null || entry.rights != block.rights || object == null || object.mode != ENDPOINT_SERVICE ||
@@ -415,6 +433,11 @@ let taskInstallServiceStart(id: UWord, block: *ServiceStart, diskIrq: UWord): Bo
     task.context.regs[2] = SERVICE_START_BYTES
     task.configured = true
     return true
+}
+
+let taskInstallServiceStart(id: UWord, block: *ServiceStart, diskIrq: UWord): Bool {
+    if schedulerStarted return false
+    return taskServiceStartInstall(id, block, diskIrq, false)
 }
 
 let taskPublishChecked(id: UWord): Bool {
@@ -467,7 +490,7 @@ let taskBootConstructionOpen(): Bool { return !schedulerStarted }
 
 let taskInitAvailable(): Bool {
     if !taskIrqsDisabled() || schedulerStarted || readyCount != 0 return false
-    for i: UWord in 0..MAX_TASKS {
+    for i: UWord in 0..taskHighWater {
         if tasks[i].state != TASK_EMPTY return false
     }
     return true
@@ -533,7 +556,7 @@ let taskSelect(): *TrapFrame {
         panic("invalid selected task", null)
         return null
     }
-    readyHead = (readyHead + 1) % MAX_TASKS
+    readyHead = (readyHead + 1) % taskCapacity
     readyCount -= 1
     task.queued = false
     task.state = TASK_RUNNING
@@ -688,16 +711,16 @@ let taskWake(id: UWord): Bool {
 
 let taskRemoveReady(task: *mut Task): Void {
     let mut position: UWord = 0
-    while position < readyCount && readyQueue[(readyHead + position) % MAX_TASKS] != task.id position += 1
+    while position < readyCount && readyQueue[(readyHead + position) % taskCapacity] != task.id position += 1
     if !task.queued || position == readyCount {
         panic("missing ready task", null)
         return
     }
     while position + 1 < readyCount {
-        readyQueue[(readyHead + position) % MAX_TASKS] = readyQueue[(readyHead + position + 1) % MAX_TASKS]
+        readyQueue[(readyHead + position) % taskCapacity] = readyQueue[(readyHead + position + 1) % taskCapacity]
         position += 1
     }
-    readyQueue[(readyHead + readyCount - 1) % MAX_TASKS] = 0
+    readyQueue[(readyHead + readyCount - 1) % taskCapacity] = 0
     readyCount -= 1
     task.queued = false
 }
@@ -769,7 +792,7 @@ let taskAbortBlocked(id: UWord, code: Word, faulted: Bool): Bool {
 // contexts remain intact; bounded diagnostic history is independent of reuse.
 //
 // Teardown is staged (G5): one call commits at most TASK_REAP_STAGE_TASKS roots,
-// so the section is bounded by one address space, not by MAX_TASKS of them. A
+// so the section is bounded by one address space, not by the number of tasks. A
 // dead task keeps its root, frames, stack and charges until its own stage
 // commits `reaped`; nothing is partly released between stages. Returns true when
 // another reapable task waits, and the caller resumes at its next IRQ window
@@ -791,7 +814,7 @@ let taskReap(): Bool {
     deviceReap()
     memoryReapOrphans()
     let mut staged: UWord = 0
-    for i: UWord in 0..MAX_TASKS {
+    for i: UWord in 0..taskHighWater {
         let task: *mut Task = &mut tasks[i]
         if task.state != TASK_DEAD || task.reaped continue
         if task == currentTask || task.queued ||
@@ -812,12 +835,12 @@ let taskReap(): Bool {
     return false
 }
 
-export { Task, tasks, idleTask, currentTask, MAX_TASKS, TASK_EMPTY, TASK_READY, TASK_RUNNING,
+export { Task, tasks, idleTask, currentTask, taskCapacity, taskHighWater, taskTableBind, TASK_EMPTY, TASK_READY, TASK_RUNNING,
     TASK_BLOCKED, TASK_DEAD, TASK_CREATED, WAIT_NONE, WAIT_EVENT, WAIT_IPC_SEND, WAIT_IPC_RECEIVE,
     WAIT_IPC_CALL, WAIT_IPC_ACCEPT, WAIT_IPC_REPLY, WAIT_IRQ, WAIT_SLEEP,
     USER_CODE, USER_DATA, USER_STACK_BOTTOM, USER_STACK_TOP, USER_STACK_GUARD,
     taskPrepare, taskCreate, taskGet, taskStart, taskBootstrapEndpoints, taskIdlePoll, taskTransitionAllowed,
     taskCreateImage, taskInstallStart, taskPublish, taskDiscardCreated, taskInitAvailable, taskBootConstructionOpen,
-    taskInstallServiceStart, taskIrqReturn, taskSlot, TASK_SLOT_MASK, TASK_GENERATION_MAX, TASK_RECOVERY_RESERVE, lifetimeLeft,
+    taskInstallServiceStart, taskServiceStartInstall, taskIrqReturn, taskSlot, TASK_RECOVERY_RESERVE, lifetimeLeft,
     taskConstructImage, taskPublishChecked, taskDiscardChecked, taskTerminateChecked,
     taskSaveContext, taskOwnsTrap, taskYield, taskTick, taskBlock, taskWake, taskFinish, taskAbortBlocked, taskReap }

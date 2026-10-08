@@ -70,7 +70,7 @@ class LivenessTests(unittest.TestCase):
                 self.timed(vm, tokens)
                 self.tick(vm, 999999)
                 vm.run(1)
-                old = vm.accept(tokens[1]) if accepted else 0x102
+                old = vm.accept(tokens[1]) if accepted else 0x1002
                 self.assertEqual(vm.field('state', 2), 4)
                 before = vm.read_bytes(vm.pages(2)[1] + 128, 32)
                 self.tick(vm, 1000000)
@@ -133,9 +133,9 @@ class LivenessTests(unittest.TestCase):
                             vm.invoke(1, 9)
                         else:
                             # The supervisor also holds scoped termination authority.
-                            typ = vm.decls['taskControls'].sym.type.elem
-                            for i in range(16):
-                                row = vm.addresses['taskControls'] + i * typ.size
+                            typ = vm.decls['taskControls'].sym.type.target
+                            for i in range(vm.globals['taskControlCount']):
+                                row = vm.table_base('taskControls') + i * typ.size
                                 if vm.memory[row + typ.field('reference').offset] == 2:
                                     vm.memory[row + typ.field('rights').offset] = 40
                             vm.run(6)
@@ -162,7 +162,7 @@ class LivenessTests(unittest.TestCase):
         self.assertEqual(vm.queue(endpoint), [5])
         vm.run(1)
         token = vm.accept(tokens[1])
-        self.assertEqual(token & 255, 5)
+        self.assertEqual(token & C['TASK_SLOT_MASK'], 5)
         vm.response(token)
         self.assertEqual(vm.wakes, Counter({2: 1, 3: 1, 4: 1, 5: 1}))
         self.assertEqual(vm.object_value(endpoint, 'references'), 6)
@@ -345,10 +345,10 @@ class LivenessTests(unittest.TestCase):
                 ('callTimed', TIMED, (0x101, USER_DATA, 7, USER_DATA + 128, 32, 60)),
                 ('trySend', TRY_SEND, (0x101, USER_DATA, 32)),
                 ('tryRecv', TRY_RECEIVE, (0x101, USER_DATA, 32)),
-                ('cancelTaskWait', CANCEL, (0x102,)), ('sleep', SLEEP, (1,))):
+                ('cancelTaskWait', CANCEL, (0x1002,)), ('sleep', SLEEP, (1,))):
             self.assertEqual(vm.call(name, *args), 0xFFFFFFDA)
             self.assertEqual(vm.calls[-1], (C['CAUSE_SYSCALL'], (number,) + args))
-        for result in ((0, 0x102), (32, 0x202), (error(11), 0), (error(90), 32)):
+        for result in ((0, 0x1002), (32, 0x2002), (error(11), 0), (error(90), 32)):
             vm = AcceptUserM(result)
             vm.call('tryAccept', 0x101, USER_DATA, 32, USER_DATA + 128)
             self.assertEqual(vm.memory[USER_DATA + 132], 0 if result[0] >> 31 else result[1])

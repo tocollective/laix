@@ -11,8 +11,8 @@ result the probe accepts. The client now accepts an address or "no such name"
 for the missing name and fails on a timeout or a damaged answer.
 
 ```sh
-LAIX_CONSOLE=net sh laix/build.sh              # builds the image
-LAIX_CONSOLE=net sh laix/run.sh                # the client prints to the UART
+LAIX_SESSION=net sh laix/build.sh              # builds the image
+LAIX_SESSION=net sh laix/run.sh                # the client prints to the UART
 python3 laix/tests/probe_net_cpu.py laix/build/net.img laix/build/net.map
 ```
 

@@ -225,14 +225,18 @@ let diskDevicesRegrant(owner: UWord, disk: UWord, imageBytes: UWord): Word {
 
 // Called only after scoped manager + child CONFIGURE authority is checked.
 // Offset is relative to the immutable approved root, never an MMIO/PA value.
-let deviceExtentConfigure(owner: UWord, offset: UWord, bytes: UWord, flags: UWord): Word {
+// Zero bytes select the rest of the approved root from `offset`, so a manager
+// that never learns the root's size (init) can still grant all of it.
+let deviceExtentConfigure(owner: UWord, offset: UWord, requested: UWord, flags: UWord): Word {
     objectAssertAtomic()
     if owner == 0 || owner != deviceExtent.owner return -ERRNO_EPERM
     let child: *mut Task = taskGet(owner)
     if child == null || child.state != TASK_CREATED || child.configured ||
         deviceBounce != PAGE_NONE || deviceExtent.revoked return -ERRNO_EBUSY
-    if offset & SECTOR_MASK != 0 || bytes == 0 || offset >= approvedBytes ||
-        bytes > approvedBytes - offset || flags & ~EXTENT_WRITE != 0 return -ERRNO_EINVAL
+    if offset & SECTOR_MASK != 0 || offset >= approvedBytes return -ERRNO_EINVAL
+    let mut bytes: UWord = requested
+    if bytes == 0 bytes = approvedBytes - offset
+    if bytes > approvedBytes - offset || flags & ~EXTENT_WRITE != 0 return -ERRNO_EINVAL
     // Write authority is a window of whole sectors inside a writable root.
     if flags & EXTENT_WRITE != 0 {
         if !approvedWritable return -ERRNO_EROFS

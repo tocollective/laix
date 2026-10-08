@@ -1,6 +1,17 @@
 // WRM hardware and boot ABI constants. defs.inc mirrors these for assembly;
 // tests/test_kernel.py checks their values without generating code.
 let BYTE_BITS: UWord = 8
+// Task references. A reference is (generation << TASK_SLOT_BITS) | slot, slot 0
+// being the idle task, and it travels as a positive syscall result, so the
+// generation has 31 - TASK_SLOT_BITS bits. Reply tokens and transfer tickets use
+// the same layout. TASK_SLOTS is only the ceiling the layout allows: the number
+// of slots a boot really has is taken from the installed RAM (src/task/tables.m).
+// The slot also selects the hardware ASID, modulo 256: every activation flushes
+// the TLB, so ASIDs are never relied on to be unique.
+let TASK_SLOT_BITS: UWord = 12
+let TASK_SLOT_MASK: UWord = 4095
+let TASK_SLOTS: UWord = 4095
+let TASK_GENERATION_MAX: UWord = 0x7FFFF
 let WORD_BYTES: UWord = 4
 let WORD_BITS: UWord = 32
 let WORD_MASK: UWord = 0xFFFFFFFF
@@ -225,6 +236,7 @@ let ASCII_HEX_ALPHA_OFFSET: UWord = 55 // 'A' - 10
 let ASCII_NEWLINE: UWord = 10
 
 export {
+    TASK_SLOTS, TASK_SLOT_BITS, TASK_SLOT_MASK, TASK_GENERATION_MAX,
     DEVICE_UART_TX, START_MAGIC, START_VERSION, START_BLOCK_BYTES, START_BLOCK_VA, START_DATA_VA,
     START_ROLE_SERVER, START_ROLE_CLIENT, START_PROTOCOL_UART_BYTE,
     START_PROTOCOL_CONSOLE, CONSOLE_VERSION, CONSOLE_WRITE, CONSOLE_RESULT, CONSOLE_HEADER_BYTES, CONSOLE_TEXT_MAX, CONSOLE_RESPONSE_BYTES, CONSOLE_REQUEST_HEADER, CONSOLE_RESPONSE_HEADER, ERRNO_EPROTO,
@@ -513,6 +525,21 @@ let NET_INFO_BYTES: UWord = 16
 export { ETH_BASE, ETH_IRQ, DEVICE_NET, SYS_NET_INFO, SYS_NET_SEND, SYS_NET_RECV, NET_FRAME_MIN,
     NET_FRAME_MAX, NET_INFO_BYTES }
 
+// Start handle list installed by a supervisor into its own unpublished child
+// (the runtime counterpart of the boot-time list above). The caller passes
+// {token, rights} word pairs: with rights, the token names one of the caller's
+// handles and the child gets an attenuated copy; with rights 0 the token is a
+// plain word (for example an interrupt token) stored as it is.
+let SYS_TASK_HANDLES: UWord = 81
+// The checked service start record for a supervisor's own unpublished child:
+// SYS_TASK_SERVICE_START(reference, role, protocol, endpoint, upstream, irq).
+let SYS_TASK_SERVICE_START: UWord = 82
+// Narrowing delegation: SYS_TASK_AUTHORITY(reference, images) gives the caller's
+// own unpublished child a subset of the image authority (catalog bits and
+// IMAGE_LOAD_AUTHORITY) that the caller itself holds.
+let SYS_TASK_AUTHORITY: UWord = 83
+export { SYS_TASK_HANDLES, SYS_TASK_SERVICE_START, SYS_TASK_AUTHORITY }
+
 // Network driver service: frames cross IPC in 16-byte pieces through one send
 // and one receive staging buffer. IP service: ping and name resolution.
 let NETDRV_INFO_HEADER: UWord = 0x000C3001
@@ -540,11 +567,11 @@ let LIFETIME_REPORT_BYTES: UWord = 44
 let LIFETIME_REPLY_RESERVE: UWord = 4096
 export { SYS_LIFETIME, LIFETIME_REPORT_BYTES, LIFETIME_REPLY_RESERVE }
 
-// Files-backed loading (G1): a creator holding IMAGE_LOAD_AUTHORITY, a bit above
-// the catalog IDs 1..16 in Task.createImages, hands the kernel a complete ELF
+// Files-backed loading (G1): a creator holding IMAGE_LOAD_AUTHORITY, the top bit
+// above the catalog IDs 1..31 in Task.createImages, hands the kernel a complete ELF
 // image of at most TASK_LOAD_BYTES. The kernel snapshots it, applies the same
 // checks as for a catalog image and returns a Created child.
 let SYS_TASK_LOAD: UWord = 76
 let TASK_LOAD_BYTES: UWord = 65536
-let IMAGE_LOAD_AUTHORITY: UWord = 0x10000
+let IMAGE_LOAD_AUTHORITY: UWord = 0x80000000
 export { SYS_TASK_LOAD, TASK_LOAD_BYTES, IMAGE_LOAD_AUTHORITY }

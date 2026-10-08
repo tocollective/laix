@@ -163,9 +163,9 @@ class StagedReapTests(unittest.TestCase):
     def test_budget_of_a_pinned_task_is_released_only_by_its_stage(self):
         vm = fixture(1)
         children = spawn_dead(vm, 2)
-        open_budgets = lambda: sum(bool(vm.memory[vm.addresses['spaceBudgets'] + i * vm.decls['spaceBudgets'].sym.type.elem.size +
-                                                   vm.decls['spaceBudgets'].sym.type.elem.field('directory').offset])
-                                   for i in range(32))
+        open_budgets = lambda: sum(bool(vm.memory[vm.table_base('spaceBudgets') + i * vm.decls['spaceBudgets'].sym.type.target.size +
+                                                   vm.decls['spaceBudgets'].sym.type.target.field('directory').offset])
+                                   for i in range(vm.globals['spaceBudgetCount']))
         before = open_budgets()
         stage(vm)
         self.assertEqual(open_budgets(), before - 1)
@@ -190,7 +190,7 @@ class StagedReapDeviceTests(unittest.TestCase):
         self.assertGreater(vm.call('deviceSubmit', 2, 0, 16, 1, 0), 0)
         pinned = {2: held(vm, 2), 3: held(vm, 3)}
         vm.call('taskFinish', vm.field_address('context', 2), 9, False)
-        current = (vm.globals['currentTask'] - vm.addresses['tasks']) // vm.task_type.size + 1
+        current = (vm.globals['currentTask'] - vm.table_base('tasks')) // vm.task_type.size + 1
         victim = 3 if current != 3 else 1
         vm.call('taskTerminateChecked', vm.field_address('context', current), victim, 4)
         self.assertEqual(vm.field('state', victim), DEAD)

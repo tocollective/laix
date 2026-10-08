@@ -56,7 +56,7 @@ class AcceptUserM(UserM):
 class ServiceHelperTests(unittest.TestCase):
     def test_accept_retains_token_on_zero_and_maximal_success_and_clears_it_on_errors(self):
         output = 0x40001080
-        for result in ((0, 0x102), (32, 0x7FFFFF02), (0xFFFFFFA6, 32), (0xFFFFFFF2, 0)):
+        for result in ((0, 0x1002), (32, 0x7FFFF002), (0xFFFFFFA6, 32), (0xFFFFFFF2, 0)):
             with self.subTest(result=result):
                 vm = AcceptUserM(result)
                 vm.memory[output + 4] = 0x12345

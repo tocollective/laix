@@ -54,9 +54,9 @@ def task_resources(vm, reference):
 
 
 def authority_snapshot(vm):
-    controls = vm.addresses['taskControls']
-    size = vm.decls['taskControls'].sym.type.elem.size * 16
-    queue = vm.addresses['readyQueue']
+    controls = vm.table_base('taskControls')
+    size = vm.decls['taskControls'].sym.type.target.size * 16
+    queue = vm.table_base('readyQueue')
     return (vm.globals['readyHead'], vm.globals['readyCount'],
             tuple(vm.memory[queue + i * 4] for i in range(8)),
             tuple(vm.memory.get(controls + i, 0) for i in range(size)))
@@ -185,7 +185,7 @@ class RuntimeTaskAcceptanceTests(unittest.TestCase):
         vm.reap()
         # Retain the old completion capability while the new lifetime runs.
         replacement = create(vm, token=tokens[1], rights=1)
-        self.assertEqual(replacement, 258)
+        self.assertEqual(replacement, 4098)
         vm.run(replacement)
         before = task_resources(vm, replacement)
         data = vm.read_bytes(vm.pages(replacement)[1], PAGE)
@@ -262,7 +262,7 @@ class RuntimeTaskAcceptanceTests(unittest.TestCase):
                 self.assertEqual(vm.control_count(), control_count)
                 self.assertEqual(vm.object_value(endpoint, 'references'), 1)
                 vm.call = original
-                self.assertEqual(create(vm), 258)
+                self.assertEqual(create(vm), 4098)
 
     def test_dma_busy_pins_every_owned_page_and_identity_under_slot_pressure(self):
         vm, tokens = boot(irq=True, dma=True)
@@ -284,7 +284,11 @@ class RuntimeTaskAcceptanceTests(unittest.TestCase):
         vm.invoke(41, 2, USER_DATA)
         self.assertEqual(vm.event()[4], 10)
         children = [create(vm) for _ in range(4)]
-        self.assertEqual([ref & 255 for ref in children], [5, 6, 7, 8])
+        self.assertEqual([ref & C['TASK_SLOT_MASK'] for ref in children], [5, 6, 7, 8])
+        # Take every other slot this boot has (dead and reclaimed): none is left.
+        for slot in range(9, vm.globals['taskCapacity'] + 1):
+            vm.memory[vm.field_address('state', slot)] = 3
+            vm.memory[vm.field_address('reaped', slot)] = 1
         vm.invoke(36, 1)
         self.assertEqual(vm.result(1)[0], error(23))
         for _ in range(4):
@@ -304,7 +308,7 @@ class RuntimeTaskAcceptanceTests(unittest.TestCase):
         vm.memory.complete()
         vm.reap()
         replacement = create(vm)
-        self.assertEqual(replacement, 258)
+        self.assertEqual(replacement, 4098)
         self.assertEqual(vm.call('irqLookup', replacement, vm.irq), C['PIC_LINE_COUNT'])
         self.assertEqual(vm.call('taskGet', 2), 0)
 

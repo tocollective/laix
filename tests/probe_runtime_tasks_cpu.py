@@ -44,11 +44,11 @@ def probe(image, map_path, emulator, rom, timeout=30):
         events = [monitor.words(symbols['taskHistory'] + i * event.size, event.size // 4) for i in range(26)]
         refs = set()
         for code, record in enumerate(events[:24]):
-            require(record[:5] == [code << 8 | 2, 2, 3, code, C['TASK_EVENT_RECLAIMED']],
+            require(record[:5] == [code << C['TASK_SLOT_BITS'] | 2, 2, 3, code, C['TASK_EVENT_RECLAIMED']],
                     f'wrong normal completion {code}: {record}')
             refs.add(record[0])
         fault = events[24]
-        require(fault[:6] == [24 << 8 | 2, 2, 3, 3, 5, 3] and fault[7] == 1,
+        require(fault[:6] == [24 << C['TASK_SLOT_BITS'] | 2, 2, 3, 3, 5, 3] and fault[7] == 1,
                 f'fault diagnostics missing: {fault}')
         require(len(refs) == 24, 'task generation did not advance on reuse')
         require(events[25][:5] == [1, 1, 3, 0, 4], 'wrong supervisor completion')

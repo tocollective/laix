@@ -5,6 +5,7 @@ import { ManagedService, launchService, serviceFailed, recoverService,
     recoverFilesDisk, recoveryUnavailable } from "policy.m"
 import { createTask, configureTask, publishTask, allowServices, createEndpoint,
     resolveService, closeHandle, callTimed, tryAccept, reply, AcceptResult, sleep, exit } from "../syscalls.m"
+import { IMAGE_REC_ECHO, IMAGE_REC_DISK, IMAGE_REC_FILES, IMAGE_REC_CLIENT } from "../init/images.m"
 import { ENDPOINT_MODE_SERVICE, RIGHT_SEND, RIGHT_RECEIVE, DEVICE_DISK,
     ERRNO_EPIPE, ERRNO_EAGAIN, FILE_REQUEST_HEADER, FILE_RESPONSE_HEADER,
     FILE_FONT_ID } from "../../src/arch/wrm081632/defs.m"
@@ -66,14 +67,20 @@ let recoveryClient(start: *RuntimeStart): Void {
         check(sleep(1))
     }
 }
-let recoverySupervisorMain(start: *RuntimeStart, bytes: UWord): Void {
-    if start.argument == 1 recoveryClient(start)
+// Entry of the client image: it runs the resolve/call loop and reports failures
+// to the supervisor on the control endpoint it was started with.
+let recoveryClientMain(start: *RuntimeStart, bytes: UWord): Void {
+    recoveryClient(start)
+}
+
+// The supervisor itself: init runs this as its recovery session, in its own task.
+let recoverySupervisorRun(): Void {
     let control: Word = createEndpoint(ENDPOINT_MODE_SERVICE, 0)
     if control < 0 exit(control)
-    check(launchService(&mut echo, 2, 1, 0, 1, 0))
-    check(launchService(&mut disk, 3, 3, 0, 1, DEVICE_DISK))
-    check(launchService(&mut files, 4, 2, disk.root, 1, 0))
-    let client: Word = createTask(5)
+    check(launchService(&mut echo, IMAGE_REC_ECHO, 1, 0, 1, 0))
+    check(launchService(&mut disk, IMAGE_REC_DISK, 3, 0, 1, DEVICE_DISK))
+    check(launchService(&mut files, IMAGE_REC_FILES, 2, disk.root, 1, 0))
+    let client: Word = createTask(IMAGE_REC_CLIENT)
     if client < 0 exit(client)
     check(allowServices(client as UWord, 3))
     check(configureTask(client as UWord, control as UWord, RIGHT_SEND, 1))
@@ -87,7 +94,7 @@ let recoverySupervisorMain(start: *RuntimeStart, bytes: UWord): Void {
         let echoReported: Bool = size == 8 && report[0] == 1 && report[1] == echo.generation
         let filesReported: Bool = size == 8 && report[0] == 2 && report[1] == files.generation
         if !echo.unavailable && (echoReported || serviceFailed(&echo)) {
-            let recovered: Word = recoverService(&mut echo, 2, 1, 0, 0)
+            let recovered: Word = recoverService(&mut echo, IMAGE_REC_ECHO, 1, 0, 0)
             if recovered != 0 {
                 let disabled: Word = recoveryUnavailable(&mut echo, 1)
             }
@@ -101,4 +108,4 @@ let recoverySupervisorMain(start: *RuntimeStart, bytes: UWord): Void {
         check(sleep(1))
     }
 }
-export { recoverySupervisorMain }
+export { recoverySupervisorRun, recoveryClientMain }

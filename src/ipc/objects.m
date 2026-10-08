@@ -1,7 +1,7 @@
 import { Task, taskGet } from "../task/task.m"
 // Kernel-owned objects and capability tables. No user pointer enters this API.
 import { CR_STATUS, STATUS_IE, STATUS_EXL, WORD_MASK, ERRNO_EINVAL,
-    ERRNO_EBADF, ERRNO_EPERM, ERRNO_EMFILE, ERRNO_ENFILE, ERRNO_EPIPE,
+    ERRNO_EBADF, ERRNO_EPERM, ERRNO_EMFILE, ERRNO_ENFILE, ERRNO_EPIPE, WORD_BYTES,
     RIGHT_RECEIVE, RIGHT_MANAGE, RIGHT_ALL } from "../arch/wrm081632/defs.m"
 import { ipcCancelEndpoint, ipcCancelTask } from "ipc.m"
 import { transferReleaseTask } from "transfer.m"
@@ -9,7 +9,9 @@ import { panic } from "../kernel/panic.m"
 
 let MAX_ENDPOINTS: UWord = 16
 let MAX_HANDLES: UWord = 16
-let ENDPOINT_WAIT_CAPACITY: UWord = 8 // one wait per task
+// One wait per task: the queues of every endpoint have one entry per task slot.
+// They are carved out of RAM at boot (src/task/tables.m) and bound here.
+let mut endpointWaitCapacity: UWord
 let ENDPOINT_EMPTY: UWord = 0
 let ENDPOINT_LIVE: UWord = 1
 let ENDPOINT_DESTROYED: UWord = 2
@@ -29,10 +31,10 @@ type Endpoint {
     creator: UWord, // destruction authority and lifetime budget owner
     mode: UWord, // immutable until this object generation is released
     receiveReferences: UWord,
-    senders: UWord[ENDPOINT_WAIT_CAPACITY],
+    senders: *mut UWord,
     senderHead: UWord,
     senderCount: UWord,
-    receivers: UWord[ENDPOINT_WAIT_CAPACITY],
+    receivers: *mut UWord,
     receiverHead: UWord,
     receiverCount: UWord,
 }
@@ -54,6 +56,16 @@ type HandleTable {
 }
 
 let mut endpoints: Endpoint[MAX_ENDPOINTS]
+// Two queues of `capacity` task references for each endpoint, starting at `base`.
+let endpointQueuesBind(base: UWord, capacity: UWord): Bool {
+    if endpointWaitCapacity != 0 || base == 0 || capacity == 0 return false
+    for i: UWord in 0..MAX_ENDPOINTS {
+        endpoints[i].senders = (base + (2 * i) * capacity * WORD_BYTES) as *mut UWord
+        endpoints[i].receivers = (base + (2 * i + 1) * capacity * WORD_BYTES) as *mut UWord
+    }
+    endpointWaitCapacity = capacity
+    return true
+}
 let mut bootstrapSealed: Bool
 let ENDPOINT_RECOVERY_RESERVE: UWord = 2
 let ENDPOINT_FACTORY_QUOTA: UWord = 12
@@ -230,6 +242,7 @@ let endpointAllocate(table: *mut HandleTable, owner: UWord, receiver: UWord,
     mode: UWord, recovery: Bool): Word {
     objectAssertAtomic()
     if table == null || owner == 0 || receiver == 0 || mode > ENDPOINT_SERVICE return -ERRNO_EINVAL
+    if endpointWaitCapacity == 0 return -ERRNO_ENFILE
     for i: UWord in 0..MAX_ENDPOINTS {
         let object: *mut Endpoint = &mut endpoints[i]
         if !recovery && i >= MAX_ENDPOINTS - ENDPOINT_RECOVERY_RESERVE continue
@@ -250,7 +263,7 @@ let endpointAllocate(table: *mut HandleTable, owner: UWord, receiver: UWord,
         object.senderCount = 0
         object.receiverHead = 0
         object.receiverCount = 0
-        for j: UWord in 0..ENDPOINT_WAIT_CAPACITY {
+        for j: UWord in 0..endpointWaitCapacity {
             object.senders[j] = 0
             object.receivers[j] = 0
         }
@@ -331,5 +344,5 @@ export { Endpoint, Handle, HandleTable, MAX_ENDPOINTS, MAX_HANDLES,
     ENDPOINT_EMPTY, ENDPOINT_LIVE, ENDPOINT_DESTROYED, ENDPOINT_RETIRED,
     ENDPOINT_RAW, ENDPOINT_SERVICE, ENDPOINT_FACTORY_QUOTA, ENDPOINT_RECOVERY_RESERVE,
     endpointFactoryBootstrap, endpointFactoryCreate,
-    HANDLE_GENERATION_MAX, ENDPOINT_WAIT_CAPACITY, handleInstallAt, handleEntry, endpointRelease, handleLookup, handleClose, handleCopyCheck, handleCopy, endpointDestroy,
+    HANDLE_GENERATION_MAX, endpointWaitCapacity, endpointQueuesBind, handleInstallAt, handleEntry, endpointRelease, handleLookup, handleClose, handleCopyCheck, handleCopy, endpointDestroy,
     endpointRetiredCount, endpointBootstrap, endpointBootstrapService, endpointSealBootstrap, handlesReleaseTask, objectAssertAtomic }

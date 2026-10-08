@@ -4,7 +4,7 @@ Normal boot runs a separate user server and application. The application prints
 `LA/IX microkernel v1.0.0\n` through `consoleWrite`, then exits. Kernel main only
 initializes the kernel, constructs tasks and enters the scheduler. Screen/font
 code remains available for dedicated tests; normal boot performs no screen,
-font, glyph-disk or RNG demonstration. The optional `LAIX_CONSOLE=screen` boot
+font, glyph-disk or RNG demonstration. The optional `LAIX_SESSION=screen` boot
 runs separate user screen and bitmap services, described in the
 [screen/IRQ/DMA contract](SCREEN_IRQ_DMA.md). Its distinct UTF-8 protocol
 does not change the default UART protocol or grants.

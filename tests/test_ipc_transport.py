@@ -83,8 +83,8 @@ class TransportM(TaskM):
     def queue(self, object, sending=True):
         name = "sender" if sending else "receiver"
         head, count = (self.object_value(object, name + suffix) for suffix in ("Head", "Count"))
-        base = self.object_field(object, "senders" if sending else "receivers")
-        return [self.memory[base + ((head + i) % 8) * 4] for i in range(count)]
+        base = self.memory[self.object_field(object, "senders" if sending else "receivers")]
+        return [self.memory[base + ((head + i) % self.globals["endpointWaitCapacity"]) * 4] for i in range(count)]
 
 
 class TransportTests(unittest.TestCase):
@@ -131,7 +131,7 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(vm.object_value(object, "references"), 2)
         self.assertEqual(vm.queue(object), [])
         base = vm.field_address("ipcMessage", 1)
-        self.assertEqual([vm.memory[base + i] for i in range(32)], [0] * 32)
+        self.assertEqual(vm.read_bytes(base, 32), bytes(32))
         self.assertEqual(vm.copies, [(vm.field("directory", 2), 2, ptbr)])
 
     def test_receive_first_uses_receiver_root_while_sender_is_current(self):

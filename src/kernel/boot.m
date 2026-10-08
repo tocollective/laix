@@ -8,6 +8,7 @@ import { PAGE_SIZE, PAGE_MASK, WORD_BYTES, BOOT_INFO, BOOT_INFO_MAGIC,
     BOOT_INFO_BYTES, BOOT_INFO_LIMIT, DEVICE_ENTRY_BYTES, CAUSE_BREAKPOINT, CAUSE_SYSCALL,
     SYSCALL_UNSUPPORTED, ERRNO_ENOSYS, CR_STATUS, STATUS_IE, PIC_ENABLE } from "../arch/wrm081632/defs.m"
 import { mmuInit } from "../mm/mmu.m"
+import { tablesInit } from "../task/tables.m"
 
 type KernelBootInfo {
     magic: UWord,
@@ -81,6 +82,11 @@ let kernelInit(): Void {
     setPanicStage("mmu-init")
     if !mmuInit() {
         panic("could not enable kernel memory protection", null)
+        return
+    }
+    setPanicStage("task-tables")
+    if !tablesInit() {
+        panic("could not size the task tables", null)
         return
     }
     debugPrint("LA/IX: MMU enabled, kernel stack guard active, kernel W^X\n")

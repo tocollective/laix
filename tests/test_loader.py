@@ -47,7 +47,7 @@ def load(vm, length=LENGTH, source=USER_DATA):
 def supervisor(authority=LOAD, recovery=False):
     vm = fixture(1)
     vm.memory[vm.field_address('createImages', 1)] = authority
-    table = vm.decls['tasks'].sym.type.elem.field('handles').type
+    table = vm.decls['tasks'].sym.type.target.field('handles').type
     vm.memory[vm.field_address('handles', 1) + table.field('factoryRecovery').offset] = int(recovery)
     return vm
 
@@ -70,7 +70,7 @@ class LoaderTests(unittest.TestCase):
         self.assertEqual(LOAD & 0xFFFF, 0)
         self.assertEqual(LOAD & (LOAD - 1), 0)  # one bit
         for path in ('src/task/control.m', 'src/task/program.m', 'src/trap/trap.m',
-                     'src/kernel/loader_main.m', 'user/syscalls.m', 'user/loadfile.m',
+                     'tests/programs/boot/loader_main.m', 'user/syscalls.m', 'user/loadfile.m',
                      'user/services/loader.m', 'tests/programs/loader/hello.m'):
             check_m(LAIX / path)
 

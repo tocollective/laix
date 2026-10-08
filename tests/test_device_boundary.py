@@ -24,7 +24,7 @@ class DeviceBoundaryTests(unittest.TestCase):
         child = create(vm, configure=False, publish=False)
         self.assertGreater(vm.call('taskRuntimeDevices', child, C['DEVICE_DISK']), 0)
         before = record(vm, 'deviceExtent', 'generation')
-        for offset, length in ((1, 16), (512, 97), (608, 1), (0xFFFFFE00, 16), (0, 0)):
+        for offset, length in ((1, 16), (512, 97), (608, 1), (0xFFFFFE00, 16), (608, 0)):
             self.assertEqual(vm.call('taskRuntimeExtent', child, offset, length, 0), error(22))
         self.assertEqual(record(vm, 'deviceExtent', 'generation'), before)
         vm.memory[vm.field_address('deviceFactory', 1)] = 0
@@ -39,6 +39,17 @@ class DeviceBoundaryTests(unittest.TestCase):
         self.assertEqual(vm.call('taskRuntimeExtent', child, 0, 16, 0), error(16))
         vm.memory.complete()
         self.assertEqual(vm.call('deviceFinish', child, token, USER_DATA), 96)
+
+    def test_zero_bytes_select_the_rest_of_the_approved_root(self):
+        vm = fixture(devices=True)
+        child = create(vm, configure=False, publish=False)
+        self.assertGreater(vm.call('taskRuntimeDevices', child, C['DEVICE_DISK']), 0)
+        # A manager that does not know the root's size (init) still gets all of it.
+        self.assertEqual(vm.call('taskRuntimeExtent', child, 0, 0, 0), 0)
+        self.assertEqual(vm.call('diskInfo', child), 608)
+        self.assertEqual(vm.call('taskRuntimeExtent', child, 512, 0, 0), 0)
+        self.assertEqual(vm.call('diskInfo', child), 96)
+        self.assertEqual(vm.call('taskRuntimeExtent', child, 608, 0, 0), error(22))
 
     def test_arbitrary_resource_constructor_ignores_font_bytes(self):
         vm = kernel_fixture()

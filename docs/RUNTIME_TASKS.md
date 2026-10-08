@@ -7,8 +7,8 @@ catalog; launch order, arguments and completion handling belong to the user
 image. Existing UART, screen and service bootstrap policies remain available.
 
 ```sh
-LAIX_CONSOLE=supervisor sh laix/build.sh
-LAIX_CONSOLE=supervisor sh laix/run.sh --headless --no-net
+LAIX_FIXTURE=supervisor sh laix/build.sh
+LAIX_FIXTURE=supervisor sh laix/run.sh --headless --no-net
 python3 laix/tests/probe_runtime_tasks_cpu.py laix/build/supervisor.img laix/build/supervisor.map
 ```
 
@@ -105,8 +105,9 @@ reset by construction or collection.
 
 ## Completion, cancellation and reclamation
 
-There are eight concurrent slots, sixteen reserved control/completion rows,
-and a separate 32-entry diagnostic history ring. Reaped runtime slots become
+There are as many concurrent slots as this boot's table has (from the installed
+RAM, see [init](INIT.md#task-slots)), one reserved control/completion row for
+each, and a separate 32-entry diagnostic history ring. Reaped runtime slots become
 Empty independently of completion collection. The event remains in its own
 reserved row even if the slot is reused. Slow collection cannot overflow or
 drop these events: creation returns `-ENFILE` when all rows are occupied.

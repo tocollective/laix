@@ -94,7 +94,7 @@ class ConsoleServiceTests(unittest.TestCase):
         # Old bytes deliberately remain after a short request. They may never
         # influence parsing or reach UART. Strict reads expose buffer overruns.
         memory.update({USER_DATA + i: 0xCC for i in range(len(message), 44)})
-        machine = UserAssembly(LAIX / "src/kernel/bootstrap.asm", "bootstrapServerStart.accept", regs, memory)
+        machine = UserAssembly(LAIX / "tests/programs/boot/uart_bootstrap.asm", "bootstrapServerStart.accept", regs, memory)
         run = machine.run()
         self.assertEqual(next(run)[:4], (22, 0x102, USER_DATA, 32))
         regs[1:3] = [len(message), 0x202]
@@ -200,9 +200,9 @@ class ConsoleServiceTests(unittest.TestCase):
         self.assertEqual(vm.field("waitReason", 1), 5)
 
     def test_kernel_main_has_no_console_disk_or_demo_dependency(self):
-        modules = check_m(LAIX / "src/kernel/main.m")
+        modules = check_m(LAIX / "tests/programs/boot/uart_main.m")
         self.assertNotIn("console.m", {Path(m.path).name for m in modules})
-        text = (LAIX / "src/kernel/main.m").read_text()
+        text = (LAIX / "tests/programs/boot/uart_main.m").read_text()
         self.assertNotIn("microkernel v1.0.0", text)
         panic = check_m(LAIX / "src/kernel/panic.m")
         self.assertEqual({Path(m.path).name for m in panic},

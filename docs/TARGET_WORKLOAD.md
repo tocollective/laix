@@ -80,10 +80,10 @@ filesystem, only the one read-only file.
 Reproduce (the build replaces the Services image; rebuild it afterwards):
 
 ```sh
-LAIX_ACCEPTANCE_FILEREAD=1 LAIX_CONSOLE=services sh laix/build.sh
+LAIX_ACCEPTANCE_FILEREAD=1 LAIX_SESSION=services sh laix/build.sh
 python3 -B laix/tests/probe_file_read_cpu.py laix/build/services.img laix/build/services.map \
   --emulator "$PWD/bin/wrm081632" --rom "$PWD/bin/firmware.rom"
-LAIX_CONSOLE=services sh laix/build.sh
+LAIX_SESSION=services sh laix/build.sh
 ```
 
 ## What this decides for the other gaps

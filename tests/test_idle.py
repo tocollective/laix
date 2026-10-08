@@ -149,7 +149,7 @@ class IdleTests(unittest.TestCase):
             self.assertEqual(vm.leaf(bottom - 4096, root), 0)
             for page in (bottom, top - 4096):
                 self.assertEqual(vm.leaf(page, root) & 31, 7)  # supervisor RW/NX
-                self.assertTrue(vm.call("physicalPageOwned", page, 9, 7))
+                self.assertTrue(vm.call("physicalPageOwned", page, C["TASK_SLOTS"] + 1, 7))
         for slot, field in (("KERNEL_SP", "kernelStackTop"),
                             ("KERNEL_STACK_TOP", "kernelStackTop"),
                             ("KERNEL_STACK_BOTTOM", "kernelStackBottom")):

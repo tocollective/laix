@@ -160,7 +160,7 @@ class PhysicalWXTests(unittest.TestCase):
                 self.assertEqual(vm.leaf(base + offset, directory) & (W | X | U), W)
 
     def test_executable_map_allocation_failure_does_not_change_window_or_counts(self):
-        vm = self.vm(0x9E000)
+        vm = self.vm(0x9F000)
         directory = self.space(vm)
         physical = vm.call("allocPage", 7, 5)
         before = self.snapshot(vm)

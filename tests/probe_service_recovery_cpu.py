@@ -28,7 +28,7 @@ def probe(image, map_path, emulator, rom, timeout=60):
     types = {name: module.scope[name].type for module in check_m(LAIX/'src/trap/trap.m')
              for name in ('Endpoint','TaskControl','ServiceEntry','IrqGrant')
              if name in module.scope and module.scope[name].type is not None}
-    require(symbols['currentTask']-symbols['tasks'] == 8*size, 'task image/source layout mismatch')
+    require('taskCapacity' in symbols, 'task image has no sized task table')
     with ready_monitor(image.read_bytes(), emulator, rom, timeout, full_image=True) as opened:
         monitor, process, stdout, stderr = opened
         transcript = [monitor.receive(), monitor.stop_at(symbols['taskStart'])]

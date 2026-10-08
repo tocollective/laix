@@ -5,8 +5,8 @@
 Date: 2026-10-08. Status: **implemented; source accepted; CPU accepted in the G7 packaging campaign (2026-10-08, 10 typed commands, both programs ran from the volume). The `shell` profile is in the CI matrix and the checked-in provenance; no remote CI run.**
 
 ```sh
-LAIX_CONSOLE=shell sh laix/build.sh          # builds the image
-LAIX_CONSOLE=shell sh laix/run.sh            # type in the emulator window, read the UART
+LAIX_SESSION=shell sh laix/build.sh          # builds the image
+LAIX_SESSION=shell sh laix/run.sh            # type in the emulator window, read the UART
 python3 laix/tests/probe_shell_cpu.py laix/build/shell.img laix/build/shell.map
 ```
 

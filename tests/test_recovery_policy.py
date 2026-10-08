@@ -1,6 +1,6 @@
 """Execute user policy M with syscall-result fixtures; kernel tested separately."""
 import unittest
-from source_m import SourceM, LAYOUT as C
+from source_m import SourceM, LAYOUT as C, image_ids
 from test_kernel import LAIX
 from test_ipc_handles import error
 
@@ -71,7 +71,7 @@ class PolicyTests(unittest.TestCase):
         terminated=[args[0] for name,args in vm.operations if name=='terminateTask']
         self.assertEqual(terminated,[2,1])
         created=[args[0] for name,args in vm.operations if name=='createTask']
-        self.assertEqual(created,[3,4])
+        self.assertEqual(created,[image_ids()['REC_DISK'],image_ids()['REC_FILES']])  # producer first
         configured=[args for name,args in vm.operations if name=='configureService']
         self.assertEqual(configured[0][2:4],(0,2))
         self.assertEqual(configured[1][2:4],(0x101,2))

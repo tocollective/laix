@@ -38,9 +38,9 @@ def frames(vm, token):
 
 
 def used(vm, owner=1):
-    typ = vm.decls['memoryBudgets'].sym.type.elem
-    for i in range(8):
-        address = vm.addresses['memoryBudgets'] + i * typ.size
+    typ = vm.decls['memoryBudgets'].sym.type.target
+    for i in range(vm.globals['memoryBudgetCount']):
+        address = vm.table_base('memoryBudgets') + i * typ.size
         if vm.memory[address + typ.field('owner').offset] == owner:
             return vm.memory[address + typ.field('used').offset]
     return 0
@@ -163,6 +163,9 @@ class RuntimeMemoryTests(unittest.TestCase):
         quota = SourceM(LAIX / 'src/mm/mmu.m')
         self.assertTrue(quota.call('memoryInit', 0x200000))
         self.assertTrue(quota.call('mmuInit'))
+        for address in range(0x30000000, 0x30000000 + 8 * 12, 4):
+            quota.memory[address] = 0
+        self.assertTrue(quota.call('memoryBudgetBind', 0x30000000, 8))
         self.assertTrue(quota.call('memoryBudgetOpen', 1))
         directory = quota.call('mmuCreateAddressSpace', 1)
         self.assertGreater(directory, 0) # the directory is the first charge

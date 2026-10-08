@@ -245,10 +245,10 @@ class LatencyProbe(LivenessProbe):
                 self.put_bytes(slot, 0, bytes([slot]) * 32)
                 self.syscall(slot, TIMED, self.tokens[slot], DATA, 32, DATA + 128, 32, 60)
             held = self.accept()
-            require(held & 255 == 2, 'first caller lost FIFO order')
+            require(held & 4095 == 2, 'first caller lost FIFO order')
             for slot in range(3, 9):
                 token = self.accept()
-                require(token & 255 == slot, 'caller bypassed FIFO')
+                require(token & 4095 == slot, 'caller bypassed FIFO')
                 self.reply(token, bytes([slot]) * 32)
                 require(self.result(slot) == (32, 32), 'peer failed behind held client')
             # A held/abandoned client consumes only its own one wait record.
@@ -291,7 +291,7 @@ def run(args):
             p.write(p.address(2, 'ipcCallGeneration'), 0x7FFFFE)
             p.syscall(2, TIMED, p.tokens[2], DATA, 32, DATA + 128, 32, 60)
             last = p.accept()
-            require(last == 0x7FFFFF02, 'wrong last-valid reply identity')
+            require(last == 0x7FFFF002, 'wrong last-valid reply identity')
             p.reply(last)
             require(p.syscall(2, TIMED, p.tokens[2], DATA, 32, DATA + 128, 32, 60) == (negative(75), 0), 'generation wrapped')
             require(p.reply(last)[0] == negative(9), 'used final identity regained authority')

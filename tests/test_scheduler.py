@@ -21,14 +21,14 @@ class SchedulerTests(unittest.TestCase):
         return vm.memory[task] if task else 0
 
     def queue(self, vm):
-        return [vm.memory[vm.addresses["readyQueue"] + 4 *
-                          ((vm.globals["readyHead"] + i) % 8)]
+        return [vm.memory[vm.table_base("readyQueue") + 4 *
+                          ((vm.globals["readyHead"] + i) % vm.globals["taskCapacity"])]
                 for i in range(vm.globals["readyCount"])]
 
     def check_queue(self, vm):
         queue = self.queue(vm)
         self.assertEqual(len(queue), len(set(queue)))
-        for id in range(1, 9):
+        for id in range(1, vm.globals["taskCapacity"] + 1):
             ready = vm.field("state", id) == 1
             self.assertEqual(id in queue, ready)
             self.assertEqual(bool(vm.field("queued", id)), ready)
@@ -57,6 +57,11 @@ class SchedulerTests(unittest.TestCase):
         allowed = {(0, 5), (5, 1), (5, 0), (1, 2), (1, 3), (2, 1),
                    (2, 3), (2, 4), (4, 1), (4, 3), (3, 0)}
         vm = self.start(8)
+        slots = 8
+        # Every other slot this boot has is taken (dead, reclaimed): the table is full.
+        for slot in range(slots + 1, vm.globals["taskCapacity"] + 1):
+            vm.memory[vm.field_address("state", slot)] = 3
+            vm.memory[vm.field_address("reaped", slot)] = 1
         for previous in range(6):
             for next in range(6):
                 self.assertEqual(bool(vm.call("taskTransitionAllowed", previous, next)),
@@ -65,7 +70,7 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(vm.call("taskCreate"), 0)
         self.assertEqual(vm.free_pages(), baseline)
         for i in range(32):
-            self.assertEqual(self.current(vm), i % 8 + 1)
+            self.assertEqual(self.current(vm), i % slots + 1)
             self.check_queue(vm)
             self.trap(vm)
         with self.assertRaisesRegex(KernelPanic, "ready transition"):

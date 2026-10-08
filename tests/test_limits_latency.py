@@ -8,11 +8,12 @@ from test_ipc_request_reply import CALL, ACCEPT, REPLY, GEN_MAX
 import test_ipc_transport as raw
 from test_runtime_tasks import fixture, create
 from test_runtime_memory import space, allocate, invoke, frames
+ROW_GEN_MAX = 0x7FFFFF  # runtime memory rows keep 8-bit slots; task, reply and ticket generations are narrower
 
 
 class LimitsLatencyTests(unittest.TestCase):
     def budget(self, vm, owner=1):
-        typ = vm.decls['spaceBudgets'].sym.type.elem
+        typ = vm.decls['spaceBudgets'].sym.type.target
         return vm.call('mmuBudget', vm.field('directory', owner), owner), typ
 
     def test_oversized_ipc_capacities_do_not_walk_user_pages_or_spend_generation(self):
@@ -52,7 +53,7 @@ class LimitsLatencyTests(unittest.TestCase):
         vm.request(token)
         vm.run(1)
         last = vm.accept(vm.root_handle)
-        self.assertEqual(last, GEN_MAX << 8 | child)
+        self.assertEqual(last, GEN_MAX << C['TASK_SLOT_BITS'] | child)
         vm.response(last)
         vm.run(child)
         vm.request(token)
@@ -63,7 +64,7 @@ class LimitsLatencyTests(unittest.TestCase):
         vm.invoke(C['SYS_TASK_COLLECT'], child, 0x40001000)
         self.assertEqual(vm.result(1)[0], 0)
         replacement = create(vm, token=vm.root_handle, rights=1)
-        self.assertNotEqual(replacement & 255, child & 255)
+        self.assertNotEqual(replacement & C['TASK_SLOT_MASK'], child & C['TASK_SLOT_MASK'])
         self.assertEqual(vm.field('ipcCallGeneration', child), GEN_MAX)
         vm.run(replacement)
         fresh_handle = vm.memory[vm.field('bootPage', replacement) + 28]
@@ -78,13 +79,13 @@ class LimitsLatencyTests(unittest.TestCase):
 
     def test_all_retired_reply_namespaces_fail_creation_without_allocating(self):
         vm = fixture(1)
-        for slot in range(2, 9):
+        for slot in range(2, vm.globals['taskCapacity'] + 1):
             vm.memory[vm.field_address('ipcCallGeneration', slot)] = GEN_MAX
         baseline = vm.free_pages(), vm.control_count()
         vm.invoke(C['SYS_TASK_CREATE'], 1)
         self.assertEqual(vm.result(1)[0], error(23))
         self.assertEqual((vm.free_pages(), vm.control_count()), baseline)
-        for slot in range(2, 9):
+        for slot in range(2, vm.globals['taskCapacity'] + 1):
             self.assertEqual(vm.field('ipcCallGeneration', slot), GEN_MAX)
 
     def test_mapping_quota_counts_aliases_and_recovers_on_unmap(self):
@@ -145,14 +146,14 @@ class LimitsLatencyTests(unittest.TestCase):
         for variable, count in (('memorySpaces', 32), ('memoryRegions', 64), ('memoryGrants', 64)):
             typ = vm.decls[variable].sym.type.elem
             for i in range(count):
-                vm.memory[vm.addresses[variable] + i * typ.size + typ.field('generation').offset] = GEN_MAX
-            vm.memory[vm.addresses[variable] + typ.field('generation').offset] = GEN_MAX - 1
+                vm.memory[vm.addresses[variable] + i * typ.size + typ.field('generation').offset] = ROW_GEN_MAX
+            vm.memory[vm.addresses[variable] + typ.field('generation').offset] = ROW_GEN_MAX - 1
         cap = space(vm, rights=47)
-        self.assertEqual(cap, GEN_MAX << 8 | 1)
+        self.assertEqual(cap, ROW_GEN_MAX << 8 | 1)
         region = allocate(vm, cap, 1)
-        self.assertEqual(region, GEN_MAX << 8 | 1)
+        self.assertEqual(region, ROW_GEN_MAX << 8 | 1)
         grant = invoke(vm, 'SYS_MEM_GRANT', cap, region, 2, 23)
-        self.assertEqual(grant, GEN_MAX << 8 | 1)
+        self.assertEqual(grant, ROW_GEN_MAX << 8 | 1)
         self.assertEqual(invoke(vm, 'SYS_MEM_GRANT_CLOSE', grant), 0)
         self.assertEqual(invoke(vm, 'SYS_MEM_GRANT', cap, region, 2, 23), -23)
         self.assertEqual(invoke(vm, 'SYS_MEM_RELEASE', cap, region), 0)
@@ -161,7 +162,7 @@ class LimitsLatencyTests(unittest.TestCase):
         self.assertEqual(invoke(vm, 'SYS_MEM_SPACE', 0, 15), -23)
         for variable in ('memorySpaces', 'memoryRegions', 'memoryGrants'):
             typ = vm.decls[variable].sym.type.elem
-            self.assertEqual(vm.memory[vm.addresses[variable] + typ.field('generation').offset], GEN_MAX)
+            self.assertEqual(vm.memory[vm.addresses[variable] + typ.field('generation').offset], ROW_GEN_MAX)
 
     def test_device_operation_and_extent_last_generation_complete_without_wrap(self):
         from test_screen_services import kernel_fixture
@@ -194,10 +195,10 @@ class LimitsLatencyTests(unittest.TestCase):
         self.assertEqual(vm.queue(endpoint), list(range(2, 9)))
         vm.run(1)
         held = vm.accept(tokens[1])
-        self.assertEqual(held & 255, 2)
+        self.assertEqual(held & C['TASK_SLOT_MASK'], 2)
         for caller in range(3, 9):
             reply = vm.accept(tokens[1])
-            self.assertEqual(reply & 255, caller)
+            self.assertEqual(reply & C['TASK_SLOT_MASK'], caller)
             vm.response(reply, bytes([caller]) * 32)
             self.assertEqual(vm.result(caller), (32, 32))
         self.assertEqual(vm.field('state', 2), 4)

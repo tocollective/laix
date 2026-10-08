@@ -1,19 +1,18 @@
-// LA/IX start.asm clears BSS, installs trapEntry and provides a kernel stack.
-// kernelInit enables the stack guard through MMU; IRQs stay disabled until taskStart.
+// Kernel entry of the single image: bring up the kernel, create init, run.
 import { kernelInit, kernelBootInfo } from "boot.m"
 import { panic, setPanicStage } from "panic.m"
 import { taskStart } from "../task/task.m"
-import { bootstrapInit } from "bootstrap.m"
+import { initBootstrap } from "init_bootstrap.m"
 
 let main(): Word {
     kernelInit()
-    setPanicStage("task-prepare")
-    if !bootstrapInit() {
-        panic("could not prepare user tasks", null)
+    setPanicStage("init-prepare")
+    if !initBootstrap() {
+        panic("could not prepare init", null)
         return 1
     }
-    setPanicStage("user-task")
+    setPanicStage("user-init")
     taskStart(kernelBootInfo.clock)
-    panic("user task entry returned", null)
+    panic("init entry returned", null)
     return 1
 }

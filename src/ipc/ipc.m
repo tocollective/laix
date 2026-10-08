@@ -4,18 +4,19 @@ import { taskControlLookup } from "../task/control.m"
 import { TASK_RIGHT_CONFIGURE, TASK_RIGHT_CANCEL } from "../arch/wrm081632/defs.m"
 // Public kernel entry points always resolve authority in the calling task.
 import { Task, currentTask, taskGet, taskSlot, TASK_RUNNING, TASK_READY, TASK_BLOCKED,
-    TASK_CREATED, MAX_TASKS, WAIT_NONE, WAIT_IPC_SEND, WAIT_IPC_RECEIVE, WAIT_IPC_CALL, WAIT_IPC_ACCEPT,
+    TASK_CREATED, taskHighWater, WAIT_NONE, WAIT_IPC_SEND, WAIT_IPC_RECEIVE, WAIT_IPC_CALL, WAIT_IPC_ACCEPT,
     WAIT_IPC_REPLY, WAIT_SLEEP, taskOwnsTrap, taskSaveContext, taskBlock, taskWake } from "../task/task.m"
 import { Endpoint, Handle, handleLookup, handleClose, handleCopy, endpointDestroy, objectAssertAtomic,
-    endpointFactoryCreate, handleEntry, endpointRelease, ENDPOINT_WAIT_CAPACITY, ENDPOINT_RAW, ENDPOINT_SERVICE,
-    ENDPOINT_LIVE, HANDLE_GENERATION_MAX } from "objects.m"
+    endpointFactoryCreate, handleEntry, endpointRelease, endpointWaitCapacity, ENDPOINT_RAW, ENDPOINT_SERVICE,
+    ENDPOINT_LIVE } from "objects.m"
 import { TrapFrame } from "../trap/trap_frame.m"
 import { mmuUserBufferValid, copyFromUser, copyToUser } from "../mm/mmu.m"
 import { panic } from "../kernel/panic.m"
 import { ERRNO_EPERM, ERRNO_ESRCH, ERRNO_EBADF, ERRNO_EPIPE, ERRNO_EFAULT,
     ERRNO_EBUSY, ERRNO_EMSGSIZE, ERRNO_EINVAL, ERRNO_EDEADLK, ERRNO_EOVERFLOW,
     ERRNO_ETIMEDOUT, ERRNO_ECANCELED, ERRNO_EAGAIN,
-    IPC_MESSAGE_MAX, RIGHT_SEND, RIGHT_RECEIVE, PTE_R, PTE_W } from "../arch/wrm081632/defs.m"
+    IPC_MESSAGE_MAX, RIGHT_SEND, RIGHT_RECEIVE, PTE_R, PTE_W, TASK_SLOT_BITS, TASK_SLOT_MASK,
+    TASK_GENERATION_MAX } from "../arch/wrm081632/defs.m"
 
 let ipcCallerValid(): Bool {
     objectAssertAtomic()
@@ -118,17 +119,17 @@ let ipcUnqueue(task: *mut Task): Void {
         count = object.senderCount
     }
     let mut position: UWord = 0
-    while position < count && queue[(head + position) % ENDPOINT_WAIT_CAPACITY] != task.id position += 1
+    while position < count && queue[(head + position) % endpointWaitCapacity] != task.id position += 1
     if position == count || object.references == 0 {
         panic("missing IPC wait reference", null)
         return
     }
     let mut i: UWord = position
     while i + 1 < count {
-        queue[(head + i) % ENDPOINT_WAIT_CAPACITY] = queue[(head + i + 1) % ENDPOINT_WAIT_CAPACITY]
+        queue[(head + i) % endpointWaitCapacity] = queue[(head + i + 1) % endpointWaitCapacity]
         i += 1
     }
-    queue[(head + count - 1) % ENDPOINT_WAIT_CAPACITY] = 0
+    queue[(head + count - 1) % endpointWaitCapacity] = 0
     if sending object.senderCount -= 1
     else object.receiverCount -= 1
 }
@@ -180,12 +181,12 @@ let ipcPublish(object: *mut Endpoint, kind: UWord, buffer: UWord, size: UWord): 
         return -ERRNO_EBUSY
     }
     if kind == WAIT_IPC_SEND || kind == WAIT_IPC_CALL {
-        if object.senderCount == ENDPOINT_WAIT_CAPACITY return -ERRNO_EBUSY
-        object.senders[(object.senderHead + object.senderCount) % ENDPOINT_WAIT_CAPACITY] = task.id
+        if object.senderCount == endpointWaitCapacity return -ERRNO_EBUSY
+        object.senders[(object.senderHead + object.senderCount) % endpointWaitCapacity] = task.id
         object.senderCount += 1
     } else {
-        if object.receiverCount == ENDPOINT_WAIT_CAPACITY return -ERRNO_EBUSY
-        object.receivers[(object.receiverHead + object.receiverCount) % ENDPOINT_WAIT_CAPACITY] = task.id
+        if object.receiverCount == endpointWaitCapacity return -ERRNO_EBUSY
+        object.receivers[(object.receiverHead + object.receiverCount) % endpointWaitCapacity] = task.id
         object.receiverCount += 1
     }
     object.references += 1
@@ -292,7 +293,7 @@ let ipcAcceptCall(client: *mut Task, service: *mut Task, buffer: UWord, capacity
     client.ipcReplyOwner = service.id
     client.ipcSize = 0
     ipcClearMessage(client)
-    return ((client.ipcCallGeneration << 8) | client.slot) as Word
+    return ((client.ipcCallGeneration << TASK_SLOT_BITS) | client.slot) as Word
 }
 
 let ipcCallMode(frame: *mut TrapFrame, token: UWord, buffer: UWord, size: UWord,
@@ -314,8 +315,8 @@ let ipcCallMode(frame: *mut TrapFrame, token: UWord, buffer: UWord, size: UWord,
         !mmuUserBufferValid(currentTask.directory, currentTask.id, response, capacity, PTE_W) {
         return ipcResult(frame, -ERRNO_EFAULT, 0)
     }
-    if currentTask.ipcCallGeneration == HANDLE_GENERATION_MAX return ipcResult(frame, -ERRNO_EOVERFLOW, 0)
-    if object.senderCount == ENDPOINT_WAIT_CAPACITY return ipcResult(frame, -ERRNO_EBUSY, 0)
+    if currentTask.ipcCallGeneration == TASK_GENERATION_MAX return ipcResult(frame, -ERRNO_EOVERFLOW, 0)
+    if object.senderCount == endpointWaitCapacity return ipcResult(frame, -ERRNO_EBUSY, 0)
     let mut deadline: TimerCount
     if seconds != 0 && !timerDeadline(seconds, &mut deadline) return ipcResult(frame, -ERRNO_EINVAL, 0)
     let copied: Word = copyFromUser(currentTask.directory, currentTask.id, &mut currentTask.ipcMessage[0], buffer, size)
@@ -376,12 +377,12 @@ let ipcAcceptMode(frame: *mut TrapFrame, token: UWord, buffer: UWord, capacity: 
 let ipcReply(frame: *mut TrapFrame, token: UWord, buffer: UWord, size: UWord): *TrapFrame {
     if !ipcCallerValid() || !taskOwnsTrap(frame) return ipcResult(frame, -ERRNO_EPERM, 0)
     // A numeric token selects a record, but authority is its kernel-owned owner.
-    let client: *mut Task = taskSlot(token & 255)
-    if token >> 8 == 0 || token >> 8 > HANDLE_GENERATION_MAX || client == null {
+    let client: *mut Task = taskSlot(token & TASK_SLOT_MASK)
+    if token >> TASK_SLOT_BITS == 0 || token >> TASK_SLOT_BITS > TASK_GENERATION_MAX || client == null {
         return ipcResult(frame, -ERRNO_EBADF, 0)
     }
     if client.state != TASK_BLOCKED || client.queued || client.ipcKind != WAIT_IPC_REPLY ||
-        client.waitReason != WAIT_IPC_REPLY || client.ipcCallGeneration != token >> 8 ||
+        client.waitReason != WAIT_IPC_REPLY || client.ipcCallGeneration != token >> TASK_SLOT_BITS ||
         client.ipcReplyOwner != currentTask.id || client.ipcEndpoint == null {
         return ipcResult(frame, -ERRNO_EBADF, 0)
     }
@@ -423,7 +424,7 @@ let ipcCancelEndpoint(object: *mut Endpoint): Void {
     }
     while object.senderCount != 0 ipcComplete(ipcWaiter(object, sending), -ERRNO_EPIPE, 0)
     while object.receiverCount != 0 ipcComplete(ipcWaiter(object, receiving), -ERRNO_EPIPE, 0)
-    for id: UWord in 1..(MAX_TASKS + 1) {
+    for id: UWord in 1..(taskHighWater + 1) {
         let task: *mut Task = taskSlot(id)
         if task.ipcEndpoint == object && task.ipcKind == WAIT_IPC_REPLY ipcComplete(task, -ERRNO_EPIPE, 0)
     }
@@ -486,19 +487,19 @@ let ipcSleep(frame: *mut TrapFrame, seconds: UWord): *TrapFrame {
     return taskBlock(frame, WAIT_SLEEP)
 }
 
-// At most MAX_TASKS records and bounded FIFO/message cleanup per IRQ. COUNT,
+// At most one record per slot ever used and bounded FIFO/message cleanup per IRQ. COUNT,
 // not the number of delivered/coalesced IRQs, determines expiry.
 let ipcTimerTick(): Void {
     objectAssertAtomic()
     transferTimerTick()
     let mut hasWait: Bool = false
-    for slot: UWord in 1..(MAX_TASKS + 1) {
+    for slot: UWord in 1..(taskHighWater + 1) {
         if taskSlot(slot).waitTimed != 0 hasWait = true
     }
     if !hasWait return
     let mut now: TimerCount
     timerReadCount(&mut now)
-    for slot: UWord in 1..(MAX_TASKS + 1) {
+    for slot: UWord in 1..(taskHighWater + 1) {
         let task: *mut Task = taskSlot(slot)
         if task.state != TASK_BLOCKED || task.waitTimed == 0 ||
             !timerDeadlineReached(&now, &task.waitDeadline) continue

@@ -124,13 +124,17 @@ class BlockWriteTests(unittest.TestCase):
     def test_storage_root_flag_validation(self):
         for words, expected in (((0x31525357, 1, 8192, 1), 8192), ((0x31525357, 1, 8192, 0), 8192),
                                 ((0x31525357, 1, 8191, 1), 0), ((0x31525357, 1, 8192, 2), 0),
-                                ((0x31525357, 1, 8192, 3), 0), ((0x31525357, 1, 608, 0), 608)):
+                                ((0x31525357, 1, 8192, 3), 0), ((0x31525357, 1, 608, 0), 608),
+                                # Bits 8..15 are the session number, not a rejected flag.
+                                ((0x31525357, 1, 8192, 0x501), 8192), ((0x31525357, 1, 608, 0x300), 608),
+                                ((0x31525357, 1, 8192, 0x10001), 0), ((0x31525357, 1, 8192, 0x401 | 2), 0)):
             with self.subTest(words=words):
                 vm = kernel_fixture()
                 for i, word in enumerate(words):
                     vm.memory[ROOT + 4 * i] = word
                 self.assertEqual(vm.call('approvedStorageBytes'), expected)
-                self.assertEqual(bool(vm.call('approvedStorageWritable')), bool(expected and words[3] == 1))
+                self.assertEqual(bool(vm.call('approvedStorageWritable')), bool(expected and words[3] & 1))
+                self.assertEqual(vm.call('approvedSession'), (words[3] >> 8) & 255 if expected else 0)
 
     def test_storage_root_tool_writes_the_flag(self):
         sys.path.insert(0, str(LAIX / 'tools'))
@@ -141,6 +145,11 @@ class BlockWriteTests(unittest.TestCase):
         self.assertEqual(storage_root.flags(storage_root.pack(8192)), 0)
         with self.assertRaises(ValueError):
             storage_root.pack(700, writable=True)
+        data = storage_root.pack(8192, writable=True, session=5)
+        self.assertEqual((storage_root.flags(data), storage_root.session(data)), (0x501, 5))
+        self.assertEqual(storage_root.session(storage_root.pack(608)), 0)
+        with self.assertRaises(ValueError):
+            storage_root.pack(8192, session=256)
 
     def test_write_flush_and_read_back(self):
         vm = storage()

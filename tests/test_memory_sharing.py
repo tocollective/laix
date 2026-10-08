@@ -54,7 +54,7 @@ class MemorySharingTests(unittest.TestCase):
         self.assertEqual(vm.call('copyFromUser', vm.field('directory', 2), 2, 0x81000, VA, 4), 0)
         self.assertEqual(vm.read_bytes(0x81000, 4), b'live')
         replacement = create(vm)
-        self.assertEqual(replacement, 257)
+        self.assertEqual(replacement, 4097)
         charged = used(vm, replacement)
         self.assertEqual(invoke(vm, 'SYS_MEM_GRANT_MAP', borrowed, token, VA + 8 * PAGE, RW), -1)
         # The borrower dies with its shared mappings intact.

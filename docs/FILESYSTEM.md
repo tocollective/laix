@@ -5,7 +5,7 @@
 Date: 2026-10-08. Status: **implemented; source accepted; CPU accepted in the G7 packaging campaign (2026-10-08, 27 medium snapshots at WRITE/FLUSH, all committed states). The `fs` profile is in the CI matrix and the checked-in provenance; no remote CI run.**
 
 ```sh
-LAIX_CONSOLE=fs sh laix/build.sh          # builds the image
+LAIX_SESSION=fs sh laix/build.sh          # builds the image
 python3 laix/tests/probe_fs_cpu.py laix/build/fs.img laix/build/fs.map
 ```
 

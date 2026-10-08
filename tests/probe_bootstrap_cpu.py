@@ -36,7 +36,7 @@ def preflight(data, symbols):
                 "currentTask", "idleTask", "taskKernelResume.idle"}
     require(required <= symbols.keys(), "image lacks bootstrap symbols: " + ", ".join(sorted(required - symbols.keys())))
     size, offsets = task_layout()
-    require(symbols["currentTask"] - symbols["tasks"] == 8 * size, "image has a different Task ABI")
+    require("taskCapacity" in symbols, "image has no sized task table")
     for prefix in ("bootstrapServer", "bootstrapClient"):
         begin, end = symbols[prefix + "Start"], symbols[prefix + "End"]
         require(symbols["__start_text"] <= begin < end <= symbols["__stop_text"] and

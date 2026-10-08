@@ -11,7 +11,7 @@ adds one mechanism (`SYS_TASK_LOAD`, 76). Reading the bytes, deciding what to lo
 and which rights the child gets stay in user mode.
 
 ```sh
-LAIX_CONSOLE=loader sh laix/build.sh
+LAIX_SESSION=loader sh laix/build.sh
 python3 laix/tests/probe_loader_cpu.py laix/build/loader.img laix/build/loader.map
 ```
 

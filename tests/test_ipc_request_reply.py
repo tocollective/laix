@@ -10,7 +10,7 @@ from test_task import TaskEntered, USER_CODE, USER_DATA, PAGE
 
 CALL, ACCEPT, REPLY = 21, 22, 23
 AWAIT_ACCEPT, ACCEPT_WAIT, AWAIT_REPLY = 4, 5, 6
-GEN_MAX = 0x7FFFFF
+GEN_MAX = LAYOUT['TASK_GENERATION_MAX']  # reply namespaces share the task reference layout
 
 
 class ServiceM(TransportM):
@@ -78,19 +78,19 @@ class RequestReplyTests(unittest.TestCase):
         self.assertEqual(vm.queue(endpoint), [2, 3])
         vm.run(4)
         before = vm.read_bytes(vm.pages(2)[1], 32)
-        vm.invoke(REPLY, 0x102, USER_DATA, 1)  # not accepted yet
+        vm.invoke(REPLY, 0x1002, USER_DATA, 1)  # not accepted yet
         self.assertEqual(vm.result(4), (error(9), 0))
         vm.run(1)
         a = vm.accept(tokens[1])
-        self.assertEqual((vm.result(1), vm.read_bytes(vm.pages(1)[1], 6)), ((6, 0x102), b"second"))
+        self.assertEqual((vm.result(1), vm.read_bytes(vm.pages(1)[1], 6)), ((6, 0x1002), b"second"))
         b = vm.accept(tokens[1])
-        self.assertEqual((vm.result(1), vm.read_bytes(vm.pages(1)[1], 5)), ((5, 0x103), b"third"))
+        self.assertEqual((vm.result(1), vm.read_bytes(vm.pages(1)[1], 5)), ((5, 0x1003), b"third"))
         self.assertEqual(vm.wakes, Counter())
         self.assertEqual(vm.object_value(endpoint, "references"), 6)
         self.assertFalse(vm.call("taskWake", 2))
         vm.wakes.clear()
         vm.run(4)
-        for bad in (a, b, 0, 1, a + 256, a | 0x80000000, 0x109, 0xFFFFFFFF):
+        for bad in (a, b, 0, 1, a + 4096, a | 0x80000000, 0x1009, 0xFFFFFFFF):
             vm.invoke(REPLY, bad, USER_DATA, 1)
             self.assertEqual(vm.result(4), (error(9), 0))
         self.assertEqual(vm.read_bytes(vm.pages(2)[1], 32), before)
@@ -118,12 +118,12 @@ class RequestReplyTests(unittest.TestCase):
         vm.memory[client_frame + LAYOUT["TF_FCSR"]] = 0x61
         vm.request(tokens[2], b"hello")
         self.assertEqual(vm.current(), 1)
-        self.assertEqual(vm.result(1), (5, 0x102))
+        self.assertEqual(vm.result(1), (5, 0x1002))
         self.assertEqual(vm.field("ipcKind", 2), AWAIT_REPLY)
         self.assertEqual(vm.field("state", 2), 4)
         self.assertEqual(vm.queue(endpoint), [])
         self.assertEqual(vm.wakes, Counter({1: 1}))
-        vm.response(0x102, b"world")
+        vm.response(0x1002, b"world")
         self.assertEqual(vm.memory[client_frame + LAYOUT["TF_EPC"]], epc + 4)
         self.assertEqual([vm.memory[client_frame + 4 * i] for i in range(3, 6)], [5, USER_DATA, 32])
         self.assertEqual([vm.memory[client_frame + 4 * i] for i in range(6, 32)],
@@ -179,7 +179,7 @@ class RequestReplyTests(unittest.TestCase):
         vm.response(new)
         vm.memory[vm.field_address("ipcCallGeneration", 2)] = GEN_MAX - 1
         final = self.accepted(vm, tokens)
-        self.assertEqual(final, (GEN_MAX << 8) | 2)
+        self.assertEqual(final, (GEN_MAX << LAYOUT['TASK_SLOT_BITS']) | 2)
         vm.response(final)
         vm.run(2)
         vm.request(tokens[2])
@@ -297,7 +297,7 @@ class RequestReplyTests(unittest.TestCase):
             vm.run(3)
             vm.request(tokens[3])
             vm.run(1)
-            token = vm.accept(tokens[1]) if accepted else 0x102
+            token = vm.accept(tokens[1]) if accepted else 0x1002
             self.assertTrue(vm.call("taskAbortBlocked", 2, 9, True))
             self.assertEqual(vm.queue(endpoint), [3])
             self.assertEqual(vm.wakes, Counter())

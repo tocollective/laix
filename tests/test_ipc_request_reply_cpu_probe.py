@@ -17,9 +17,11 @@ class CPUProbeTests(unittest.TestCase):
         p.size = vm.task_type.size
         p.offsets = {field.name: field.offset for field in vm.task_type.fields}
         p.count, p.endpoint = 4, endpoint
-        p.s = dict(tasks=vm.addresses["tasks"], idleTask=vm.addresses["idleTask"],
+        p.s = dict(tasks=vm.table_base("tasks"), idleTask=vm.addresses["idleTask"],
                    currentTask=0xE000000, task__readyHead=0xE000004,
-                   task__readyCount=0xE000008, task__readyQueue=vm.addresses["readyQueue"])
+                   task__readyCount=0xE000008, taskCapacity=0xE00000C,
+                   task__readyQueue=vm.table_base("readyQueue"))
+        vm.memory[p.s["taskCapacity"]] = vm.globals["taskCapacity"]
         return vm, tokens, p
 
     def test_preflight_rejects_missing_service_symbols_wrong_endpoint_pool_and_wrong_resume(self):

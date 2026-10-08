@@ -44,8 +44,8 @@ class AddressSpaceTests(unittest.TestCase):
             self.assertEqual(vm.events[i - 1], ("fence", []))
 
     def test_kernel_allocation_failure_rolls_back_and_can_retry(self):
-        # zero, one free page: directory or low-table allocation fails.
-        for ram in (0x9A000, 0x9B000):
+        # zero, one, two free pages: ledger, directory or low-table allocation fails.
+        for ram in (0x9A000, 0x9B000, 0x9C000):
             vm = BootstrapM()
             self.assertTrue(vm.call("memoryInit", ram))
             self.assertFalse(vm.call("mmuInit"))
@@ -59,15 +59,15 @@ class AddressSpaceTests(unittest.TestCase):
         held = []
         while (address := vm.call("allocPage", 5, 2)):
             held.append(address)
-        for address in held[:2]:
+        for address in held[:3]:
             self.assertTrue(vm.call("freePage", address, 5, 2))
         self.assertFalse(vm.call("mmuInit"))
-        for address in held[:2]:
+        for address in held[:3]:
             self.assertTrue(vm.call("physicalPageAvailable", address))
-        self.assertTrue(vm.call("freePage", held[2], 5, 2))
+        self.assertTrue(vm.call("freePage", held[3], 5, 2))
         self.assertTrue(vm.call("mmuInit"))
-        # Two free frames suffice when the RAM fits in the low table.
-        vm = self.vm(0x9C000)
+        # Three free frames (ledger, root, low table) suffice when the RAM fits in the low table.
+        vm = self.vm(0x9D000)
         self.assertEqual(vm.call("mmuCreateAddressSpace", 7), 0)
 
     def test_map_protect_unmap_and_refuse_to_free_live_frames(self):
@@ -141,7 +141,7 @@ class AddressSpaceTests(unittest.TestCase):
             self.assertEqual(vm.call("mmuUserRangeValid", address, size), valid)
 
     def test_mapping_failure_returns_reference_and_keeps_directory(self):
-        vm = self.vm(0x9E000)  # kernel root + low table, task root + user frame
+        vm = self.vm(0x9F000)  # ledger, kernel root + low table, task root + user frame
         directory = self.space(vm)
         physical = vm.call("allocPage", 7, 5)
         before = self.snapshot(vm)

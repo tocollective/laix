@@ -10,8 +10,8 @@ the limits of each check, is recorded in
 From the repository root:
 
 ```sh
-LAIX_CONSOLE=screen sh laix/build.sh
-LAIX_CONSOLE=screen sh laix/run.sh
+LAIX_SESSION=screen sh laix/build.sh
+LAIX_SESSION=screen sh laix/run.sh
 ```
 
 This builds LA/IX and its embedded user images, using the existing compiler,

@@ -21,13 +21,13 @@ class TaskEntered(Exception):
 
 
 class TaskM(SourceM):
-    def __init__(self, ram=0x100000, root=None):
+    def __init__(self, ram=0x110000, root=None):  # the per-slot tables take a few frames of it
         super().__init__(root or LAIX / "src/trap/trap.m")
         # Build-issued fixture storage root, independent of LAF bytes.
         self.addresses["approvedStorageRoot"] = 0x15000
         for i, word in enumerate((0x31525357, 1, 608, 0)):
             self.memory[0x15000 + 4 * i] = word
-        self.task_type = self.decls["tasks"].sym.type.elem
+        self.task_type = self.decls["tasks"].sym.type.target
         self.addresses.update(userCodeStart=0x14000, userCodeEnd=0x1401C,
                               kernelStackBottom=0x91000, taskKernelResume=0x14100)
         # Arbitrary fixture words, never generated machine instructions.
@@ -41,11 +41,13 @@ class TaskM(SourceM):
         self.mapping_calls = 0
         assert self.call("memoryInit", ram)
         assert self.call("mmuInit")
+        assert self.call("tablesInit")
+        self.zero_carved()
         self.kernel_root = self.ptbr & ~4095
         self.events.clear()
 
     def field_address(self, field, id=1):
-        return self.addresses["tasks"] + ((id & 255) - 1) * self.task_type.size + self.task_type.field(field).offset
+        return self.table_base("tasks") + ((id & LAYOUT["TASK_SLOT_MASK"]) - 1) * self.task_type.size + self.task_type.field(field).offset
 
     def field(self, field, id=1):
         return self.memory[self.field_address(field, id)]

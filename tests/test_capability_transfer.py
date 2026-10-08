@@ -32,12 +32,12 @@ class TransferTests(unittest.TestCase):
         return tuple(vm.memory[frame + 4 * i] for i in (1, 2, 3))
 
     def handle_field(self, vm, receiver, slot, field):
-        typ = vm.decls['tasks'].sym.type.elem.field('handles').type.field('entries').type.elem
+        typ = vm.decls['tasks'].sym.type.target.field('handles').type.field('entries').type.elem
         return vm.field_address('handles', receiver) + (slot - 1) * typ.size + typ.field(field).offset
 
     def record(self, vm, receiver=2):
-        typ = vm.decls['transfers'].sym.type.elem
-        base = vm.addresses['transfers'] + ((receiver & 255) - 1) * typ.size
+        typ = vm.decls['transfers'].sym.type.target
+        base = vm.table_base('transfers') + ((receiver & C['TASK_SLOT_MASK']) - 1) * typ.size
         return {f.name: vm.memory[base + f.offset] for f in typ.fields if f.name != 'deadline'}
 
     def test_sixteen_unsolicited_raw_and_service_copies_leave_foreign_budget_unchanged(self):
@@ -197,7 +197,7 @@ class TransferTests(unittest.TestCase):
         vm.run(1)
         vm.reap()
         replacement = create(vm)
-        self.assertEqual(replacement, 258)
+        self.assertEqual(replacement, 4098)
         new = self.reserve(vm, receiver=replacement)
         self.assertNotEqual(old, new)
         self.assertEqual(self.commit(vm, source, old), error(3))
@@ -206,9 +206,9 @@ class TransferTests(unittest.TestCase):
         handle, sender, rights = self.collect(vm, new, receiver=replacement)
         self.assertEqual((sender, rights), (1, 1))
         vm.call('ipcClose', handle)
-        typ = vm.decls['transfers'].sym.type.elem
-        address = vm.addresses['transfers'] + typ.size + typ.field('generation').offset
-        vm.memory[address] = GEN_MAX
+        typ = vm.decls['transfers'].sym.type.target
+        address = vm.table_base('transfers') + typ.size + typ.field('generation').offset
+        vm.memory[address] = C['TASK_GENERATION_MAX']
         self.assertEqual(self.reserve(vm, receiver=replacement), error(75))
         self.assertFalse(vm.memory[self.handle_field(vm, replacement, 5, 'reserved')])
 
@@ -235,16 +235,18 @@ class TransferTests(unittest.TestCase):
         for ref in completed[1:]:
             vm.invoke(C['SYS_TASK_COLLECT'], ref, C['START_DATA_VA'])
             self.assertEqual(vm.result(2)[0], 0)
-        # Fill all ordinary task slots; the supervisor can still create twice.
-        vm.invoke(C['SYS_TASK_CREATE'], 1)
-        self.assertTrue(0 < vm.result(2)[0] < 0x80000000)
-        vm.invoke(C['SYS_TASK_CREATE'], 1)
-        self.assertTrue(0 < vm.result(2)[0] < 0x80000000)
+        # Fill all ordinary task slots (marked occupied directly: building 250 real
+        # tasks would exhaust the fixture's frames first); the supervisor can still
+        # create twice, in the two reserved slots.
+        slots = vm.globals['taskCapacity']
+        for slot in range(1, slots - 1):
+            if vm.field('state', slot) == 0:
+                vm.memory[vm.field_address('state', slot)] = 1
         vm.invoke(C['SYS_TASK_CREATE'], 1)
         self.assertEqual(vm.result(2)[0], error(23))
         vm.run(1)
-        self.assertEqual(create(vm) & 255, 7)
-        self.assertEqual(create(vm) & 255, 8)
+        self.assertEqual(create(vm) & C['TASK_SLOT_MASK'], slots - 1)
+        self.assertEqual(create(vm) & C['TASK_SLOT_MASK'], slots)
 
     def test_borrower_quota_charges_only_accepted_mappings_and_refunds_final_unmap(self):
         vm = fixture(3, ordinary=True)

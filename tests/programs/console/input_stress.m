@@ -1,6 +1,6 @@
 // Acceptance-only boot policy. File/Disk peers remain ordinary user services.
 import { kernelInit, kernelBootInfo } from "../../../src/kernel/boot.m"
-import { bootstrapSimpleInit } from "../../../src/kernel/simple_bootstrap.m"
+import { bootstrapSimpleInit } from "../boot/simple_bootstrap.m"
 import { Task, taskGet, taskInstallServiceStart, taskPublish, taskStart } from "../../../src/task/task.m"
 import { taskCreateProgram } from "../../../src/task/program.m"
 import { ServiceStart } from "../../../src/task/service_start.m"

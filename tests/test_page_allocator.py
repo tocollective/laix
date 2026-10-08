@@ -75,7 +75,8 @@ class AllocatorTests(unittest.TestCase):
 
     def test_one_mib_static_budget_and_allocator_mmu_lifecycle(self):
         # Read declaration sizes only, without laying out or emitting code.
-        # A fixed 64 KiB BSS budget catches MAX_PAGES-sized array regressions.
+        # A fixed 64 KiB BSS budget catches MAX_PAGES-sized array regressions. Nothing
+        # sized by the task count lives in BSS: those tables are carved from RAM at boot.
         modules = check_m(LAIX / "src/kernel/main.m")
         budget = sum(size_of(d.sym.type) + (d.align.const - 1 if d.align else 3)
                      for module in modules for d in module.decls
